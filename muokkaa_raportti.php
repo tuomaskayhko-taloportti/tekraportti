@@ -18,6 +18,10 @@ $customers = [];
 $projects = [];
 $rows = [];
 $media = [];
+if ((string) ($_GET['saved'] ?? '') === '1') {
+    $message = 'Muutokset tallennettiin.';
+    $messageType = 'success';
+}
 
 try {
     $db = getDatabaseConnection();
@@ -222,6 +226,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             error_log('Raportin muokkaus epäonnistui: ' . $error->getMessage());
         }
     }
+}
+
+// Post/Redirect/Get estää saman lomakkeen lähettämisen uudelleen sivun päivityksessä.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && $messageType === 'success') {
+    header('Location: muokkaa_raportti.php?id=' . $raporttiId . '&saved=1');
+    exit;
 }
 
 try {
