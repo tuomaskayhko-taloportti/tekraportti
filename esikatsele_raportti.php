@@ -116,7 +116,8 @@ if ($coverPath && in_array(strtolower(pathinfo($coverPath, PATHINFO_EXTENSION)),
         );
         $imageWidth = $imageSize[0] * $scale;
         $imageHeight = $imageSize[1] * $scale;
-        $pdf->Image($coverPath, 20, $pdf->GetY(), $imageWidth, $imageHeight);
+        $imageX = 20 + ($maxImageWidth - $imageWidth) / 2;
+        $pdf->Image($coverPath, $imageX, $pdf->GetY(), $imageWidth, $imageHeight);
         $pdf->Ln($imageHeight + 15);
     }
 }
