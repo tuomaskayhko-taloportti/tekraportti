@@ -288,6 +288,23 @@ function storeUploadedFile(array $file, string $folder): string
 }
 
 /**
+ * Poistaa palvelun oman ladatun tiedoston. Ulkopuolisiin tai hakemiston
+ * ulkopuolisiin polkuihin ei kosketa.
+ */
+function deleteStoredFile(string $url): void
+{
+    if ($url === '' || str_contains($url, '..') || preg_match('/^https?:\/\//i', $url)) {
+        return;
+    }
+
+    $directory = realpath(__DIR__ . '/Tiedostot');
+    $path = realpath(__DIR__ . '/' . ltrim($url, '/'));
+    if ($directory && $path && str_starts_with($path, $directory . DIRECTORY_SEPARATOR) && is_file($path)) {
+        @unlink($path);
+    }
+}
+
+/**
  * Lähettää kirjautumiskoodin laatijalle.
  *
  * Paluuarvo on true myös silloin, kun sähköpostiosoitetta ei löydy. Näin

@@ -62,6 +62,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $place = trim((string) ($_POST['laatimispaikka'] ?? ''));
                 $summary = trim((string) ($_POST['tiivistelma'] ?? ''));
                 $cover = trim((string) ($_POST['kansikuva'] ?? ''));
+                $oldCover = trim((string) ($report['kansikuva'] ?? ''));
                 $dateObject = DateTime::createFromFormat('!Y-m-d', $date);
                 if ($customerId < 1 || $title === '' || !$dateObject || $dateObject->format('Y-m-d') !== $date) {
                     throw new RuntimeException('Täytä asiakas, otsikko ja voimassa oleva päivämäärä.');
@@ -69,7 +70,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $projectValue = $projectId > 0 ? $projectId : null;
                 $placeValue = $place !== '' ? $place : null;
                 $summaryValue = $summary !== '' ? $summary : null;
-                $coverValue = $cover !== '' ? $cover : null;
+                $coverValue = $cover !== '' ? $cover : ($oldCover !== '' ? $oldCover : null);
                 if (isset($_FILES['kansikuva']) && ($_FILES['kansikuva']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
                     $coverValue = storeUploadedFile($_FILES['kansikuva'], 'kansikuvat');
                 }
@@ -88,6 +89,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 $query->execute();
                 $query->close();
+                if ($oldCover !== '' && $oldCover !== $coverValue) {
+                    deleteStoredFile($oldCover);
+                }
                 $message = 'Raportin perustiedot tallennettiin.';
                 $messageType = 'success';
             } elseif ($action === 'add-row') {
@@ -122,10 +126,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $messageType = 'success';
             } elseif ($action === 'delete-row') {
                 $rowId = (int) ($_POST['rivi_id'] ?? 0);
+                $query = $db->prepare('SELECT url FROM raporttimedia WHERE raporttirivi_id = ? AND raportti_id = ? AND laatijat_id = ?');
+                $query->bind_param('iii', $rowId, $raporttiId, $laatijatId);
+                $query->execute();
+                $mediaFiles = $query->get_result()->fetch_all(MYSQLI_ASSOC);
+                $query->close();
                 $query = $db->prepare('DELETE FROM raporttirivit WHERE id = ? AND raportti_id = ? AND laatijat_id = ?');
                 $query->bind_param('iii', $rowId, $raporttiId, $laatijatId);
                 $query->execute();
                 $query->close();
+                foreach ($mediaFiles as $mediaFile) {
+                    deleteStoredFile((string) $mediaFile['url']);
+                }
                 $message = 'Osio poistettiin.';
                 $messageType = 'success';
             } elseif ($action === 'add-media') {
@@ -181,10 +193,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $messageType = 'success';
             } elseif ($action === 'delete-media') {
                 $mediaId = (int) ($_POST['media_id'] ?? 0);
+                $query = $db->prepare('SELECT url FROM raporttimedia WHERE id = ? AND raportti_id = ? AND laatijat_id = ? LIMIT 1');
+                $query->bind_param('iii', $mediaId, $raporttiId, $laatijatId);
+                $query->execute();
+                $mediaFile = $query->get_result()->fetch_assoc();
+                $query->close();
                 $query = $db->prepare('DELETE FROM raporttimedia WHERE id = ? AND raportti_id = ? AND laatijat_id = ?');
                 $query->bind_param('iii', $mediaId, $raporttiId, $laatijatId);
                 $query->execute();
                 $query->close();
+                if ($mediaFile) {
+                    deleteStoredFile((string) $mediaFile['url']);
+                }
                 $message = 'Media poistettiin.';
                 $messageType = 'success';
             } elseif ($action === 'update-media') {
