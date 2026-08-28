@@ -112,7 +112,7 @@ HTML;
                     <div class="submenu">
                         <a class="nav-link" href="luo_raportti.php">Uusi raportti</a>
                     </div>
-                    <a class="nav-link" href="#">▤ &nbsp; Projektit</a>
+                    <a class="nav-link" href="projektit.php">▤ &nbsp; Projektit</a>
                     <a class="nav-link" href="asiakkaat.php">▦ &nbsp; Asiakkaat</a>
                 </nav>
             </div>

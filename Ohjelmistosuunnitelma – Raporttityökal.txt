@@ -138,6 +138,8 @@ Asiakas kuuluu aina yhdelle laatijalle.
 
 Laatija voi perustaa projekteja raporttien ryhmittelyä varten.
 
+Projektit voidaan luoda, muokata ja poistaa projektien hallintasivulla. Raporttilistassa raportit voidaan suodattaa projektin perusteella.
+
 Projekti ei ole sidottu vain yhteen asiakkaaseen.
 
 Samaan projektiin voidaan liittää raportteja useilta eri asiakkailta.

@@ -11,12 +11,14 @@ if (!isset($_SESSION['laatijat_id'])) {
 
 $laatijatId = (int) $_SESSION['laatijat_id'];
 $showAll = isset($_GET['kaikki']) && $_GET['kaikki'] === '1';
+$projectId = max(0, (int) ($_GET['projekti_id'] ?? 0));
 $currentPage = max(1, (int) ($_GET['sivu'] ?? 1));
 $perPage = 25;
 $reports = [];
 $totalReports = 0;
 $loadError = false;
 $csrfToken = getApplicationCsrfToken();
+$projects = [];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string) ($_POST['action'] ?? '') === 'delete-report') {
     $postedToken = (string) ($_POST['csrf_token'] ?? '');
@@ -88,12 +90,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string) ($_POST['action'] ?? '') =
 
 try {
     $db = getDatabaseConnection();
+    $projectQuery = $db->prepare('SELECT id, nimi FROM projektit WHERE laatijat_id = ? ORDER BY nimi, id');
+    $projectQuery->bind_param('i', $laatijatId);
+    $projectQuery->execute();
+    $projects = $projectQuery->get_result()->fetch_all(MYSQLI_ASSOC);
+    $projectQuery->close();
+
+    $reportWhere = 'WHERE r.laatijat_id = ?';
+    if ($projectId > 0) {
+        $reportWhere .= ' AND r.projekti_id = ?';
+    }
 
     if ($showAll) {
         $countQuery = $db->prepare(
-            'SELECT COUNT(*) AS maara FROM raportit WHERE laatijat_id = ?'
+            'SELECT COUNT(*) AS maara FROM raportit r ' . $reportWhere
         );
-        $countQuery->bind_param('i', $laatijatId);
+        if ($projectId > 0) {
+            $countQuery->bind_param('ii', $laatijatId, $projectId);
+        } else {
+            $countQuery->bind_param('i', $laatijatId);
+        }
         $countQuery->execute();
         $totalReports = (int) $countQuery->get_result()->fetch_assoc()['maara'];
         $countQuery->close();
@@ -106,22 +122,30 @@ try {
             'SELECT r.id, r.otsikko, r.raporttipvm, a.nimi AS asiakas_nimi
              FROM raportit r
              INNER JOIN asiakkaat a ON a.id = r.asiakas_id AND a.laatijat_id = r.laatijat_id
-             WHERE r.laatijat_id = ?
+             ' . $reportWhere . '
              ORDER BY r.raporttipvm DESC, r.id DESC
              LIMIT ? OFFSET ?'
         );
-        $reportQuery->bind_param('iii', $laatijatId, $perPage, $offset);
+        if ($projectId > 0) {
+            $reportQuery->bind_param('iiii', $laatijatId, $projectId, $perPage, $offset);
+        } else {
+            $reportQuery->bind_param('iii', $laatijatId, $perPage, $offset);
+        }
     } else {
         $totalPages = 1;
         $reportQuery = $db->prepare(
             'SELECT r.id, r.otsikko, r.raporttipvm, a.nimi AS asiakas_nimi
              FROM raportit r
              INNER JOIN asiakkaat a ON a.id = r.asiakas_id AND a.laatijat_id = r.laatijat_id
-             WHERE r.laatijat_id = ?
+             ' . $reportWhere . '
              ORDER BY r.raporttipvm DESC, r.id DESC
              LIMIT 5'
         );
-        $reportQuery->bind_param('i', $laatijatId);
+        if ($projectId > 0) {
+            $reportQuery->bind_param('ii', $laatijatId, $projectId);
+        } else {
+            $reportQuery->bind_param('i', $laatijatId);
+        }
     }
 
     $reportQuery->execute();
@@ -143,7 +167,9 @@ function formatReportDate(string $date): string
 
 function reportPageUrl(int $page): string
 {
-    return 'raportit.php?kaikki=1&sivu=' . max(1, $page);
+    global $projectId;
+    $url = 'raportit.php?kaikki=1&sivu=' . max(1, $page);
+    return $projectId > 0 ? $url . '&projekti_id=' . $projectId : $url;
 }
 
 openLayoutShell('Raportit – TEKRAPORTTI');
@@ -163,6 +189,14 @@ openLayoutShell('Raportit – TEKRAPORTTI');
         <?php endif; ?>
     </div>
 </div>
+
+<form method="get" action="raportit.php" class="card border-0 shadow-sm mb-4 p-3">
+    <div class="row g-2 align-items-end">
+        <div class="col-md-6"><label class="form-label mb-1" for="projekti_id">Suodata projektin mukaan</label><select class="form-select" id="projekti_id" name="projekti_id"><option value="0">Kaikki projektit</option><?php foreach ($projects as $project): ?><option value="<?= (int) $project['id'] ?>" <?= $projectId === (int) $project['id'] ? 'selected' : '' ?>><?= htmlspecialchars($project['nimi'], ENT_QUOTES, 'UTF-8') ?></option><?php endforeach; ?></select></div>
+        <?php if ($showAll): ?><input type="hidden" name="kaikki" value="1"><?php endif; ?>
+        <div class="col-md-auto"><button class="btn btn-outline-primary">Suodata</button></div>
+    </div>
+</form>
 
 <?php if ($loadError): ?>
     <div class="alert alert-danger" role="alert">
