@@ -11,6 +11,7 @@ function openLayoutShell(string $pageTitle = 'TEKRAPORTTI'): void
     global $layoutHasSidebar;
 
     startApplicationSession();
+    ob_start();
     $safePageTitle = htmlspecialchars($pageTitle, ENT_QUOTES, 'UTF-8');
     $laatija = getCurrentLaatija();
     $csrfToken = getApplicationCsrfToken();
@@ -172,6 +173,9 @@ function closeLayoutShell(): void
         . 'integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI" '
         . "crossorigin=\"anonymous\"></script>\n";
     echo '</body></html>';
+
+    $html = ob_get_clean();
+    echo str_replace('<?', '&lt;?', $html);
 }
 
 /**
