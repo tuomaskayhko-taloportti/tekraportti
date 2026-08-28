@@ -158,19 +158,65 @@ foreach ($rows as $index => $row) {
     $pdf->SetFont('Helvetica', '', 11);
     $content = trim((string) $row['sisalto']);
     $pdf->MultiCell(0, 6, pdfText($content !== '' ? $content : 'Ei tekstisisältöä.'), 0, 'L');
-    foreach ($mediaByRow[(int) $row['id']] ?? [] as $item) {
-        $pdf->Ln(6);
+    $mediaItems = $mediaByRow[(int) $row['id']] ?? [];
+    $mediaCount = count($mediaItems);
+    for ($mediaIndex = 0; $mediaIndex < $mediaCount; $mediaIndex++) {
+        $item = $mediaItems[$mediaIndex];
         $imagePath = $item['tyyppi'] === 'kuva' ? localImagePath((string) $item['url']) : null;
-        if ($imagePath && in_array(strtolower(pathinfo($imagePath, PATHINFO_EXTENSION)), ['jpg', 'jpeg', 'png', 'gif'], true)) {
-            $pdf->Image($imagePath, 20, $pdf->GetY(), 120);
-            $pdf->Ln(85);
+        $isImage = $imagePath && in_array(strtolower(pathinfo($imagePath, PATHINFO_EXTENSION)), ['jpg', 'jpeg', 'png', 'gif'], true);
+        if ($isImage) {
+            $imageItems = [$item];
+            if ($mediaIndex + 1 < $mediaCount) {
+                $nextItem = $mediaItems[$mediaIndex + 1];
+                $nextImagePath = $nextItem['tyyppi'] === 'kuva' ? localImagePath((string) $nextItem['url']) : null;
+                if ($nextImagePath && in_array(strtolower(pathinfo($nextImagePath, PATHINFO_EXTENSION)), ['jpg', 'jpeg', 'png', 'gif'], true)) {
+                    $imageItems[] = $nextItem;
+                    $mediaIndex++;
+                }
+            }
+
+            $columnWidth = 82.5;
+            $columnGap = 5;
+            $rowY = $pdf->GetY() + 6;
+            $rowHeight = 0;
+            $imagePaths = [$imagePath];
+            if (count($imageItems) === 2) {
+                $imagePaths[] = $nextImagePath;
+            }
+            foreach ($imageItems as $imageItemIndex => $imageItem) {
+                $currentImagePath = $imagePaths[$imageItemIndex];
+                $currentImageSize = @getimagesize($currentImagePath);
+                if (!$currentImageSize || $currentImageSize[0] < 1) {
+                    continue;
+                }
+                $currentImageHeight = $columnWidth * $currentImageSize[1] / $currentImageSize[0];
+                $imageX = 20 + $imageItemIndex * ($columnWidth + $columnGap);
+                $pdf->Image($currentImagePath, $imageX, $rowY, $columnWidth, $currentImageHeight);
+                $rowHeight = max($rowHeight, $currentImageHeight);
+            }
+
+            $captionY = $rowY + $rowHeight + 2;
+            $captionHeight = 0;
+            foreach ($imageItems as $imageItemIndex => $imageItem) {
+                if (!$imageItem['kuvateksti']) {
+                    continue;
+                }
+                $imageX = 20 + $imageItemIndex * ($columnWidth + $columnGap);
+                $pdf->SetXY($imageX, $captionY);
+                $pdf->SetFont('Helvetica', 'I', 9);
+                $captionStartY = $pdf->GetY();
+                $pdf->MultiCell($columnWidth, 5, pdfText($imageItem['kuvateksti']), 0, 'L');
+                $captionHeight = max($captionHeight, $pdf->GetY() - $captionStartY);
+            }
+            $pdf->SetXY(20, max($captionY + $captionHeight, $rowY + $rowHeight) + 6);
         } else {
+            $pdf->Ln(6);
             $pdf->SetFont('Helvetica', 'I', 10);
             $pdf->MultiCell(0, 6, pdfText(ucfirst($item['tyyppi']) . ': ' . $item['url']), 0, 'L');
-        }
-        if ($item['kuvateksti']) {
-            $pdf->SetFont('Helvetica', 'I', 9);
-            $pdf->MultiCell(0, 5, pdfText($item['kuvateksti']), 0, 'L');
+            if ($item['kuvateksti']) {
+                $pdf->SetFont('Helvetica', 'I', 9);
+                $pdf->MultiCell(0, 5, pdfText($item['kuvateksti']), 0, 'L');
+            }
         }
     }
 }

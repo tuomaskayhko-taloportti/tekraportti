@@ -187,6 +187,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $query->close();
                 $message = 'Media poistettiin.';
                 $messageType = 'success';
+            } elseif ($action === 'update-media') {
+                $mediaId = (int) ($_POST['media_id'] ?? 0);
+                $caption = trim((string) ($_POST['kuvateksti'] ?? ''));
+                $query = $db->prepare('UPDATE raporttimedia SET kuvateksti = ? WHERE id = ? AND raportti_id = ? AND laatijat_id = ?');
+                $query->bind_param('siii', $caption, $mediaId, $raporttiId, $laatijatId);
+                $query->execute();
+                $query->close();
+                $message = 'Kuvateksti tallennettiin.';
+                $messageType = 'success';
             }
         } catch (Throwable $error) {
             $message = $error->getMessage();
@@ -256,7 +265,14 @@ openLayoutShell('Muokkaa raporttia – TEKRAPORTTI');
             <button class="btn btn-primary btn-sm">Tallenna osio</button>
         </form>
         <form method="post" action="muokkaa_raportti.php?id=<?= $raporttiId ?>" class="mt-2" onsubmit="return confirm('Poistetaanko osio?');"><input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="delete-row"><input type="hidden" name="rivi_id" value="<?= (int) $row['id'] ?>"><button class="btn btn-outline-danger btn-sm">Poista osio</button></form>
-        <?php foreach ($media as $item): ?><?php if ((int) $item['raporttirivi_id'] === (int) $row['id']): ?><div class="border-top mt-3 pt-2 small"><strong><?= editValue($item['tyyppi']) ?></strong>: <?= editValue($item['url']) ?><?php if ($item['kuvateksti']): ?> (<?= editValue($item['kuvateksti']) ?>)<?php endif; ?><form method="post" action="muokkaa_raportti.php?id=<?= $raporttiId ?>" class="d-inline" onsubmit="return confirm('Poistetaanko media?');"><input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="delete-media"><input type="hidden" name="media_id" value="<?= (int) $item['id'] ?>"> <button class="btn btn-link btn-sm text-danger">Poista</button></form></div><?php endif; ?><?php endforeach; ?>
+        <?php foreach ($media as $item): ?><?php if ((int) $item['raporttirivi_id'] === (int) $row['id']): ?><div class="border-top mt-3 pt-2 small"><strong><?= editValue($item['tyyppi']) ?></strong>: <?= editValue($item['url']) ?>
+            <form method="post" action="muokkaa_raportti.php?id=<?= $raporttiId ?>" class="row g-2 mt-1 align-items-center">
+                <input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="update-media"><input type="hidden" name="media_id" value="<?= (int) $item['id'] ?>">
+                <div class="col-md-8"><input class="form-control form-control-sm" name="kuvateksti" value="<?= editValue($item['kuvateksti']) ?>" placeholder="Kuvateksti"></div>
+                <div class="col-md-auto"><button class="btn btn-outline-primary btn-sm">Tallenna kuvateksti</button></div>
+            </form>
+            <form method="post" action="muokkaa_raportti.php?id=<?= $raporttiId ?>" class="d-inline" onsubmit="return confirm('Poistetaanko media?');"><input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="delete-media"><input type="hidden" name="media_id" value="<?= (int) $item['id'] ?>"><button class="btn btn-link btn-sm text-danger">Poista</button></form>
+        </div><?php endif; ?><?php endforeach; ?>
         <form method="post" enctype="multipart/form-data" action="muokkaa_raportti.php?id=<?= $raporttiId ?>" class="row g-2 mt-2"><input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="add-media"><input type="hidden" name="rivi_id" value="<?= (int) $row['id'] ?>"><div class="col-md-2"><select class="form-select form-select-sm" name="media_tyyppi" required><option value="kuva">Kuva</option><option value="video">Video</option><option value="videolinkki">Videolinkki</option></select></div><div class="col-md-4"><input type="file" class="form-control form-control-sm" name="media_files[]" multiple accept="image/jpeg,image/png,image/webp,video/mp4,video/webm,video/ogg"><div class="form-text">Voit valita useita tiedostoja.</div></div><div class="col-md-3"><input class="form-control form-control-sm" name="media_url" placeholder="Videolinkin HTTPS-osoite"></div><div class="col-md-2"><input class="form-control form-control-sm" name="kuvateksti" placeholder="Kuvateksti"></div><div class="col-md-1"><button class="btn btn-outline-primary btn-sm w-100">+</button></div></form>
     </div></div>
 <?php endforeach; ?>
