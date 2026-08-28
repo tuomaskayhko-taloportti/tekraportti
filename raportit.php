@@ -200,7 +200,7 @@ openLayoutShell('Raportit – TEKRAPORTTI');
                                     <a class="btn btn-outline-primary btn-sm" href="muokkaa_raportti.php?id=<?= (int) $report['id'] ?>" title="Muokkaa raporttia" aria-label="Muokkaa raporttia">
                                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M12.854.146a.5.5 0 0 1 .707 0l2.293 2.293a.5.5 0 0 1 0 .707l-9.5 9.5L3 13l.354-3.354zM2.5 13.5l-.5 2 2-.5z"/></svg>
                                     </a>
-                                    <form method="post" action="raportit.php<?= $showAll ? '?kaikki=1&sivu=' . $currentPage : '' ?>" class="d-inline" onsubmit="return confirm('Poistetaanko raportti kaikkine osioineen ja tiedostoineen?');">
+                                    <form method="post" action="raportit.php<?= $showAll ? '?kaikki=1&sivu=' . $currentPage : '' ?>" class="d-inline" onsubmit="return confirm('Haluatko todella poistaa raportin ja kaikki siihen liittyvät tiedot?');">
                                         <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8') ?>">
                                         <input type="hidden" name="action" value="delete-report">
                                         <input type="hidden" name="raportti_id" value="<?= (int) $report['id'] ?>">
