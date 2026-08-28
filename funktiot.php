@@ -51,10 +51,10 @@ function openLayoutShell(string $pageTitle = 'TEKRAPORTTI'): void
         .tekra-user-menu:hover, .tekra-user-menu:focus { color: #fff; }
         .tekra-avatar { width: 46px; height: 46px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; background: #f1f4f8; color: #55708f; font-weight: 600; }
         .tekra-sidebar { width: var(--tekra-sidebar-width); background: #fff !important; border-right-color: #e2e8f1 !important; }
-        .tekra-sidebar .nav-link { display: block; color: #52627a; text-decoration: none; border-radius: 8px; margin: .35rem .7rem; padding: 14px 18px; font-size: 1.05rem; }
+        .tekra-sidebar .nav-link { display: block !important; width: auto; color: #52627a; text-decoration: none !important; border-radius: 8px; margin: .35rem .7rem; padding: 14px 18px; font-size: 1.05rem; }
         .tekra-sidebar .nav-link:hover { background-color: #edf4ff; color: var(--tekra-blue); }
         .tekra-sidebar .nav-link.active { background-color: #e9f1ff; color: var(--tekra-blue); font-weight: 600; }
-        .tekra-sidebar nav, .tekra-sidebar .submenu { display: block; border-left: 0; margin-left: 0; padding-left: 0; }
+        .tekra-sidebar nav, .tekra-sidebar .submenu { display: block !important; border-left: 0; margin-left: 0; padding-left: 0; }
         .tekra-sidebar .submenu .nav-link { font-size: .98rem; padding-top: 9px; padding-bottom: 9px; margin-top: 0; }
         .tekra-sidebar-title { padding: 30px 28px 18px; font-size: 1.05rem; font-weight: 600; }
         .tekra-main { min-width: 0; }
@@ -72,15 +72,16 @@ function openLayoutShell(string $pageTitle = 'TEKRAPORTTI'): void
             .tekra-topbar .container-fluid { min-height: 72px; }
             .tekra-topbar { min-height: 72px; }
             .tekra-main > main { padding: 28px 16px !important; }
+            .tekra-sidebar { display: none !important; position: absolute; z-index: 1050; top: 72px; left: 0; height: calc(100vh - 72px); box-shadow: 4px 0 14px rgba(26, 52, 86, .12); }
+            .tekra-sidebar.is-open { display: block !important; }
         }
     </style>
 </head>
 <body>
     <nav class="navbar navbar-dark tekra-topbar" aria-label="Päänavigaatio">
         <div class="container-fluid">
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse"
-                    data-bs-target="#paavalikko" aria-controls="paavalikko"
-                    aria-expanded="false" aria-label="Avaa sivupalkki">
+            <button class="navbar-toggler" type="button" data-menu-toggle
+                    aria-controls="paavalikko" aria-expanded="false" aria-label="Avaa sivupalkki">
                 <span class="navbar-toggler-icon"></span>
             </button>
             <a class="navbar-brand tekra-brand ms-2 me-4" href="#">TEKRAPORTTI <small>RAPORTOINTI</small></a>
@@ -134,7 +135,7 @@ HTML;
     if ($layoutHasSidebar) {
         echo <<<HTML
     <div class="d-flex align-items-stretch">
-        <aside class="collapse bg-white border-end tekra-sidebar" tabindex="-1"
+        <aside class="bg-white border-end tekra-sidebar" tabindex="-1"
                id="paavalikko" aria-label="Sivupalkin valikko">
             <h2 class="tekra-sidebar-title mb-0">Valikko</h2>
             <div class="p-2 p-lg-3">
@@ -175,6 +176,7 @@ function closeLayoutShell(): void
 
     $html = ob_get_clean();
     echo str_replace('<?', '&lt;?', $html);
+    echo '<script>document.querySelectorAll("[data-menu-toggle]").forEach(function(button){button.addEventListener("click",function(){var menu=document.getElementById(button.getAttribute("aria-controls"));var open=menu.classList.toggle("is-open");button.setAttribute("aria-expanded",open?"true":"false");});});</script>';
 }
 
 /**
