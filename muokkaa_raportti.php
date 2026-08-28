@@ -135,6 +135,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $query->execute();
                 $mediaFiles = $query->get_result()->fetch_all(MYSQLI_ASSOC);
                 $query->close();
+                $query = $db->prepare('DELETE FROM raporttimedia WHERE raporttirivi_id = ? AND raportti_id = ? AND laatijat_id = ?');
+                $query->bind_param('iii', $rowId, $raporttiId, $laatijatId);
+                $query->execute();
+                $query->close();
                 $query = $db->prepare('DELETE FROM raporttirivit WHERE id = ? AND raportti_id = ? AND laatijat_id = ?');
                 $query->bind_param('iii', $rowId, $raporttiId, $laatijatId);
                 $query->execute();
