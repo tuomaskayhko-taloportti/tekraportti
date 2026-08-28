@@ -142,6 +142,13 @@ function cropPdfImage(string $path, float $targetAspect, array &$temporaryImages
 
 class TekraPdf extends FPDF
 {
+    public function ensureSpace(float $height): void
+    {
+        if ($this->GetY() + $height > $this->PageBreakTrigger) {
+            $this->AddPage();
+        }
+    }
+
     public function Header(): void
     {
         $this->SetFont('Helvetica', 'B', 9);
@@ -253,6 +260,7 @@ foreach ($rows as $index => $row) {
 
             $columnWidth = $sectionImageWidth;
             $columnGap = 5;
+            $pdf->ensureSpace(6 + $sectionImageHeight + 2 + 5);
             $rowY = $pdf->GetY() + 6;
             $imagePaths = [$imagePath];
             if (count($imageItems) === 2) {
