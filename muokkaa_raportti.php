@@ -149,7 +149,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $type = (string) ($_POST['media_tyyppi'] ?? '');
                 $url = trim((string) ($_POST['media_url'] ?? ''));
                 $caption = trim((string) ($_POST['kuvateksti'] ?? ''));
-                if (!in_array($type, ['kuva', 'video', 'videolinkki'], true) || $rowId < 1) {
+                if (!in_array($type, ['kuva', 'videolinkki'], true) || $rowId < 1) {
                     throw new RuntimeException('Valitse mediatyyppi ja osio.');
                 }
                 if ($type === 'videolinkki') {
@@ -158,7 +158,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 } else {
                     if (!isset($_FILES['media_files']['name']) || !is_array($_FILES['media_files']['name'])) {
-                        throw new RuntimeException('Valitse ladattava kuva tai video.');
+                        throw new RuntimeException('Valitse ladattava kuva.');
                     }
                 }
                 $query = $db->prepare('SELECT id FROM raporttirivit WHERE id = ? AND raportti_id = ? AND laatijat_id = ? LIMIT 1');
@@ -320,7 +320,7 @@ openLayoutShell('Muokkaa raporttia – TEKRAPORTTI');
             </form>
             <form method="post" action="muokkaa_raportti.php?id=<?= $raporttiId ?>" class="d-inline" onsubmit="return confirm('Poistetaanko media?');"><input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="delete-media"><input type="hidden" name="media_id" value="<?= (int) $item['id'] ?>"><button class="btn btn-link btn-sm text-danger">Poista</button></form>
         </div><?php endif; ?><?php endforeach; ?>
-        <form method="post" enctype="multipart/form-data" action="muokkaa_raportti.php?id=<?= $raporttiId ?>" class="row g-2 mt-2"><input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="add-media"><input type="hidden" name="rivi_id" value="<?= (int) $row['id'] ?>"><div class="col-md-2"><select class="form-select form-select-sm" name="media_tyyppi" required><option value="kuva">Kuva</option><option value="video">Video</option><option value="videolinkki">Videolinkki</option></select></div><div class="col-md-4"><div class="file-drop-zone" data-file-drop><input type="file" class="form-control form-control-sm" name="media_files[]" multiple accept="image/jpeg,image/png,image/webp,video/mp4,video/webm,video/ogg"><div class="file-drop-zone-hint">Raahaa kuvat tai videot tähän tai valitse tiedostot.</div></div><div class="form-text">Voit valita useita tiedostoja.</div></div><div class="col-md-3"><input class="form-control form-control-sm" name="media_url" placeholder="Videolinkin HTTPS-osoite"></div><div class="col-md-2"><input class="form-control form-control-sm" name="kuvateksti" placeholder="Kuvateksti"></div><div class="col-md-1"><button class="btn btn-outline-primary btn-sm w-100">+</button></div></form>
+        <form method="post" enctype="multipart/form-data" action="muokkaa_raportti.php?id=<?= $raporttiId ?>" class="row g-2 mt-2"><input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="add-media"><input type="hidden" name="rivi_id" value="<?= (int) $row['id'] ?>"><div class="col-md-2"><select class="form-select form-select-sm" name="media_tyyppi" required><option value="kuva">Kuva</option><option value="videolinkki">Videolinkki</option></select></div><div class="col-md-4"><div class="file-drop-zone" data-file-drop><input type="file" class="form-control form-control-sm" name="media_files[]" multiple accept="image/jpeg,image/png,image/webp"><div class="file-drop-zone-hint">Raahaa kuvat tähän tai valitse tiedostot.</div></div><div class="form-text">Voit valita useita kuvia.</div></div><div class="col-md-3"><input class="form-control form-control-sm" name="media_url" placeholder="Videolinkin HTTPS-osoite"></div><div class="col-md-2"><input class="form-control form-control-sm" name="kuvateksti" placeholder="Kuvateksti"></div><div class="col-md-1"><button class="btn btn-outline-primary btn-sm w-100">+</button></div></form>
     </div></div>
 <?php endforeach; ?>
 

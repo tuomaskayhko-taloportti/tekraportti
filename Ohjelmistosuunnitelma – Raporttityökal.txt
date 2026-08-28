@@ -296,21 +296,9 @@ PDF:ään käytetään optimoitua versiota, jotta esimerkiksi puhelimella otettu
 
 ---
 
-# 12. Videot
+# 12. Videolinkit
 
-Video voidaan liittää kahdella tavalla.
-
-## Vaihtoehto A: tiedoston lataaminen
-
-Videotiedosto ladataan palvelimelle.
-
-Yksittäisen videotiedoston enimmäiskoko:
-
-**10 MB**
-
-Tietokantaan tallennetaan tiedoston viite, ei videotiedostoa itseään.
-
-## Vaihtoehto B: linkki
+Raportille lisätään video ainoastaan HTTPS-videolinkkinä. Videotiedostoja ei ladata palvelimelle.
 
 Laatija syöttää videon URL-osoitteen.
 
@@ -1052,8 +1040,7 @@ Ensimmäiseen tuotantoversioon toteutetaan:
 7. raporttiosiot
 8. osioiden järjestäminen
 9. kuvien lisääminen
-10. videotiedostot
-11. videolinkit
+10. videolinkit
 12. kansilehti
 13. automaattinen sisällysluettelo
 14. raportin loppuosa
