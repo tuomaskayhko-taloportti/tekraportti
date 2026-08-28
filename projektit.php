@@ -70,7 +70,7 @@ try {
             } elseif (mb_strlen($form['nimi']) > 200) {
                 $message = 'Projektin nimi on liian pitkä.';
             } else {
-                $values = array_map(static fn (string $value): ?string => $value !== '' ? $value : null, $form);
+                $values = array_values(array_map(static fn (string $value): ?string => $value !== '' ? $value : null, $form));
                 if ($editId > 0) {
                     $query = $db->prepare('UPDATE projektit SET nimi = ?, kuvaus = ?, alkupvm = ?, loppupvm = ? WHERE id = ? AND laatijat_id = ?');
                     $query->bind_param('ssssii', $values[0], $values[1], $values[2], $values[3], $editId, $laatijatId);
