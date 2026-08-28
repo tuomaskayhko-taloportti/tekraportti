@@ -183,6 +183,7 @@ foreach ($rows as $index => $row) {
             if (count($imageItems) === 2) {
                 $imagePaths[] = $nextImagePath;
             }
+            $imageHeights = [];
             foreach ($imageItems as $imageItemIndex => $imageItem) {
                 $currentImagePath = $imagePaths[$imageItemIndex];
                 $currentImageSize = @getimagesize($currentImagePath);
@@ -190,9 +191,13 @@ foreach ($rows as $index => $row) {
                     continue;
                 }
                 $currentImageHeight = $columnWidth * $currentImageSize[1] / $currentImageSize[0];
-                $imageX = 20 + $imageItemIndex * ($columnWidth + $columnGap);
-                $pdf->Image($currentImagePath, $imageX, $rowY, $columnWidth, $currentImageHeight);
+                $imageHeights[$imageItemIndex] = $currentImageHeight;
                 $rowHeight = max($rowHeight, $currentImageHeight);
+            }
+            foreach ($imageHeights as $imageItemIndex => $currentImageHeight) {
+                $imageX = 20 + $imageItemIndex * ($columnWidth + $columnGap);
+                $imageY = $rowY + $rowHeight - $currentImageHeight;
+                $pdf->Image($imagePaths[$imageItemIndex], $imageX, $imageY, $columnWidth, $currentImageHeight);
             }
 
             $captionY = $rowY + $rowHeight + 2;
