@@ -108,8 +108,14 @@ $coverPath = localImagePath((string) ($report['kansikuva'] ?? ''));
 if ($coverPath && in_array(strtolower(pathinfo($coverPath, PATHINFO_EXTENSION)), ['jpg', 'jpeg', 'png', 'gif'], true)) {
     $imageSize = @getimagesize($coverPath);
     if ($imageSize) {
-        $imageWidth = 170;
-        $imageHeight = min(80, $imageWidth * $imageSize[1] / $imageSize[0]);
+        $maxImageWidth = 170;
+        $maxImageHeight = 80;
+        $scale = min(
+            $maxImageWidth / $imageSize[0],
+            $maxImageHeight / $imageSize[1]
+        );
+        $imageWidth = $imageSize[0] * $scale;
+        $imageHeight = $imageSize[1] * $scale;
         $pdf->Image($coverPath, 20, $pdf->GetY(), $imageWidth, $imageHeight);
         $pdf->Ln($imageHeight + 15);
     }
