@@ -237,7 +237,8 @@ foreach ($rows as $index => $row) {
     $dots = $dotWidth > 0 ? str_repeat('.', (int) floor($dotsWidth / $dotWidth)) : '';
     $pdf->Cell($titleWidth + $spaceWidth, 8, $titleText . ' ', 0, 0, 'L');
     $pdf->Cell($dotsWidth, 8, $dots, 0, 0, 'L');
-    $pdf->Cell($pageNumberWidth + $spaceWidth, 8, ' ' . $pageNumberText, 0, 1, 'R');
+    $pdf->Cell($spaceWidth, 8, '', 0, 0, 'L');
+    $pdf->Cell($pageNumberWidth, 8, $pageNumberText, 0, 1, 'R');
 }
 if (!$rows) {
     $pdf->Cell(0, 8, pdfText('Ei vielä lisättyjä osioita.'), 0, 1);
