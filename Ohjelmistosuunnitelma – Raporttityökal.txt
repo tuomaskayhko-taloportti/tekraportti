@@ -1,0 +1,1153 @@
+# Ohjelmistosuunnitelma – Raporttityökalu
+
+## 1. Ohjelmiston tarkoitus
+
+Raporttityökalu on LAMP-palvelimella toimiva selainpohjainen järjestelmä, jolla käyttäjä eli **laatija** voi laatia, tallentaa, muokata, järjestellä ja poistaa asiakas- ja projektikohtaisia raportteja.
+
+Raportit muodostetaan tietokantaan tallennetusta sisällöstä ja ne voidaan ladata valmiina PDF-tiedostoina.
+
+Järjestelmän pääasialliset kokonaisuudet ovat:
+
+* laatijoiden käyttäjähallinta
+* sähköpostikoodiin perustuva kirjautuminen
+* asiakkaiden hallinta
+* projektien hallinta
+* raporttien hallinta
+* raportin sisältöosioiden hallinta
+* kuvien ja videoiden liittäminen
+* raportin PDF-generointi
+* raporttien asiakas- ja projektikohtainen järjestäminen
+
+---
+
+# 2. Tekninen ympäristö
+
+## 2.1 Palvelinympäristö
+
+Ohjelmisto toteutetaan LAMP-ympäristöön:
+
+* Linux, ensisijaisesti Ubuntu Server 24.04 LTS
+* Apache 2.4
+* MariaDB
+* PHP 8.3
+* HTML5
+* CSS
+* JavaScript
+* Bootstrap käyttöliittymän pohjana
+
+Tietokantayhteydet toteutetaan `mysqli`- tai PDO-rajapinnalla käyttäen aina parametrisoituja SQL-kyselyitä.
+
+UTF-8-merkistönä käytetään kautta järjestelmän `utf8mb4`.
+
+---
+
+# 3. Käyttäjä eli laatija
+
+Järjestelmän käyttäjää kutsutaan laatijaksi.
+
+Jokaisella laatijalla on yksilöllinen:
+
+`laatijat_id`
+
+Kaikki laatijan omistama tieto sidotaan tähän tunnisteeseen.
+
+Laatija näkee ja käsittelee vain niitä asiakkaita, projekteja, raportteja, raporttirivejä ja mediatiedostoja, joiden `laatijat_id` vastaa kirjautuneen käyttäjän tunnistetta.
+
+## 3.1 Laatijan tiedot
+
+Pakolliset tiedot:
+
+* nimi
+* sähköpostiosoite
+* puhelinnumero
+
+Valinnaiset tiedot:
+
+* yrityksen nimi
+* Y-tunnus
+* osoite
+* postinumero
+* postitoimipaikka
+
+Näitä tietoja voidaan käyttää automaattisesti raportin lopussa sekä tarvittaessa kansilehdellä.
+
+---
+
+# 4. Kirjautuminen
+
+Järjestelmässä ei käytetä varsinaista käyttäjän salasanaa.
+
+## 4.1 Kirjautumisprosessi
+
+1. Käyttäjä syöttää sähköpostiosoitteensa.
+2. Järjestelmä tarkistaa, että sähköpostiosoite löytyy `laatijat`-taulusta.
+3. Järjestelmä generoi kertakäyttöisen kuusinumeroisen kirjautumiskoodin.
+4. Koodi lähetetään käyttäjän sähköpostiosoitteeseen.
+5. Käyttäjä syöttää koodin kirjautumissivulle.
+6. Oikea koodi kirjauttaa käyttäjän järjestelmään.
+7. Koodi lakkaa toimimasta välittömästi onnistuneen kirjautumisen jälkeen.
+
+Koodi on voimassa:
+
+**10 minuuttia.**
+
+## 4.2 Kirjautumiskoodin tallentaminen
+
+Kirjautumiskoodia ei tallenneta tietokantaan selväkielisenä.
+
+Tietokantaan tallennetaan esimerkiksi:
+
+* laatijat_id
+* koodin hash
+* voimassaolon päättymisaika
+* luontiaika
+* käytetty-tila
+* epäonnistuneiden yritysten määrä
+
+Koodille asetetaan esimerkiksi enintään viisi syöttöyritystä.
+
+Uuden kirjautumiskoodin pyytämistä rajoitetaan väärinkäytösten ehkäisemiseksi.
+
+Onnistuneen kirjautumisen jälkeen PHP-session sisältöön tallennetaan vähintään:
+
+`laatijat_id`
+
+Session tunniste uusitaan kirjautumisen yhteydessä session fixation -hyökkäysten estämiseksi.
+
+---
+
+# 5. Asiakkaat
+
+Laatija voi perustaa järjestelmään asiakkaita.
+
+Asiakas voi olla:
+
+* henkilöasiakas
+* yritys
+* asunto-osakeyhtiö
+* yhdistys
+* muu organisaatio
+
+Asiakkaan vähimmäistieto on nimi.
+
+Asiakas kuuluu aina yhdelle laatijalle.
+
+---
+
+# 6. Projektit
+
+Laatija voi perustaa projekteja raporttien ryhmittelyä varten.
+
+Projekti ei ole sidottu vain yhteen asiakkaaseen.
+
+Samaan projektiin voidaan liittää raportteja useilta eri asiakkailta.
+
+Esimerkki:
+
+**Projekti: Julkisivukorjaus 2026**
+
+Projektissa voisi olla raportteja esimerkiksi:
+
+* Asunto Oy A
+* Rakennusliike B Oy
+* valvontayritys C Oy
+
+Projektin ja asiakkaan välinen yhteys syntyy raportin kautta.
+
+Raportilla on:
+
+* `asiakas_id`
+* `projekti_id`
+
+`projekti_id` voi olla tyhjä, jos raporttia ei liitetä projektiin.
+
+---
+
+# 7. Raportin rakenne
+
+Valmis raportti muodostuu seuraavassa järjestyksessä.
+
+## 7.1 Kansilehti
+
+Kansilehdellä näytetään:
+
+* kansikuva
+* raportin otsikko
+* päivämäärä
+* asiakkaan nimi tai asiakasyrityksen nimi
+* laatijan nimi
+* laatijayrityksen nimi, jos se on määritelty
+
+Laatija voi valita raportille kansikuvan.
+
+Kansikuva voi olla esimerkiksi:
+
+* kohdekuva
+* logo
+* tarkastuskuva
+* muu raporttiin liittyvä kuva
+
+---
+
+# 8. Tiivistelmä
+
+Kansilehden jälkeinen ensimmäinen sisältösivu on:
+
+**Tiivistelmä**
+
+Tiivistelmä on raporttikohtainen tekstikenttä.
+
+Laatija voi kirjoittaa siihen esimerkiksi:
+
+* raportin tarkoituksen
+* olennaiset havainnot
+* johtopäätökset
+* keskeiset suositukset
+
+---
+
+# 9. Sisällysluettelo
+
+Tiivistelmän jälkeen muodostetaan automaattinen sisällysluettelo.
+
+Sisällysluettelo muodostetaan raportin osioista.
+
+Esimerkiksi:
+
+1. Lähtötiedot
+2. Tarkastuksen suorittaminen
+3. Havainnot
+4. Rakenteet
+5. Johtopäätökset
+6. Toimenpidesuositukset
+
+PDF-generoinnin yhteydessä sisällysluetteloon voidaan muodostaa myös sivunumerot.
+
+---
+
+# 10. Raportin sisältö
+
+Raportti koostuu yhdestä tai useammasta osiosta.
+
+Tietokannassa osioita vastaa:
+
+`raporttirivi`
+
+Raporttirivillä on esimerkiksi:
+
+* otsikko
+* tekstisisältö
+* järjestysnumero
+* mahdolliset mediaelementit
+
+Raporttirivien järjestystä voidaan muuttaa käyttöliittymässä esimerkiksi drag-and-drop-toiminnolla.
+
+Esimerkki:
+
+### 1. Lähtötiedot
+
+Tekstisisältö...
+
+### 2. Tarkastus
+
+Tekstisisältö...
+
+### 3. Havainnot
+
+Tekstisisältö...
+
+Raportin varsinaiselle sisällölle ei aseteta kiinteää osioiden määrää.
+
+---
+
+# 11. Media
+
+Raportin osion loppuun voidaan liittää mediaelementtejä.
+
+Media voi olla:
+
+* kuva
+* palvelimelle ladattu video
+* ulkopuoliseen videoon osoittava linkki
+
+Media liittyy aina tiettyyn raporttiriviin.
+
+Yhdelle raporttiriville voidaan liittää useita mediatiedostoja.
+
+## 11.1 Kuvat
+
+Tuettuja kuvaformaatteja esimerkiksi:
+
+* JPEG
+* PNG
+* WebP
+
+Yksittäisen kuvan enimmäiskoko:
+
+**10 MB**
+
+Kuvasta voidaan tallentaa:
+
+* alkuperäinen tiedosto
+* optimoitu raporttikuva
+* thumbnail-kuva
+
+PDF:ään käytetään optimoitua versiota, jotta esimerkiksi puhelimella otettu 8 MB kuva ei paisuta raporttia järjettömän suureksi.
+
+---
+
+# 12. Videot
+
+Video voidaan liittää kahdella tavalla.
+
+## Vaihtoehto A: tiedoston lataaminen
+
+Videotiedosto ladataan palvelimelle.
+
+Yksittäisen videotiedoston enimmäiskoko:
+
+**10 MB**
+
+Tietokantaan tallennetaan tiedoston viite, ei videotiedostoa itseään.
+
+## Vaihtoehto B: linkki
+
+Laatija syöttää videon URL-osoitteen.
+
+Esimerkiksi:
+
+* YouTube
+* Vimeo
+* SharePoint
+* OneDrive
+* muu HTTPS-osoite
+
+Videota ei tällöin tallenneta raporttipalvelimelle.
+
+PDF-versiossa video esitetään esimerkiksi:
+
+**Video: Avaa video**
+
+joka toimii klikattavana hyperlinkkinä.
+
+Haluttaessa linkistä voidaan myöhemmin muodostaa myös QR-koodi.
+
+---
+
+# 13. Raportin lopetus
+
+Varsinaisten raporttiosioiden jälkeen näytetään raportin allekirjoitustyyppinen loppuosa.
+
+Esimerkiksi:
+
+Helsinki 28.8.2026
+
+Helsingin Kiinteistömanagerit Oy
+Tuomas Käyhkö
+
+Jos laatijalla ei ole yritystä:
+
+Helsinki 28.8.2026
+
+Tuomas Käyhkö
+
+Raportille voidaan tallentaa erillinen laatimispaikka.
+
+Jos paikkaa ei määritellä raportissa, voidaan käyttää laatijan oletusarvoa.
+
+---
+
+# 14. PDF-generointi
+
+Raportti voidaan muodostaa PDF-tiedostoksi.
+
+PDF generoidaan raportin tietokantasisällöstä.
+
+PDF sisältää:
+
+1. kansilehden
+2. tiivistelmän
+3. sisällysluettelon
+4. raportin osiot
+5. kuvat
+6. videolinkit
+7. lopputiedot
+
+PDF:n sivuille voidaan kansilehteä lukuun ottamatta lisätä:
+
+* sivunumero
+* raportin nimi
+* asiakkaan nimi
+* laatijan yrityksen nimi tai nimi
+* raportin päivämäärä
+
+PDF:ää ei ole välttämätöntä tallentaa pysyvästi palvelimelle.
+
+Se voidaan generoida tarvittaessa tietokannassa olevasta raportista.
+
+Tämä vähentää riskiä siitä, että muokatun raportin tietokantaversio ja vanha PDF-versio eroavat toisistaan.
+
+---
+
+# 15. Raporttien hallinta
+
+Laatijan etusivulla näytetään hänen raporttinsa.
+
+Raportteja voidaan:
+
+* hakea
+* avata
+* muokata
+* kopioida
+* ladata PDF:nä
+* poistaa
+
+Raportteja voidaan suodattaa:
+
+* asiakkaan mukaan
+* projektin mukaan
+* päivämäärän mukaan
+* raportin tilan mukaan
+
+Raportit voidaan järjestää esimerkiksi:
+
+* uusin ensin
+* vanhin ensin
+* asiakkaan mukaan
+* projektin mukaan
+* raportin nimen mukaan
+
+---
+
+# 16. Raportin tilat
+
+Raportille kannattaa määritellä tila.
+
+Esimerkiksi:
+
+* luonnos
+* valmis
+* arkistoitu
+
+Luonnosta voidaan vapaasti muokata.
+
+Valmis raportti voidaan edelleen avata muokattavaksi, mutta järjestelmä voi varoittaa, että raportti on jo merkitty valmiiksi.
+
+---
+
+# 17. Tietokantarakenne
+
+## 17.1 laatijat
+
+```text
+laatijat
+--------
+id
+nimi
+sahkoposti
+puhelin
+yritys
+ytunnus
+osoite
+postinro
+postitmp
+created_at
+updated_at
+```
+
+Pakolliset:
+
+* nimi
+* sahkoposti
+* puhelin
+
+Sähköpostille UNIQUE-indeksi.
+
+---
+
+# 18. asiakkaat
+
+```text
+asiakkaat
+---------
+id
+laatijat_id
+nimi
+yritys
+ytunnus
+sahkoposti
+puhelin
+osoite
+postinro
+postitmp
+created_at
+updated_at
+```
+
+Pakolliset:
+
+* id
+* laatijat_id
+* nimi
+
+Indeksi:
+
+```text
+laatijat_id
+```
+
+---
+
+# 19. projektit
+
+```text
+projektit
+---------
+id
+laatijat_id
+nimi
+kuvaus
+alkupvm
+loppupvm
+created_at
+updated_at
+```
+
+Pakolliset:
+
+* id
+* laatijat_id
+* nimi
+
+---
+
+# 20. raportit
+
+```text
+raportit
+--------
+id
+laatijat_id
+asiakas_id
+projekti_id
+otsikko
+raporttipvm
+laatimispaikka
+tiivistelma
+kansikuva
+tila
+created_at
+updated_at
+```
+
+`projekti_id` saa olla NULL.
+
+Pakolliset:
+
+* id
+* laatijat_id
+* asiakas_id
+* otsikko
+* raporttipvm
+
+Indeksit:
+
+```text
+laatijat_id
+asiakas_id
+projekti_id
+raporttipvm
+```
+
+---
+
+# 21. raporttirivit
+
+```text
+raporttirivit
+-------------
+id
+laatijat_id
+raportti_id
+otsikko
+sisalto
+jarjestys
+created_at
+updated_at
+```
+
+Pakolliset:
+
+* id
+* laatijat_id
+* raportti_id
+* otsikko
+* jarjestys
+
+Indeksi:
+
+```text
+raportti_id, jarjestys
+```
+
+---
+
+# 22. Media-taulu
+
+Vaikka alkuperäisessä tietokantasuunnitelmassa on viisi päätaulua, media kannattaa tallentaa omaan tauluunsa.
+
+```text
+raporttimedia
+-------------
+id
+laatijat_id
+raportti_id
+raporttirivi_id
+tyyppi
+tiedosto
+alkuperainen_nimi
+mime_type
+tiedostokoko
+url
+kuvateksti
+jarjestys
+created_at
+```
+
+`tyyppi` voisi olla esimerkiksi:
+
+```text
+kuva
+video
+videolinkki
+```
+
+Tiedostoa käytettäessä `tiedosto` sisältää palvelimella olevan tiedoston tunnisteen tai polun.
+
+Linkkiä käytettäessä käytetään `url`-kenttää.
+
+Tämä rakenne mahdollistaa useita kuvia ja videoita samalla raporttirivillä ilman tietokannan venyttämistä omituiseksi sarakeviidakoksi.
+
+---
+
+# 23. Kirjautumiskoodit
+
+Kirjautumisjärjestelmälle oma taulu:
+
+```text
+kirjautumiskoodit
+-----------------
+id
+laatijat_id
+code_hash
+expires_at
+used_at
+yritykset
+created_at
+```
+
+Vanhentuneet kirjautumiskoodit voidaan poistaa automaattisesti esimerkiksi cron-ajolla.
+
+---
+
+# 24. Tietokannan relaatiot
+
+Päärakenne:
+
+```text
+laatijat
+   |
+   +-- asiakkaat
+   |
+   +-- projektit
+   |
+   +-- raportit
+          |
+          +-- raporttirivit
+                 |
+                 +-- raporttimedia
+```
+
+Lisäksi:
+
+```text
+asiakkaat
+    |
+    +-- raportit
+
+projektit
+    |
+    +-- raportit
+```
+
+Raportti toimii siten asiakkaan ja projektin yhdistävänä tietona.
+
+---
+
+# 25. laatijat_id:n käyttäminen
+
+`laatijat_id` tallennetaan kaikkiin käyttäjän omistamiin tietueisiin:
+
+* asiakkaat
+* projektit
+* raportit
+* raporttirivit
+* raporttimedia
+
+Tätä käytetään sekä tietojen omistajuuteen että käyttöoikeuksien tarkistamiseen.
+
+Pelkkään selainpyynnössä tulevaan `raportti_id`:hen ei koskaan luoteta.
+
+Esimerkiksi raporttia haettaessa kysely tehdään periaatteella:
+
+```sql
+SELECT *
+FROM raportit
+WHERE id = ?
+AND laatijat_id = ?
+```
+
+Vastaava tarkistus tehdään kaikissa:
+
+* katseluissa
+* muokkauksissa
+* poistoissa
+* PDF-generoinnissa
+* tiedostolatauksissa
+
+Näin käyttäjä ei voi vaihtamalla URL:ssa raportin ID-numeroa päästä toisen laatijan raporttiin.
+
+---
+
+# 26. Tiedostojen tallennus
+
+Ladattavia tiedostoja ei tallenneta MariaDB-tietokantaan BLOB-tietoina.
+
+Tietokantaan tallennetaan vain tiedoston tiedot.
+
+Varsinaiset tiedostot tallennetaan palvelimen tiedostojärjestelmään.
+
+Esimerkiksi:
+
+```text
+/data/
+   /laatijat/
+      /123/
+         /raportit/
+            /456/
+               /media/
+```
+
+Hakemisto sijoitetaan mieluiten Apache-palvelimen varsinaisen `DocumentRoot`-hakemiston ulkopuolelle.
+
+Tiedostot välitetään käyttäjälle PHP:n kautta vasta käyttöoikeustarkistuksen jälkeen.
+
+---
+
+# 27. Tiedostojen nimeäminen
+
+Käyttäjän alkuperäistä tiedostonimeä ei käytetä palvelimen tiedostonimenä.
+
+Järjestelmä generoi tiedostolle satunnaisen UUID- tai muun turvallisen tunnisteen.
+
+Esimerkiksi:
+
+```text
+3dd5257f-c88d-43ce-a46f-397db08f3eb9.jpg
+```
+
+Alkuperäinen nimi voidaan säilyttää tietokannassa käyttäjälle näytettävänä tietona.
+
+---
+
+# 28. Tiedostojen turvallisuus
+
+Uploadissa tarkistetaan:
+
+* tiedoston todellinen MIME-tyyppi
+* tiedoston koko
+* sallittu tiedostopääte
+* kuvatiedoston oikeellisuus
+* käyttäjän käyttöoikeus raporttiin
+
+Enimmäiskoko:
+
+**10 MB / tiedosto**
+
+PHP-palvelimen asetukset määritetään hieman tätä suuremmiksi esimerkiksi:
+
+```ini
+upload_max_filesize = 12M
+post_max_size = 15M
+```
+
+Näin HTTP/PHP-protokollan muu data ei törmää täsmälleen 10 MB rajaan.
+
+---
+
+# 29. Raportin muokkausnäkymä
+
+Raportin muokkaus voidaan rakentaa yhdeksi pääsivuksi.
+
+## Raportin perustiedot
+
+* asiakas
+* projekti
+* otsikko
+* raporttipäivämäärä
+* laatimispaikka
+* kansikuva
+
+## Tiivistelmä
+
+Monirivinen tekstieditori.
+
+## Raporttiosiot
+
+Jokainen osio näkyy omana korttinaan:
+
+```text
+[ Otsikko ]
+
+[ Tekstisisältö ]
+
+[ Lisää kuva ]
+[ Lisää video ]
+[ Lisää videolinkki ]
+
+[ Siirrä ]
+[ Poista osio ]
+```
+
+Sivun lopussa:
+
+```text
++ Lisää uusi osio
+```
+
+Raporttirivit voidaan järjestää raahaamalla.
+
+---
+
+# 30. Tekstieditori
+
+Raporttisisällössä voidaan sallia rajattu tekstimuotoilu:
+
+* lihavointi
+* kursivointi
+* otsikot
+* luettelot
+* numeroidut luettelot
+* linkit
+
+HTML-sisältö puhdistetaan palvelinpuolella ennen tallentamista tai viimeistään ennen näyttämistä.
+
+Vapaata JavaScriptiä tai muuta mielivaltaista HTML-koodia ei sallita.
+
+---
+
+# 31. Automaattinen tallennus
+
+Raporttia muokattaessa voidaan käyttää automaattista tallennusta.
+
+Esimerkiksi käyttäjän lopettaessa kirjoittamisen noin 2–5 sekunniksi:
+
+```text
+Tallennetaan...
+Tallennettu 08:42
+```
+
+Lisäksi käytössä voi olla normaali:
+
+**Tallenna**
+
+-painike.
+
+Automaattinen tallennus vähentää pitkien raporttien menettämisen riskiä selaimen tai yhteyden temppuillessa, koska selaimet ovat tunnetusti ihmiskunnan erittäin luotettavia yhteistyökumppaneita aina siihen sekuntiin asti, kun kahden tunnin työ pitäisi tallentaa.
+
+---
+
+# 32. Poistaminen
+
+Raportin poistaminen vaatii vahvistuksen.
+
+Suositeltava toteutus on soft delete.
+
+Raporttiin lisätään esimerkiksi:
+
+```text
+deleted_at
+```
+
+Raportti ei tällöin näy normaalissa käyttöliittymässä, mutta se voidaan tarvittaessa palauttaa.
+
+Myöhemmin voidaan toteuttaa erillinen pysyvä poisto.
+
+Samaa mallia voidaan käyttää myös asiakkaille ja projekteille.
+
+---
+
+# 33. Projektien käyttöliittymä
+
+Projektin sivulla näytetään:
+
+* projektin nimi
+* kuvaus
+* päivämäärät
+* projektiin liittyvät raportit
+
+Raporttiluettelossa voidaan näyttää:
+
+| Raportti         | Asiakas   | Päivämäärä | Tila    |
+| ---------------- | --------- | ---------- | ------- |
+| Aloituskatselmus | Asiakas A | 1.8.2026   | valmis  |
+| Työmaakatselmus  | Asiakas B | 12.8.2026  | valmis  |
+| Loppuraportti    | Asiakas A | 28.8.2026  | luonnos |
+
+Näin saman projektin raportit voivat kuulua eri asiakkaille.
+
+---
+
+# 34. Asiakkaan näkymä
+
+Asiakkaan sivulla näytetään:
+
+* asiakkaan tiedot
+* asiakkaan raportit
+* asiakkaaseen liittyvät projektit raporttien perusteella
+
+Raportteja voidaan tarkastella riippumatta siitä, ovatko ne projektissa vai eivät.
+
+---
+
+# 35. Sovelluksen hakemistorakenne
+
+Esimerkiksi:
+
+```text
+/app
+    /controllers
+    /models
+    /services
+    /views
+    /helpers
+
+/config
+
+/public
+    index.php
+    /css
+    /js
+    /images
+
+/storage
+    /uploads
+    /tmp
+    /pdf
+
+/vendor
+```
+
+Apache osoittaa vain `/public`-hakemistoon.
+
+Sovelluksen PHP-, asetustiedosto- ja upload-hakemistot eivät ole suoraan verkosta saavutettavissa.
+
+---
+
+# 36. Sovelluksen palvelukerros
+
+Erillisiä palveluita voidaan käyttää esimerkiksi:
+
+```text
+AuthService
+ReportService
+PdfService
+MediaService
+MailService
+ImageService
+```
+
+Näin esimerkiksi PDF-generointia ei rakenneta raportin muokkaussivun PHP-tiedoston keskelle tuhannen rivin `if`-rakennelmaksi, joka myöhemmin tarvitsee arkeologin tulkitsemaan sitä.
+
+---
+
+# 37. PDF-kirjasto
+
+PDF:n muodostamiseen voidaan käyttää PHP-yhteensopivaa PDF-ratkaisua.
+
+Tarvittavat ominaisuudet:
+
+* HTML/CSS → PDF
+* kuvat
+* sivunvaihdot
+* header/footer
+* sivunumerointi
+* linkit
+* sisällysluettelo
+* UTF-8
+* suomalaiset erikoismerkit
+
+PDF-generointi erotetaan omaksi `PdfService`-komponentikseen, jolloin PDF-kirjasto voidaan myöhemmin vaihtaa ilman muun sovelluksen uudelleenkirjoittamista.
+
+---
+
+# 38. Tietoturva
+
+Sovelluksessa huomioidaan vähintään:
+
+* HTTPS pakollinen
+* parametrisoidut SQL-kyselyt
+* CSRF-suojaus
+* XSS-suojaus
+* session cookie `Secure`
+* session cookie `HttpOnly`
+* `SameSite=Lax` tai tarvittaessa `Strict`
+* session ID:n uusiminen kirjautumisessa
+* kirjautumisyritysten rate limiting
+* sähköpostikoodien vanheneminen
+* käyttöoikeustarkistus jokaisessa tietokantahaussa
+* tiedostolatausten MIME-tarkistus
+* tiedostot DocumentRoot-hakemiston ulkopuolella
+* CSP-suojaus
+* tietoturvalokit
+
+---
+
+# 39. Lokitus
+
+Järjestelmään kannattaa tallentaa vähintään keskeiset tapahtumat:
+
+* kirjautuminen onnistui
+* kirjautuminen epäonnistui
+* raportti luotu
+* raportti poistettu
+* raportti palautettu
+* media lisätty
+* media poistettu
+* PDF muodostettu
+
+Lokissa voidaan tallentaa:
+
+* laatijat_id
+* toiminto
+* kohteen tyyppi
+* kohteen ID
+* IP-osoite
+* aika
+
+Varsinaista raporttisisältöä ei tarvitse kopioida lokiin.
+
+---
+
+# 40. Ensimmäisen version rajaus
+
+Ensimmäiseen tuotantoversioon toteutetaan:
+
+1. laatijoiden käyttäjätiedot
+2. sähköpostikoodikirjautuminen
+3. asiakkaiden hallinta
+4. projektien hallinta
+5. raporttien luonti
+6. tiivistelmä
+7. raporttiosiot
+8. osioiden järjestäminen
+9. kuvien lisääminen
+10. videotiedostot
+11. videolinkit
+12. kansilehti
+13. automaattinen sisällysluettelo
+14. raportin loppuosa
+15. PDF-generointi
+16. raporttien asiakas- ja projektisuodatus
+17. raportin muokkaaminen
+18. raportin poistaminen
+
+---
+
+# 41. Mahdolliset myöhemmät ominaisuudet
+
+Järjestelmän rakenne kannattaa tehdä siten, että myöhemmin voidaan lisätä:
+
+* raporttipohjat
+* yrityskohtaiset kansilehtipohjat
+* yrityksen logo
+* asiakkaan logo
+* raportin kopiointi
+* raporttien versiohistoria
+* sähköinen hyväksyntä
+* sähköinen allekirjoitus
+* asiakkaalle jaettava raporttilinkki
+* QR-koodit videoille
+* raporttien lähettäminen sähköpostilla
+* PDF/A-versio arkistointiin
+* Word-export
+* useita laatijoita samalle raportille
+* raportin kommentointi
+* raporttien hakutoiminto
+* automaattinen kuvien pakkaus
+* raporttipohjaiset vakio-osiot
+* raporttirivien uudelleenkäytettävät mallitekstit
+
+---
+
+# 42. Keskeinen tietomalli
+
+Kokonaisuus voidaan tiivistää seuraavasti:
+
+```text
+LAATIJA
+   |
+   +---- ASIAKAS
+   |        |
+   |        +---------+
+   |                  |
+   +---- PROJEKTI      |
+   |        |          |
+   |        +----------+---- RAPORTTI
+   |                         |
+   |                         +---- RAPORTTIRIVI
+   |                                  |
+   |                                  +---- RAPORTTIMEDIA
+   |
+   +---- KIRJAUTUMISKOODI
+```
+
+Raportilla on sekä:
+
+```text
+asiakas_id
+projekti_id
+laatijat_id
+```
+
+Projektia ei sidota suoraan asiakkaaseen, koska yksi projekti voi sisältää raportteja useilta asiakkailta.
+
+Kaikissa käyttäjäkohtaisissa päätauluissa oleva `laatijat_id` muodostaa järjestelmän käyttöoikeuksien perustan.
+
+---
+
+# 43. Toteutusperiaate
+
+Tietokantarakenne kannattaa suunnitella ensin valmiiksi ja rakentaa sovellus sen päälle seuraavassa järjestyksessä:
+
+```text
+1. laatijat + kirjautuminen
+        ↓
+2. asiakkaat
+        ↓
+3. projektit
+        ↓
+4. raportit
+        ↓
+5. raporttirivit
+        ↓
+6. media
+        ↓
+7. raportin esikatselu
+        ↓
+8. PDF-generointi
+```
+
+Näin ensimmäinen toimiva raportti voidaan saada muodostettua jo ennen kuin kaikki käyttöliittymän hienoudet on rakennettu.
+
+Arkkitehtuurin tärkein lähtökohta on, että **tietokannassa oleva raportti on alkuperäinen asiakirja ja PDF on siitä muodostettava julkaisuversio**. Tämä pitää raporttien muokkaamisen, versionhallinnan ja myöhemmän jatkokehityksen huomattavasti selkeämpänä.
