@@ -17,6 +17,10 @@ function openLayoutShell(string $pageTitle = 'TEKRAPORTTI'): void
     $safeCsrfToken = htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8');
     $safeLaatijaNimi = htmlspecialchars((string) ($laatija['nimi'] ?? ''), ENT_QUOTES, 'UTF-8');
     $layoutHasSidebar = $laatija !== null;
+    $currentPath = basename((string) ($_SERVER['PHP_SELF'] ?? ''));
+    $reportsNavClass = in_array($currentPath, ['raportit.php', 'luo_raportti.php', 'muokkaa_raportti.php', 'esikatsele_raportti.php'], true) ? ' active' : '';
+    $projectsNavClass = $currentPath === 'projektit.php' ? ' active' : '';
+    $customersNavClass = $currentPath === 'asiakkaat.php' ? ' active' : '';
 
     echo <<<HTML
 <!doctype html>
@@ -30,20 +34,43 @@ function openLayoutShell(string $pageTitle = 'TEKRAPORTTI'): void
           integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB"
           crossorigin="anonymous">
     <style>
-        :root { --tekra-sidebar-width: 240px; }
-        body { background-color: #f4f7f6; }
-        .tekra-topbar { min-height: 52px; background-color: #071a33; }
-        .tekra-brand { letter-spacing: .02em; }
-        .tekra-brand small { color: #aeb9c9; font-size: .65rem; letter-spacing: .08em; }
-        .tekra-sidebar { width: var(--tekra-sidebar-width); }
-        .tekra-sidebar .nav-link { color: #4d596b; border-radius: .5rem; margin: .15rem .75rem; }
-        .tekra-sidebar .nav-link:hover { background-color: #eef8f3; color: #087f4e; }
-        .tekra-sidebar .nav-link.active { background-color: #dff6e9; color: #087f4e; font-weight: 600; }
-        .tekra-sidebar .submenu { border-left: 1px solid #d7e9df; margin-left: 1.7rem; padding-left: .25rem; }
-        .tekra-sidebar .submenu .nav-link { font-size: .9rem; margin-left: 0; }
+        :root { --tekra-sidebar-width: 273px; --tekra-navy: #071a3d; --tekra-blue: #1769e8; }
+        body { background: #f5f8fc; color: #152747; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+        .tekra-topbar { min-height: 100px; background: linear-gradient(110deg, #071a3d, #0b2149); box-shadow: 0 1px 0 rgba(255,255,255,.08); }
+        .tekra-topbar .container-fluid { min-height: 100px; padding: 0 20px; gap: 16px; }
+        .tekra-topbar .navbar-toggler { border: 1px solid #25436c; border-radius: 8px; padding: 10px 14px; }
+        .tekra-brand { letter-spacing: .01em; font-size: 1.55rem; font-weight: 700; }
+        .tekra-brand small { color: #b8c5da; font-size: .68rem; letter-spacing: .14em; margin-left: 10px; }
+        .tekra-search { width: min(775px, 48vw); margin-left: 34px; }
+        .tekra-search .form-control { height: 62px; color: #e8eef8; background: rgba(255,255,255,.09); border: 1px solid rgba(255,255,255,.12); border-radius: 9px; padding-left: 62px; }
+        .tekra-search .form-control::placeholder { color: #bac7db; }
+        .tekra-search-icon { position: absolute; left: 21px; top: 17px; color: #c5d1e2; font-size: 1.5rem; }
+        .tekra-search-shortcut { position: absolute; right: 14px; top: 17px; border: 1px solid #547092; border-radius: 6px; color: #d6dfed; padding: 3px 8px; font-size: .8rem; }
+        .tekra-user-menu { color: #f3f6fb; display: flex; align-items: center; gap: 10px; font-weight: 600; }
+        .tekra-user-menu:hover, .tekra-user-menu:focus { color: #fff; }
+        .tekra-avatar { width: 46px; height: 46px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; background: #f1f4f8; color: #55708f; font-weight: 600; }
+        .tekra-sidebar { width: var(--tekra-sidebar-width); background: #fff !important; border-right-color: #e2e8f1 !important; }
+        .tekra-sidebar .nav-link { color: #52627a; border-radius: 8px; margin: .35rem .7rem; padding: 14px 18px; font-size: 1.05rem; }
+        .tekra-sidebar .nav-link:hover { background-color: #edf4ff; color: var(--tekra-blue); }
+        .tekra-sidebar .nav-link.active { background-color: #e9f1ff; color: var(--tekra-blue); font-weight: 600; }
+        .tekra-sidebar .submenu { border-left: 0; margin-left: 0; padding-left: 0; }
+        .tekra-sidebar .submenu .nav-link { font-size: .98rem; padding-top: 9px; padding-bottom: 9px; margin-top: 0; }
+        .tekra-sidebar-title { padding: 30px 28px 18px; font-size: 1.05rem; font-weight: 600; }
+        .tekra-main { min-width: 0; }
+        .tekra-main > main { padding: 54px 30px !important; }
+        .table > :not(caption) > * > * { padding: 20px 28px; }
+        .card { border-color: #e1e8f2 !important; border-radius: 9px !important; box-shadow: 0 5px 14px rgba(26, 52, 86, .06) !important; }
+        .btn-primary { background-color: var(--tekra-blue); border-color: var(--tekra-blue); }
+        .btn-outline-primary { color: var(--tekra-blue); border-color: #a9c7fb; }
         .tekra-main { min-width: 0; }
         @media (min-width: 992px) {
-            .tekra-sidebar { position: sticky; top: 0; height: calc(100vh - 52px); }
+            .tekra-sidebar { display: block !important; position: sticky; top: 0; height: calc(100vh - 100px); }
+        }
+        @media (max-width: 991.98px) {
+            .tekra-search { display: none; }
+            .tekra-topbar .container-fluid { min-height: 72px; }
+            .tekra-topbar { min-height: 72px; }
+            .tekra-main > main { padding: 28px 16px !important; }
         }
     </style>
 </head>
@@ -56,6 +83,11 @@ function openLayoutShell(string $pageTitle = 'TEKRAPORTTI'): void
                 <span class="navbar-toggler-icon"></span>
             </button>
             <a class="navbar-brand tekra-brand ms-2 me-4" href="#">TEKRAPORTTI <small>RAPORTOINTI</small></a>
+            <div class="tekra-search position-relative">
+                <span class="tekra-search-icon" aria-hidden="true">⌕</span>
+                <input class="form-control" type="search" placeholder="Hae raportteja, asiakkaita tai projekteja..." aria-label="Hae raportteja, asiakkaita tai projekteja">
+                <span class="tekra-search-shortcut">Ctrl + K</span>
+            </div>
 HTML;
 
     if ($laatija !== null) {
@@ -71,9 +103,10 @@ HTML;
             ]))),
         ];
 
-        echo '<div class="dropdown ms-auto">';
-        echo '<button class="btn btn-dark dropdown-toggle" type="button" data-bs-toggle="dropdown" '
-            . 'aria-expanded="false">' . $safeLaatijaNimi . '</button>';
+        echo '<div class="d-flex align-items-center gap-3 ms-auto"><span class="text-white fs-4" aria-label="Ilmoitukset" title="Ilmoitukset">♧<sup class="badge rounded-pill bg-danger" style="font-size:.55rem;">2</sup></span><div class="dropdown">';
+        $initials = mb_strtoupper(mb_substr((string) ($laatija['nimi'] ?? ''), 0, 2));
+        echo '<button class="btn tekra-user-menu dropdown-toggle" type="button" data-bs-toggle="dropdown" '
+            . 'aria-expanded="false"><span class="tekra-avatar">' . htmlspecialchars($initials, ENT_QUOTES, 'UTF-8') . '</span>' . $safeLaatijaNimi . '</button>';
         echo '<div class="dropdown-menu dropdown-menu-end p-3" style="min-width: 280px;">';
         echo '<h6 class="dropdown-header px-0">Omat tiedot</h6>';
         foreach ($details as $label => $value) {
@@ -89,7 +122,7 @@ HTML;
         echo '<input type="hidden" name="csrf_token" value="' . $safeCsrfToken . '">';
         echo '<input type="hidden" name="action" value="logout">';
         echo '<button type="submit" class="dropdown-item text-danger">Kirjaudu ulos</button>';
-        echo '</form></div></div>';
+        echo '</form></div></div></div>';
     }
 
     echo <<<HTML
@@ -103,17 +136,15 @@ HTML;
     <div class="d-flex align-items-stretch">
         <aside class="collapse bg-white border-end tekra-sidebar" tabindex="-1"
                id="paavalikko" aria-label="Sivupalkin valikko">
-            <div class="d-flex justify-content-between align-items-center border-bottom p-3">
-                <h2 class="h6 mb-0">Valikko</h2>
-            </div>
+            <h2 class="tekra-sidebar-title mb-0">Valikko</h2>
             <div class="p-2 p-lg-3">
                 <nav>
-                    <a class="nav-link" href="raportit.php">▣ &nbsp; Raportit</a>
+                    <a class="nav-link<?= $reportsNavClass ?>" href="raportit.php">▣ &nbsp; Raportit</a>
                     <div class="submenu">
                         <a class="nav-link" href="luo_raportti.php">Uusi raportti</a>
                     </div>
-                    <a class="nav-link" href="projektit.php">▤ &nbsp; Projektit</a>
-                    <a class="nav-link" href="asiakkaat.php">▦ &nbsp; Asiakkaat</a>
+                    <a class="nav-link<?= $projectsNavClass ?>" href="projektit.php">▤ &nbsp; Projektit</a>
+                    <a class="nav-link<?= $customersNavClass ?>" href="asiakkaat.php">▦ &nbsp; Asiakkaat</a>
                 </nav>
             </div>
         </aside>

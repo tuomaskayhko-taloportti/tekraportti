@@ -229,17 +229,17 @@ openLayoutShell('Raportit – TEKRAPORTTI');
                             <td>
                                 <div class="d-flex justify-content-end gap-1">
                                     <a class="btn btn-outline-secondary btn-sm" href="esikatsele_raportti.php?id=<?= (int) $report['id'] ?>" title="Avaa PDF-esikatselu" aria-label="Avaa PDF-esikatselu">
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 0h5.5L14 4.5V14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2m5 1.5V5h3.5zM4.5 9.5a.5.5 0 0 0 0 1h7a.5.5 0 0 0 0-1zM4 12a.5.5 0 0 0 0 1h5a.5.5 0 0 0 0-1z"/></svg>
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 0h5.5L14 4.5V14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2m5 1.5V5h3.5zM4.5 9.5a.5.5 0 0 0 0 1h7a.5.5 0 0 0 0-1zM4 12a.5.5 0 0 0 0 1h5a.5.5 0 0 0 0-1z"/></svg><span class="d-none d-md-inline ms-1">Näytä</span>
                                     </a>
                                     <a class="btn btn-outline-primary btn-sm" href="muokkaa_raportti.php?id=<?= (int) $report['id'] ?>" title="Muokkaa raporttia" aria-label="Muokkaa raporttia">
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M12.854.146a.5.5 0 0 1 .707 0l2.293 2.293a.5.5 0 0 1 0 .707l-9.5 9.5L3 13l.354-3.354zM2.5 13.5l-.5 2 2-.5z"/></svg>
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M12.854.146a.5.5 0 0 1 .707 0l2.293 2.293a.5.5 0 0 1 0 .707l-9.5 9.5L3 13l.354-3.354zM2.5 13.5l-.5 2 2-.5z"/></svg><span class="d-none d-md-inline ms-1">Muokkaa</span>
                                     </a>
                                     <form method="post" action="raportit.php<?= $showAll ? '?kaikki=1&sivu=' . $currentPage : '' ?>" class="d-inline" onsubmit="return confirm('Haluatko todella poistaa raportin ja kaikki siihen liittyvät tiedot?');">
                                         <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8') ?>">
                                         <input type="hidden" name="action" value="delete-report">
                                         <input type="hidden" name="raportti_id" value="<?= (int) $report['id'] ?>">
                                         <button class="btn btn-outline-danger btn-sm" type="submit" title="Poista raportti" aria-label="Poista raportti">
-                                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0A.5.5 0 0 1 8.5 6v6a.5.5 0 0 1-1 0V6A.5.5 0 0 1 8 5.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z"/><path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1 0-2h3.086A1.5 1.5 0 0 1 7 1h2a1.5 1.5 0 0 1 1.414 1H13.5a1 1 0 0 1 1 1M4 4v9a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4zM6.5 2a.5.5 0 0 0-.5.5V3h4v-.5a.5.5 0 0 0-.5-.5z"/></svg>
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0A.5.5 0 0 1 8.5 6v6a.5.5 0 0 1-1 0V6A.5.5 0 0 1 8 5.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z"/><path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1 0-2h3.086A1.5 1.5 0 0 1 7 1h2a1.5 1.5 0 0 1 1.414 1H13.5a1 1 0 0 1 1 1M4 4v9a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4zM6.5 2a.5.5 0 0 0-.5.5V3h4v-.5a.5.5 0 0 0-.5-.5z"/></svg><span class="d-none d-md-inline ms-1">Poista</span>
                                         </button>
                                     </form>
                                 </div>
