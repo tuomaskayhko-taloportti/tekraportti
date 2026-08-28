@@ -138,15 +138,15 @@ HTML;
     <div class="d-flex align-items-stretch">
         <aside class="bg-white border-end tekra-sidebar" tabindex="-1"
                id="paavalikko" aria-label="Sivupalkin valikko">
-            <h2 class="tekra-sidebar-title mb-0">Valikko</h2>
+            <h2 class="tekra-sidebar-title mb-0" style="padding:30px 28px 18px;font-size:1.05rem;font-weight:600;">Valikko</h2>
             <div class="p-2 p-lg-3">
-                <nav>
-                    <a class="nav-link<?= $reportsNavClass ?>" href="raportit.php">▣ &nbsp; Raportit</a>
-                    <div class="submenu">
-                        <a class="nav-link" href="luo_raportti.php">Uusi raportti</a>
+                <nav style="display:block;">
+                    <a class="nav-link<?= $reportsNavClass ?>" style="display:block!important;width:auto;color:#52627a;text-decoration:none!important;border-radius:8px;margin:.35rem .7rem;padding:14px 18px;font-size:1.05rem;" href="raportit.php">▣ &nbsp; Raportit</a>
+                    <div class="submenu" style="display:block!important;">
+                        <a class="nav-link" style="display:block!important;width:auto;color:#52627a;text-decoration:none!important;border-radius:8px;margin:0 .7rem;padding:9px 18px;font-size:.98rem;" href="luo_raportti.php">Uusi raportti</a>
                     </div>
-                    <a class="nav-link<?= $projectsNavClass ?>" href="projektit.php">▤ &nbsp; Projektit</a>
-                    <a class="nav-link<?= $customersNavClass ?>" href="asiakkaat.php">▦ &nbsp; Asiakkaat</a>
+                    <a class="nav-link<?= $projectsNavClass ?>" style="display:block!important;width:auto;color:#52627a;text-decoration:none!important;border-radius:8px;margin:.35rem .7rem;padding:14px 18px;font-size:1.05rem;" href="projektit.php">▤ &nbsp; Projektit</a>
+                    <a class="nav-link<?= $customersNavClass ?>" style="display:block!important;width:auto;color:#52627a;text-decoration:none!important;border-radius:8px;margin:.35rem .7rem;padding:14px 18px;font-size:1.05rem;" href="asiakkaat.php">▦ &nbsp; Asiakkaat</a>
                 </nav>
             </div>
         </aside>
