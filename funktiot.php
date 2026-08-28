@@ -56,6 +56,9 @@ function openLayoutShell(string $pageTitle = 'TEKRAPORTTI'): void
         .tekra-sidebar .nav-link.active { background-color: #e9f1ff; color: var(--tekra-blue); font-weight: 600; }
         .tekra-sidebar.is-collapsed { display: none !important; }
         .tekra-sidebar nav, .tekra-sidebar .submenu { display: block !important; border-left: 0; margin-left: 0; padding-left: 0; }
+        .tekra-reports-menu summary { cursor: pointer; list-style-position: inside; color: #52627a; }
+        .tekra-reports-menu summary::marker { color: #52627a; }
+        .tekra-reports-menu summary .nav-link { display: inline-block !important; width: calc(100% - 1.5rem); margin-left: 0; vertical-align: middle; }
         .tekra-sidebar .submenu .nav-link { font-size: .98rem; padding-top: 9px; padding-bottom: 9px; margin-top: 0; }
         .tekra-sidebar-title { padding: 30px 28px 18px; font-size: 1.05rem; font-weight: 600; }
         .tekra-main { min-width: 0; }
@@ -141,10 +144,10 @@ HTML;
             <h2 class="tekra-sidebar-title mb-0" style="padding:30px 28px 18px;font-size:1.05rem;font-weight:600;">Valikko</h2>
             <div class="p-2 p-lg-3">
                 <nav style="display:block;">
-                    <a class="nav-link<?= $reportsNavClass ?>" style="display:block!important;width:auto;color:#52627a;text-decoration:none!important;border-radius:8px;margin:.35rem .7rem;padding:14px 18px;font-size:1.05rem;" href="raportit.php">▣ &nbsp; Raportit</a>
-                    <div class="submenu" style="display:block!important;">
+                    <details class="tekra-reports-menu" <?= $reportsNavClass !== '' ? 'open' : '' ?> style="display:block;">
+                        <summary><a class="nav-link<?= $reportsNavClass ?>" style="display:inline-block!important;width:calc(100% - 1.5rem);color:#52627a;text-decoration:none!important;border-radius:8px;margin:.35rem 0;padding:14px 18px;font-size:1.05rem;" href="raportit.php">▣ &nbsp; Raportit</a></summary>
                         <a class="nav-link" style="display:block!important;width:auto;color:#52627a;text-decoration:none!important;border-radius:8px;margin:0 .7rem;padding:9px 18px;font-size:.98rem;" href="luo_raportti.php">Uusi raportti</a>
-                    </div>
+                    </details>
                     <a class="nav-link<?= $projectsNavClass ?>" style="display:block!important;width:auto;color:#52627a;text-decoration:none!important;border-radius:8px;margin:.35rem .7rem;padding:14px 18px;font-size:1.05rem;" href="projektit.php">▤ &nbsp; Projektit</a>
                     <a class="nav-link<?= $customersNavClass ?>" style="display:block!important;width:auto;color:#52627a;text-decoration:none!important;border-radius:8px;margin:.35rem .7rem;padding:14px 18px;font-size:1.05rem;" href="asiakkaat.php">▦ &nbsp; Asiakkaat</a>
                 </nav>
