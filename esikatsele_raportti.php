@@ -140,6 +140,66 @@ function cropPdfImage(string $path, float $targetAspect, array &$temporaryImages
     return $jpegPath;
 }
 
+function youtubeVideoId(string $url): ?string
+{
+    $parts = parse_url($url);
+    $host = strtolower((string) ($parts['host'] ?? ''));
+    $path = trim((string) ($parts['path'] ?? ''), '/');
+    $videoId = null;
+
+    if ($host === 'youtu.be' || $host === 'www.youtu.be') {
+        $videoId = explode('/', $path)[0] ?? null;
+    } elseif (in_array($host, ['youtube.com', 'www.youtube.com', 'm.youtube.com'], true)) {
+        parse_str((string) ($parts['query'] ?? ''), $query);
+        if ($path === 'watch') {
+            $videoId = $query['v'] ?? null;
+        } elseif (preg_match('#^(?:embed|shorts|live)/([^/]+)#', $path, $matches)) {
+            $videoId = $matches[1];
+        }
+    }
+
+    return is_string($videoId) && preg_match('/^[A-Za-z0-9_-]{11}$/', $videoId) ? $videoId : null;
+}
+
+function youtubeThumbnailPath(string $url, array &$temporaryImages): ?string
+{
+    $videoId = youtubeVideoId($url);
+    if (!$videoId) {
+        return null;
+    }
+
+    $curl = curl_init('https://img.youtube.com/vi/' . $videoId . '/hqdefault.jpg');
+    curl_setopt_array($curl, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_CONNECTTIMEOUT => 5,
+        CURLOPT_TIMEOUT => 10,
+        CURLOPT_MAXFILESIZE => 5 * 1024 * 1024,
+        CURLOPT_USERAGENT => 'Tekraportti PDF preview',
+    ]);
+    $thumbnail = curl_exec($curl);
+    $httpCode = (int) curl_getinfo($curl, CURLINFO_HTTP_CODE);
+    curl_close($curl);
+    if (!is_string($thumbnail) || $httpCode < 200 || $httpCode >= 300) {
+        return null;
+    }
+
+    $temporaryPath = tempnam(sys_get_temp_dir(), 'tekraportti-youtube-');
+    $jpegPath = $temporaryPath !== false ? $temporaryPath . '.jpg' : false;
+    if ($temporaryPath !== false) {
+        @unlink($temporaryPath);
+    }
+    if ($jpegPath === false || @file_put_contents($jpegPath, $thumbnail) === false) {
+        if ($jpegPath !== false) {
+            @unlink($jpegPath);
+        }
+        return null;
+    }
+
+    $temporaryImages[] = $jpegPath;
+    return $jpegPath;
+}
+
 class TekraPdf extends FPDF
 {
     public function ensureSpace(float $height): void
@@ -304,12 +364,25 @@ foreach ($rows as $index => $row) {
             }
             $pdf->SetXY(20, max($captionY + $captionHeight, $rowY + $imageHeight) + 6);
         } else {
-            $pdf->Ln(6);
-            $pdf->SetFont('Helvetica', 'I', 10);
-            $pdf->MultiCell(0, 6, pdfText(ucfirst($item['tyyppi']) . ': ' . $item['url']), 0, 'L');
-            if ($item['kuvateksti']) {
+            $youtubeThumbnail = $item['tyyppi'] === 'videolinkki'
+                ? youtubeThumbnailPath((string) $item['url'], $temporaryImages)
+                : null;
+            if ($youtubeThumbnail) {
+                $pdf->ensureSpace(6 + $sectionImageHeight + 2 + 5);
+                $videoY = $pdf->GetY() + 6;
+                $pdf->Image($youtubeThumbnail, 20, $videoY, $sectionImageWidth, $sectionImageHeight, 'JPG', (string) $item['url']);
+                $pdf->SetXY(20, $videoY + $sectionImageHeight + 2);
                 $pdf->SetFont('Helvetica', 'I', 9);
-                $pdf->MultiCell(0, 5, pdfText($item['kuvateksti']), 0, 'L');
+                $pdf->MultiCell($sectionImageWidth, 5, pdfText($item['kuvateksti'] ?: 'Avaa video YouTubessa'), 0, 'L');
+                $pdf->SetXY(20, $pdf->GetY() + 6);
+            } else {
+                $pdf->Ln(6);
+                $pdf->SetFont('Helvetica', 'I', 10);
+                $pdf->MultiCell(0, 6, pdfText(ucfirst($item['tyyppi']) . ': ' . $item['url']), 0, 'L');
+                if ($item['kuvateksti']) {
+                    $pdf->SetFont('Helvetica', 'I', 9);
+                    $pdf->MultiCell(0, 5, pdfText($item['kuvateksti']), 0, 'L');
+                }
             }
         }
     }
