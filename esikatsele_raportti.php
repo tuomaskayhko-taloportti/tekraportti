@@ -232,12 +232,13 @@ foreach ($rows as $index => $row) {
     $titleWidth = $pdf->GetStringWidth($titleText);
     $pageNumberWidth = $pdf->GetStringWidth($pageNumberText);
     $spaceWidth = $pdf->GetStringWidth(' ');
-    $dotsWidth = max(0, $contentWidth - $titleWidth - $pageNumberWidth - 2 * $spaceWidth);
+    $pageNumberGap = 3;
+    $dotsWidth = max(0, $contentWidth - $titleWidth - $pageNumberWidth - $spaceWidth - $pageNumberGap);
     $dotWidth = $pdf->GetStringWidth('.');
     $dots = $dotWidth > 0 ? str_repeat('.', (int) floor($dotsWidth / $dotWidth)) : '';
     $pdf->Cell($titleWidth + $spaceWidth, 8, $titleText . ' ', 0, 0, 'L');
     $pdf->Cell($dotsWidth, 8, $dots, 0, 0, 'L');
-    $pdf->Cell($spaceWidth, 8, '', 0, 0, 'L');
+    $pdf->Cell($pageNumberGap, 8, '', 0, 0, 'L');
     $pdf->Cell($pageNumberWidth, 8, $pageNumberText, 0, 1, 'R');
 }
 if (!$rows) {
