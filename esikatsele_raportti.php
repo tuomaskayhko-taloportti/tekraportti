@@ -76,6 +76,70 @@ function localImagePath(string $url): ?string
     return $path;
 }
 
+function isPdfImagePath(?string $path): bool
+{
+    return $path !== null
+        && in_array(strtolower(pathinfo($path, PATHINFO_EXTENSION)), ['jpg', 'jpeg', 'png', 'gif'], true);
+}
+
+function cropPdfImage(string $path, float $targetAspect, array &$temporaryImages): ?string
+{
+    $imageSize = @getimagesize($path);
+    if (!$imageSize || $imageSize[0] < 1 || $imageSize[1] < 1 || $targetAspect <= 0) {
+        return null;
+    }
+
+    $source = match ($imageSize[2]) {
+        IMAGETYPE_JPEG => @imagecreatefromjpeg($path),
+        IMAGETYPE_PNG => @imagecreatefrompng($path),
+        IMAGETYPE_GIF => @imagecreatefromgif($path),
+        default => false,
+    };
+    if (!$source) {
+        return null;
+    }
+
+    $sourceWidth = $imageSize[0];
+    $sourceHeight = $imageSize[1];
+    $sourceAspect = $sourceWidth / $sourceHeight;
+    if ($sourceAspect > $targetAspect) {
+        $cropHeight = $sourceHeight;
+        $cropWidth = (int) floor($sourceHeight * $targetAspect);
+        $cropX = (int) floor(($sourceWidth - $cropWidth) / 2);
+        $cropY = 0;
+    } else {
+        $cropWidth = $sourceWidth;
+        $cropHeight = (int) floor($sourceWidth / $targetAspect);
+        $cropX = 0;
+        $cropY = (int) floor(($sourceHeight - $cropHeight) / 2);
+    }
+
+    $outputWidth = 1200;
+    $outputHeight = max(1, (int) round($outputWidth / $targetAspect));
+    $output = imagecreatetruecolor($outputWidth, $outputHeight);
+    $white = imagecolorallocate($output, 255, 255, 255);
+    imagefill($output, 0, 0, $white);
+    imagecopyresampled($output, $source, 0, 0, $cropX, $cropY, $outputWidth, $outputHeight, $cropWidth, $cropHeight);
+
+    $temporaryPath = tempnam(sys_get_temp_dir(), 'tekraportti-image-');
+    $jpegPath = $temporaryPath !== false ? $temporaryPath . '.jpg' : false;
+    if ($temporaryPath !== false) {
+        @unlink($temporaryPath);
+    }
+    $created = $jpegPath !== false && imagejpeg($output, $jpegPath, 90);
+    imagedestroy($output);
+    imagedestroy($source);
+    if (!$created) {
+        if ($jpegPath !== false) {
+            @unlink($jpegPath);
+        }
+        return null;
+    }
+
+    $temporaryImages[] = $jpegPath;
+    return $jpegPath;
+}
+
 class TekraPdf extends FPDF
 {
     public function Header(): void
@@ -100,6 +164,28 @@ $pdf->SetTitle(pdfText($report['otsikko']));
 $pdf->SetAuthor(pdfText($report['laatija_nimi']));
 $pdf->SetMargins(20, 20, 20);
 $pdf->SetAutoPageBreak(true, 20);
+$temporaryImages = [];
+register_shutdown_function(static function () use (&$temporaryImages): void {
+    foreach ($temporaryImages as $temporaryImage) {
+        @unlink($temporaryImage);
+    }
+});
+
+// Ensimmäinen osiokuva määrittää kaikkien osiokuvien mallikuvasuhteen.
+$modelAspect = null;
+foreach ($mediaByRow as $rowMedia) {
+    foreach ($rowMedia as $item) {
+        $imagePath = $item['tyyppi'] === 'kuva' ? localImagePath((string) $item['url']) : null;
+        if (!isPdfImagePath($imagePath)) {
+            continue;
+        }
+        $imageSize = @getimagesize($imagePath);
+        if ($imageSize && $imageSize[0] > 0 && $imageSize[1] > 0) {
+            $modelAspect = $imageSize[0] / $imageSize[1];
+            break 2;
+        }
+    }
+}
 
 // Kansisivu.
 $pdf->AddPage();
@@ -163,13 +249,13 @@ foreach ($rows as $index => $row) {
     for ($mediaIndex = 0; $mediaIndex < $mediaCount; $mediaIndex++) {
         $item = $mediaItems[$mediaIndex];
         $imagePath = $item['tyyppi'] === 'kuva' ? localImagePath((string) $item['url']) : null;
-        $isImage = $imagePath && in_array(strtolower(pathinfo($imagePath, PATHINFO_EXTENSION)), ['jpg', 'jpeg', 'png', 'gif'], true);
+        $isImage = isPdfImagePath($imagePath);
         if ($isImage) {
             $imageItems = [$item];
             if ($mediaIndex + 1 < $mediaCount) {
                 $nextItem = $mediaItems[$mediaIndex + 1];
                 $nextImagePath = $nextItem['tyyppi'] === 'kuva' ? localImagePath((string) $nextItem['url']) : null;
-                if ($nextImagePath && in_array(strtolower(pathinfo($nextImagePath, PATHINFO_EXTENSION)), ['jpg', 'jpeg', 'png', 'gif'], true)) {
+                if (isPdfImagePath($nextImagePath)) {
                     $imageItems[] = $nextItem;
                     $mediaIndex++;
                 }
@@ -178,29 +264,21 @@ foreach ($rows as $index => $row) {
             $columnWidth = 82.5;
             $columnGap = 5;
             $rowY = $pdf->GetY() + 6;
-            $rowHeight = 0;
             $imagePaths = [$imagePath];
             if (count($imageItems) === 2) {
                 $imagePaths[] = $nextImagePath;
             }
-            $imageHeights = [];
-            foreach ($imageItems as $imageItemIndex => $imageItem) {
-                $currentImagePath = $imagePaths[$imageItemIndex];
-                $currentImageSize = @getimagesize($currentImagePath);
-                if (!$currentImageSize || $currentImageSize[0] < 1) {
+            $imageHeight = $columnWidth / ($modelAspect ?: 1);
+            foreach ($imagePaths as $imageItemIndex => $currentImagePath) {
+                $croppedPath = cropPdfImage($currentImagePath, $modelAspect ?: 1, $temporaryImages);
+                if ($croppedPath === null) {
                     continue;
                 }
-                $currentImageHeight = $columnWidth * $currentImageSize[1] / $currentImageSize[0];
-                $imageHeights[$imageItemIndex] = $currentImageHeight;
-                $rowHeight = max($rowHeight, $currentImageHeight);
-            }
-            foreach ($imageHeights as $imageItemIndex => $currentImageHeight) {
                 $imageX = 20 + $imageItemIndex * ($columnWidth + $columnGap);
-                $imageY = $rowY + $rowHeight - $currentImageHeight;
-                $pdf->Image($imagePaths[$imageItemIndex], $imageX, $imageY, $columnWidth, $currentImageHeight);
+                $pdf->Image($croppedPath, $imageX, $rowY, $columnWidth, $imageHeight);
             }
 
-            $captionY = $rowY + $rowHeight + 2;
+            $captionY = $rowY + $imageHeight + 2;
             $captionHeight = 0;
             foreach ($imageItems as $imageItemIndex => $imageItem) {
                 if (!$imageItem['kuvateksti']) {
@@ -213,7 +291,7 @@ foreach ($rows as $index => $row) {
                 $pdf->MultiCell($columnWidth, 5, pdfText($imageItem['kuvateksti']), 0, 'L');
                 $captionHeight = max($captionHeight, $pdf->GetY() - $captionStartY);
             }
-            $pdf->SetXY(20, max($captionY + $captionHeight, $rowY + $rowHeight) + 6);
+            $pdf->SetXY(20, max($captionY + $captionHeight, $rowY + $imageHeight) + 6);
         } else {
             $pdf->Ln(6);
             $pdf->SetFont('Helvetica', 'I', 10);
