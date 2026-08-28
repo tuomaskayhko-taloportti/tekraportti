@@ -165,27 +165,15 @@ $pdf->SetAuthor(pdfText($report['laatija_nimi']));
 $pdf->SetMargins(20, 20, 20);
 $pdf->SetAutoPageBreak(true, 20);
 $temporaryImages = [];
+// Osiokuvien kiinteä mallikoko ensimmäisen mallikuvan perusteella.
+$sectionImageWidth = 82.5;
+$sectionImageHeight = 68;
+$sectionImageAspect = $sectionImageWidth / $sectionImageHeight;
 register_shutdown_function(static function () use (&$temporaryImages): void {
     foreach ($temporaryImages as $temporaryImage) {
         @unlink($temporaryImage);
     }
 });
-
-// Ensimmäinen osiokuva määrittää kaikkien osiokuvien mallikuvasuhteen.
-$modelAspect = null;
-foreach ($mediaByRow as $rowMedia) {
-    foreach ($rowMedia as $item) {
-        $imagePath = $item['tyyppi'] === 'kuva' ? localImagePath((string) $item['url']) : null;
-        if (!isPdfImagePath($imagePath)) {
-            continue;
-        }
-        $imageSize = @getimagesize($imagePath);
-        if ($imageSize && $imageSize[0] > 0 && $imageSize[1] > 0) {
-            $modelAspect = $imageSize[0] / $imageSize[1];
-            break 2;
-        }
-    }
-}
 
 // Kansisivu.
 $pdf->AddPage();
@@ -261,16 +249,16 @@ foreach ($rows as $index => $row) {
                 }
             }
 
-            $columnWidth = 82.5;
+            $columnWidth = $sectionImageWidth;
             $columnGap = 5;
             $rowY = $pdf->GetY() + 6;
             $imagePaths = [$imagePath];
             if (count($imageItems) === 2) {
                 $imagePaths[] = $nextImagePath;
             }
-            $imageHeight = $columnWidth / ($modelAspect ?: 1);
+            $imageHeight = $sectionImageHeight;
             foreach ($imagePaths as $imageItemIndex => $currentImagePath) {
-                $croppedPath = cropPdfImage($currentImagePath, $modelAspect ?: 1, $temporaryImages);
+                $croppedPath = cropPdfImage($currentImagePath, $sectionImageAspect, $temporaryImages);
                 if ($croppedPath === null) {
                     continue;
                 }
