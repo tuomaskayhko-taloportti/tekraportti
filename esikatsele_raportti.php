@@ -184,12 +184,35 @@ function youtubeThumbnailPath(string $url, array &$temporaryImages): ?string
         return null;
     }
 
+    $thumbnailImage = @imagecreatefromstring($thumbnail);
+    if (!$thumbnailImage) {
+        return null;
+    }
+    $thumbnailWidth = imagesx($thumbnailImage);
+    $thumbnailHeight = imagesy($thumbnailImage);
+    $playRadius = (int) round(min($thumbnailWidth, $thumbnailHeight) * 0.14);
+    $playCenterX = (int) round($thumbnailWidth / 2);
+    $playCenterY = (int) round($thumbnailHeight / 2);
+    $playColor = imagecolorallocatealpha($thumbnailImage, 210, 0, 0, 25);
+    imagefilledellipse($thumbnailImage, $playCenterX, $playCenterY, $playRadius * 2, $playRadius * 2, $playColor);
+    $triangleWidth = (int) round($playRadius * 0.8);
+    $triangleHeight = (int) round($playRadius * 1.1);
+    $triangle = [
+        $playCenterX - (int) round($triangleWidth / 2), $playCenterY - (int) round($triangleHeight / 2),
+        $playCenterX - (int) round($triangleWidth / 2), $playCenterY + (int) round($triangleHeight / 2),
+        $playCenterX + (int) round($triangleWidth / 2), $playCenterY,
+    ];
+    $playTriangleColor = imagecolorallocate($thumbnailImage, 255, 255, 255);
+    imagefilledpolygon($thumbnailImage, $triangle, $playTriangleColor);
+
     $temporaryPath = tempnam(sys_get_temp_dir(), 'tekraportti-youtube-');
     $jpegPath = $temporaryPath !== false ? $temporaryPath . '.jpg' : false;
     if ($temporaryPath !== false) {
         @unlink($temporaryPath);
     }
-    if ($jpegPath === false || @file_put_contents($jpegPath, $thumbnail) === false) {
+    $created = $jpegPath !== false && imagejpeg($thumbnailImage, $jpegPath, 90);
+    imagedestroy($thumbnailImage);
+    if (!$created) {
         if ($jpegPath !== false) {
             @unlink($jpegPath);
         }
@@ -368,10 +391,15 @@ foreach ($rows as $index => $row) {
                 ? youtubeThumbnailPath((string) $item['url'], $temporaryImages)
                 : null;
             if ($youtubeThumbnail) {
-                $pdf->ensureSpace(6 + $sectionImageHeight + 2 + 5);
+                $youtubeSize = @getimagesize($youtubeThumbnail);
+                $videoWidth = $pdf->GetPageWidth() - 40;
+                $videoHeight = $youtubeSize && $youtubeSize[0] > 0
+                    ? $videoWidth * $youtubeSize[1] / $youtubeSize[0]
+                    : $sectionImageHeight;
+                $pdf->ensureSpace(6 + $videoHeight + 2 + 5);
                 $videoY = $pdf->GetY() + 6;
-                $pdf->Image($youtubeThumbnail, 20, $videoY, $sectionImageWidth, $sectionImageHeight, 'JPG', (string) $item['url']);
-                $pdf->SetXY(20, $videoY + $sectionImageHeight + 2);
+                $pdf->Image($youtubeThumbnail, 20, $videoY, $videoWidth, $videoHeight, 'JPG', (string) $item['url']);
+                $pdf->SetXY(20, $videoY + $videoHeight + 2);
                 $pdf->SetFont('Helvetica', 'I', 9);
                 $pdf->MultiCell($sectionImageWidth, 5, pdfText($item['kuvateksti'] ?: 'Avaa video YouTubessa'), 0, 'L');
                 $pdf->SetXY(20, $pdf->GetY() + 6);
