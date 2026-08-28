@@ -51,10 +51,10 @@ function openLayoutShell(string $pageTitle = 'TEKRAPORTTI'): void
         .tekra-user-menu:hover, .tekra-user-menu:focus { color: #fff; }
         .tekra-avatar { width: 46px; height: 46px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; background: #f1f4f8; color: #55708f; font-weight: 600; }
         .tekra-sidebar { width: var(--tekra-sidebar-width); background: #fff !important; border-right-color: #e2e8f1 !important; }
-        .tekra-sidebar .nav-link { color: #52627a; border-radius: 8px; margin: .35rem .7rem; padding: 14px 18px; font-size: 1.05rem; }
+        .tekra-sidebar .nav-link { display: block; color: #52627a; text-decoration: none; border-radius: 8px; margin: .35rem .7rem; padding: 14px 18px; font-size: 1.05rem; }
         .tekra-sidebar .nav-link:hover { background-color: #edf4ff; color: var(--tekra-blue); }
         .tekra-sidebar .nav-link.active { background-color: #e9f1ff; color: var(--tekra-blue); font-weight: 600; }
-        .tekra-sidebar .submenu { border-left: 0; margin-left: 0; padding-left: 0; }
+        .tekra-sidebar nav, .tekra-sidebar .submenu { display: block; border-left: 0; margin-left: 0; padding-left: 0; }
         .tekra-sidebar .submenu .nav-link { font-size: .98rem; padding-top: 9px; padding-bottom: 9px; margin-top: 0; }
         .tekra-sidebar-title { padding: 30px 28px 18px; font-size: 1.05rem; font-weight: 600; }
         .tekra-main { min-width: 0; }
@@ -87,7 +87,6 @@ function openLayoutShell(string $pageTitle = 'TEKRAPORTTI'): void
             <div class="tekra-search position-relative">
                 <span class="tekra-search-icon" aria-hidden="true">⌕</span>
                 <input class="form-control" type="search" placeholder="Hae raportteja, asiakkaita tai projekteja..." aria-label="Hae raportteja, asiakkaita tai projekteja">
-                <span class="tekra-search-shortcut">Ctrl + K</span>
             </div>
 HTML;
 
