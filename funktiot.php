@@ -61,6 +61,7 @@ function openLayoutShell(string $pageTitle = 'TEKRAPORTTI'): void
         .tekra-reports-menu summary .nav-link { display: inline-block !important; width: calc(100% - 1.5rem); margin-left: 0; vertical-align: middle; }
         .tekra-sidebar .submenu .nav-link { font-size: .98rem; padding-top: 9px; padding-bottom: 9px; margin-top: 0; }
         .tekra-sidebar-title { padding: 30px 28px 18px; font-size: 1.05rem; font-weight: 600; }
+        .tekra-menu-icon { display: inline-block; vertical-align: -.22em; margin-right: .55rem; }
         .tekra-main { min-width: 0; }
         .tekra-main > main { padding: 54px 30px !important; }
         .table > :not(caption) > * > * { padding: 20px 28px; }
@@ -141,15 +142,15 @@ HTML;
     <div class="d-flex align-items-stretch">
         <aside class="bg-white border-end tekra-sidebar" tabindex="-1"
                id="paavalikko" aria-label="Sivupalkin valikko">
-            <h2 class="tekra-sidebar-title mb-0" style="padding:30px 28px 18px;font-size:1.05rem;font-weight:600;">Valikko</h2>
+            <h2 class="tekra-sidebar-title mb-0" style="padding:30px 28px 18px;font-size:1.05rem;font-weight:600;"><svg class="tekra-menu-icon" xmlns="http://www.w3.org/2000/svg" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16M4 12h16M4 19h16"/></svg> Valikko</h2>
             <div class="p-2 p-lg-3">
                 <nav style="display:block;">
                     <details class="tekra-reports-menu" <?= $reportsNavClass !== '' ? 'open' : '' ?> style="display:block;">
-                        <summary><a class="nav-link<?= $reportsNavClass ?>" style="display:inline-block!important;width:calc(100% - 1.5rem);color:#52627a;text-decoration:none!important;border-radius:8px;margin:.35rem 0;padding:14px 18px;font-size:1.05rem;" href="raportit.php">▣ &nbsp; Raportit</a></summary>
-                        <a class="nav-link" style="display:block!important;width:auto;color:#52627a;text-decoration:none!important;border-radius:8px;margin:0 .7rem;padding:9px 18px;font-size:.98rem;" href="luo_raportti.php">Uusi raportti</a>
+                        <summary><a class="nav-link<?= $reportsNavClass ?>" style="display:inline-block!important;width:calc(100% - 1.5rem);color:#52627a;text-decoration:none!important;border-radius:8px;margin:.35rem 0;padding:14px 18px;font-size:1.05rem;" href="raportit.php"><svg class="tekra-menu-icon" xmlns="http://www.w3.org/2000/svg" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l4 4v14H6z"/><path d="M15 3v5h4M9 13h6M9 17h6"/></svg> Raportit</a></summary>
+                        <a class="nav-link" style="display:block!important;width:auto;color:#52627a;text-decoration:none!important;border-radius:8px;margin:0 .7rem;padding:9px 18px;font-size:.98rem;" href="luo_raportti.php"><svg class="tekra-menu-icon" xmlns="http://www.w3.org/2000/svg" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg> Uusi raportti</a>
                     </details>
-                    <a class="nav-link<?= $projectsNavClass ?>" style="display:block!important;width:auto;color:#52627a;text-decoration:none!important;border-radius:8px;margin:.35rem .7rem;padding:14px 18px;font-size:1.05rem;" href="projektit.php">▤ &nbsp; Projektit</a>
-                    <a class="nav-link<?= $customersNavClass ?>" style="display:block!important;width:auto;color:#52627a;text-decoration:none!important;border-radius:8px;margin:.35rem .7rem;padding:14px 18px;font-size:1.05rem;" href="asiakkaat.php">▦ &nbsp; Asiakkaat</a>
+                    <a class="nav-link<?= $projectsNavClass ?>" style="display:block!important;width:auto;color:#52627a;text-decoration:none!important;border-radius:8px;margin:.35rem .7rem;padding:14px 18px;font-size:1.05rem;" href="projektit.php"><svg class="tekra-menu-icon" xmlns="http://www.w3.org/2000/svg" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7.5A2.5 2.5 0 0 1 5.5 5h4l2 2H18.5A2.5 2.5 0 0 1 21 9.5v7A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5z"/></svg> Projektit</a>
+                    <a class="nav-link<?= $customersNavClass ?>" style="display:block!important;width:auto;color:#52627a;text-decoration:none!important;border-radius:8px;margin:.35rem .7rem;padding:14px 18px;font-size:1.05rem;" href="asiakkaat.php"><svg class="tekra-menu-icon" xmlns="http://www.w3.org/2000/svg" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3 19a6 6 0 0 1 12 0M16 11a3 3 0 1 0 0-6M16 14a5 5 0 0 1 5 5"/></svg> Asiakkaat</a>
                 </nav>
             </div>
         </aside>
