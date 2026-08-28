@@ -167,8 +167,10 @@ $pdf->SetAutoPageBreak(true, 20);
 $temporaryImages = [];
 // Osiokuvien kiinteä mallikoko ensimmäisen mallikuvan perusteella.
 $sectionImageWidth = 82.5;
-$sectionImageHeight = 68;
-$sectionImageAspect = $sectionImageWidth / $sectionImageHeight;
+$sectionImagePixelWidth = 390;
+$sectionImagePixelHeight = 322;
+$sectionImageAspect = $sectionImagePixelWidth / $sectionImagePixelHeight;
+$sectionImageHeight = $sectionImageWidth / $sectionImageAspect;
 register_shutdown_function(static function () use (&$temporaryImages): void {
     foreach ($temporaryImages as $temporaryImage) {
         @unlink($temporaryImage);
