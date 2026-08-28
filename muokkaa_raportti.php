@@ -230,6 +230,23 @@ function editValue($value): string
 
 openLayoutShell('Muokkaa raporttia – TEKRAPORTTI');
 ?>
+<style>
+.file-drop-zone {
+    border: 2px dashed #adb5bd;
+    border-radius: .375rem;
+    padding: .75rem;
+    transition: border-color .15s ease, background-color .15s ease;
+}
+.file-drop-zone.is-dragover {
+    border-color: #0d6efd;
+    background-color: #e7f1ff;
+}
+.file-drop-zone-hint {
+    color: #6c757d;
+    font-size: .875rem;
+    margin-top: .35rem;
+}
+</style>
 
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
     <div><h1 class="h3 mb-1">Muokkaa raporttia</h1><p class="text-body-secondary mb-0"><?= editValue($report['otsikko']) ?></p></div>
@@ -249,7 +266,7 @@ openLayoutShell('Muokkaa raporttia – TEKRAPORTTI');
         <div class="col-md-6"><label class="form-label" for="raporttipvm">Raporttipäivämäärä</label><input type="date" class="form-control" id="raporttipvm" name="raporttipvm" value="<?= editValue($report['raporttipvm']) ?>" required></div>
         <div class="col-md-6"><label class="form-label" for="laatimispaikka">Laatimispaikka</label><input class="form-control" id="laatimispaikka" name="laatimispaikka" value="<?= editValue($report['laatimispaikka']) ?>" maxlength="200"></div>
         <div class="col-12"><label class="form-label" for="tiivistelma">Tiivistelmä</label><textarea class="form-control" id="tiivistelma" name="tiivistelma" rows="5"><?= editValue($report['tiivistelma']) ?></textarea></div>
-        <div class="col-12"><label class="form-label" for="kansikuva">Kansikuva</label><input type="file" class="form-control" id="kansikuva" name="kansikuva" accept="image/jpeg,image/png,image/webp"><div class="form-text">Uusi kuva korvaa nykyisen kansikuvan. JPG, PNG tai WebP, enintään 10 MB.</div></div>
+        <div class="col-12"><label class="form-label" for="kansikuva">Kansikuva</label><div class="file-drop-zone" data-file-drop><input type="file" class="form-control" id="kansikuva" name="kansikuva" accept="image/jpeg,image/png,image/webp"><div class="file-drop-zone-hint">Voit myös raahata kuvan tähän.</div></div><div class="form-text">Uusi kuva korvaa nykyisen kansikuvan. JPG, PNG tai WebP, enintään 10 MB.</div></div>
     </div></div><div class="card-footer bg-white border-0 px-4 pb-4"><button class="btn btn-primary">Tallenna perustiedot</button></div>
 </form>
 
@@ -273,10 +290,39 @@ openLayoutShell('Muokkaa raporttia – TEKRAPORTTI');
             </form>
             <form method="post" action="muokkaa_raportti.php?id=<?= $raporttiId ?>" class="d-inline" onsubmit="return confirm('Poistetaanko media?');"><input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="delete-media"><input type="hidden" name="media_id" value="<?= (int) $item['id'] ?>"><button class="btn btn-link btn-sm text-danger">Poista</button></form>
         </div><?php endif; ?><?php endforeach; ?>
-        <form method="post" enctype="multipart/form-data" action="muokkaa_raportti.php?id=<?= $raporttiId ?>" class="row g-2 mt-2"><input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="add-media"><input type="hidden" name="rivi_id" value="<?= (int) $row['id'] ?>"><div class="col-md-2"><select class="form-select form-select-sm" name="media_tyyppi" required><option value="kuva">Kuva</option><option value="video">Video</option><option value="videolinkki">Videolinkki</option></select></div><div class="col-md-4"><input type="file" class="form-control form-control-sm" name="media_files[]" multiple accept="image/jpeg,image/png,image/webp,video/mp4,video/webm,video/ogg"><div class="form-text">Voit valita useita tiedostoja.</div></div><div class="col-md-3"><input class="form-control form-control-sm" name="media_url" placeholder="Videolinkin HTTPS-osoite"></div><div class="col-md-2"><input class="form-control form-control-sm" name="kuvateksti" placeholder="Kuvateksti"></div><div class="col-md-1"><button class="btn btn-outline-primary btn-sm w-100">+</button></div></form>
+        <form method="post" enctype="multipart/form-data" action="muokkaa_raportti.php?id=<?= $raporttiId ?>" class="row g-2 mt-2"><input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="add-media"><input type="hidden" name="rivi_id" value="<?= (int) $row['id'] ?>"><div class="col-md-2"><select class="form-select form-select-sm" name="media_tyyppi" required><option value="kuva">Kuva</option><option value="video">Video</option><option value="videolinkki">Videolinkki</option></select></div><div class="col-md-4"><div class="file-drop-zone" data-file-drop><input type="file" class="form-control form-control-sm" name="media_files[]" multiple accept="image/jpeg,image/png,image/webp,video/mp4,video/webm,video/ogg"><div class="file-drop-zone-hint">Raahaa kuvat tai videot tähän tai valitse tiedostot.</div></div><div class="form-text">Voit valita useita tiedostoja.</div></div><div class="col-md-3"><input class="form-control form-control-sm" name="media_url" placeholder="Videolinkin HTTPS-osoite"></div><div class="col-md-2"><input class="form-control form-control-sm" name="kuvateksti" placeholder="Kuvateksti"></div><div class="col-md-1"><button class="btn btn-outline-primary btn-sm w-100">+</button></div></form>
     </div></div>
 <?php endforeach; ?>
 
 <div class="card border-0 shadow-sm"><div class="card-header bg-white"><h2 class="h5 mb-0">Lisää uusi osio</h2></div><form method="post" action="muokkaa_raportti.php?id=<?= $raporttiId ?>"><input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="add-row"><div class="card-body p-4"><input class="form-control mb-3" name="rivi_otsikko" placeholder="Osion otsikko" maxlength="255" required><textarea class="form-control" name="rivi_sisalto" rows="6" placeholder="Tekstisisältö"></textarea></div><div class="card-footer bg-white border-0 px-4 pb-4"><button class="btn btn-primary">+ Lisää osio</button></div></form></div>
 
+<script>
+document.querySelectorAll('[data-file-drop]').forEach(function (dropZone) {
+    const input = dropZone.querySelector('input[type="file"]');
+    if (!input) return;
+
+    ['dragenter', 'dragover'].forEach(function (eventName) {
+        dropZone.addEventListener(eventName, function (event) {
+            event.preventDefault();
+            dropZone.classList.add('is-dragover');
+        });
+    });
+    ['dragleave', 'drop'].forEach(function (eventName) {
+        dropZone.addEventListener(eventName, function (event) {
+            event.preventDefault();
+            dropZone.classList.remove('is-dragover');
+        });
+    });
+    dropZone.addEventListener('drop', function (event) {
+        const droppedFiles = Array.from(event.dataTransfer.files || []);
+        if (!droppedFiles.length) return;
+
+        const transfer = new DataTransfer();
+        (input.multiple ? droppedFiles : droppedFiles.slice(0, 1)).forEach(function (file) {
+            transfer.items.add(file);
+        });
+        input.files = transfer.files;
+    });
+});
+</script>
 <?php closeLayoutShell(); ?>
