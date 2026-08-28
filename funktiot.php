@@ -54,6 +54,7 @@ function openLayoutShell(string $pageTitle = 'TEKRAPORTTI'): void
         .tekra-sidebar .nav-link { display: block !important; width: auto; color: #52627a; text-decoration: none !important; border-radius: 8px; margin: .35rem .7rem; padding: 14px 18px; font-size: 1.05rem; }
         .tekra-sidebar .nav-link:hover { background-color: #edf4ff; color: var(--tekra-blue); }
         .tekra-sidebar .nav-link.active { background-color: #e9f1ff; color: var(--tekra-blue); font-weight: 600; }
+        .tekra-sidebar.is-collapsed { display: none !important; }
         .tekra-sidebar nav, .tekra-sidebar .submenu { display: block !important; border-left: 0; margin-left: 0; padding-left: 0; }
         .tekra-sidebar .submenu .nav-link { font-size: .98rem; padding-top: 9px; padding-bottom: 9px; margin-top: 0; }
         .tekra-sidebar-title { padding: 30px 28px 18px; font-size: 1.05rem; font-weight: 600; }
@@ -176,7 +177,7 @@ function closeLayoutShell(): void
 
     $html = ob_get_clean();
     echo str_replace('<?', '&lt;?', $html);
-    echo '<script>document.querySelectorAll("[data-menu-toggle]").forEach(function(button){button.addEventListener("click",function(){var menu=document.getElementById(button.getAttribute("aria-controls"));var open=menu.classList.toggle("is-open");button.setAttribute("aria-expanded",open?"true":"false");});});</script>';
+    echo '<script>document.querySelectorAll("[data-menu-toggle]").forEach(function(button){button.addEventListener("click",function(){var menu=document.getElementById(button.getAttribute("aria-controls"));var desktop=window.matchMedia("(min-width: 992px)").matches;var open;if(desktop){var collapsed=menu.classList.toggle("is-collapsed");open=!collapsed;}else{open=menu.classList.toggle("is-open");}button.setAttribute("aria-expanded",open?"true":"false");});});</script>';
 }
 
 /**
