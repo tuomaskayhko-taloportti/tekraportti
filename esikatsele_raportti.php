@@ -136,6 +136,166 @@ function pdfTableLineCount(FPDF $pdf, string $text, float $width): int
     return max(1, $lines);
 }
 
+function chartNumber(string $value): ?float
+{
+    $value = trim(str_replace(["\xc2\xa0", ' '], '', $value));
+    if ($value === '') {
+        return null;
+    }
+    $number = preg_replace('/[^0-9,.\-]/', '', $value);
+    if ($number === '' || $number === '-') {
+        return null;
+    }
+    if (str_contains($number, ',')) {
+        $number = str_replace('.', '', $number);
+        $number = str_replace(',', '.', $number);
+    } else {
+        $number = str_replace(',', '', $number);
+    }
+    return is_numeric($number) ? (float) $number : null;
+}
+
+function createTableChart(array $table, string $chartType, array &$temporaryImages): ?string
+{
+    if (!in_array($chartType, ['pie', 'bar', 'line'], true) || count($table['sarakkeet']) < 2 || !$table['rivit']) {
+        return null;
+    }
+
+    $series = [];
+    foreach (array_slice($table['sarakkeet'], 1) as $column) {
+        $values = [];
+        foreach ($table['rivit'] as $tableRow) {
+            $cell = (string) ($table['solut'][(int) $tableRow['id']][(int) $column['id']] ?? '');
+            $values[] = chartNumber($cell);
+        }
+        if (count(array_filter($values, static fn ($value): bool => $value !== null)) > 0) {
+            $series[] = ['name' => (string) $column['nimi'], 'values' => $values];
+        }
+    }
+    if (!$series) {
+        return null;
+    }
+
+    $width = 1200;
+    $height = 650;
+    $image = imagecreatetruecolor($width, $height);
+    $white = imagecolorallocate($image, 255, 255, 255);
+    $dark = imagecolorallocate($image, 35, 45, 60);
+    imagefill($image, 0, 0, $white);
+    $palette = [
+        imagecolorallocate($image, 31, 111, 235),
+        imagecolorallocate($image, 241, 139, 33),
+        imagecolorallocate($image, 42, 160, 104),
+        imagecolorallocate($image, 188, 75, 155),
+        imagecolorallocate($image, 110, 95, 205),
+    ];
+    $labels = [];
+    foreach ($table['rivit'] as $tableRow) {
+        $firstColumn = $table['sarakkeet'][0];
+        $label = trim((string) ($table['solut'][(int) $tableRow['id']][(int) $firstColumn['id']] ?? ''));
+        $labels[] = $label !== '' ? $label : (string) (count($labels) + 1);
+    }
+
+    if ($chartType === 'pie') {
+        $values = array_map(static fn ($value): float => max(0, (float) ($value ?? 0)), $series[0]['values']);
+        $total = array_sum($values);
+        if ($total <= 0) {
+            imagedestroy($image);
+            return null;
+        }
+        $centerX = 390;
+        $centerY = 315;
+        $diameter = 480;
+        $start = 0.0;
+        foreach ($values as $index => $value) {
+            $angle = $value / $total * 360;
+            imagefilledarc($image, $centerX, $centerY, $diameter, $diameter, $start, $start + $angle, $palette[$index % count($palette)], IMG_ARC_PIE);
+            $start += $angle;
+        }
+        $legendY = 100;
+        imagestring($image, 5, 730, 55, pdfText($series[0]['name']), $dark);
+        foreach ($labels as $index => $label) {
+            imagefilledrectangle($image, 730, $legendY, 750, $legendY + 20, $palette[$index % count($palette)]);
+            imagestring($image, 4, 765, $legendY + 3, pdfText($label), $dark);
+            $legendY += 32;
+        }
+    } else {
+        $left = 90;
+        $right = 1130;
+        $top = 75;
+        $bottom = 555;
+        $maxValue = 0.0;
+        foreach ($series as $item) {
+            foreach ($item['values'] as $value) {
+                $maxValue = max($maxValue, (float) ($value ?? 0));
+            }
+        }
+        $maxValue = $maxValue > 0 ? $maxValue * 1.1 : 1;
+        imageline($image, $left, $top, $left, $bottom, $dark);
+        imageline($image, $left, $bottom, $right, $bottom, $dark);
+        for ($tick = 0; $tick <= 5; $tick++) {
+            $y = $bottom - ($bottom - $top) * $tick / 5;
+            $value = $maxValue * $tick / 5;
+            $grid = imagecolorallocate($image, 220, 225, 232);
+            imageline($image, $left, (int) $y, $right, (int) $y, $grid);
+            imagestring($image, 3, 35, (int) $y - 7, pdfText(number_format($value, 1, ',', ' ')), $dark);
+        }
+        $count = max(1, count($labels));
+        if ($chartType === 'bar') {
+            $groupWidth = ($right - $left) / $count;
+            $barWidth = min(48, max(8, $groupWidth / max(1, count($series) + 1)));
+            foreach ($labels as $index => $label) {
+                $groupX = $left + $groupWidth * $index + $groupWidth / 2;
+                foreach ($series as $seriesIndex => $item) {
+                    $value = max(0, (float) ($item['values'][$index] ?? 0));
+                    $x = $groupX + ($seriesIndex - (count($series) - 1) / 2) * $barWidth;
+                    $barTop = $bottom - ($bottom - $top) * $value / $maxValue;
+                    imagefilledrectangle($image, (int) ($x - $barWidth / 2), (int) $barTop, (int) ($x + $barWidth / 2), $bottom, $palette[$seriesIndex % count($palette)]);
+                }
+                imagestring($image, 3, (int) ($groupX - 25), $bottom + 12, pdfText(substr($label, 0, 16)), $dark);
+            }
+        } else {
+            foreach ($series as $seriesIndex => $item) {
+                $previousX = null;
+                $previousY = null;
+                foreach ($labels as $index => $label) {
+                    $value = max(0, (float) ($item['values'][$index] ?? 0));
+                    $x = $count === 1 ? ($left + $right) / 2 : $left + ($right - $left) * $index / ($count - 1);
+                    $y = $bottom - ($bottom - $top) * $value / $maxValue;
+                    if ($previousX !== null) {
+                        imageline($image, (int) $previousX, (int) $previousY, (int) $x, (int) $y, $palette[$seriesIndex % count($palette)]);
+                    }
+                    imagefilledellipse($image, (int) $x, (int) $y, 12, 12, $palette[$seriesIndex % count($palette)]);
+                    $previousX = $x;
+                    $previousY = $y;
+                    if ($seriesIndex === 0) {
+                        imagestring($image, 3, (int) ($x - 25), $bottom + 12, pdfText(substr($label, 0, 16)), $dark);
+                    }
+                }
+            }
+            foreach ($series as $seriesIndex => $item) {
+                imagestring($image, 4, 1000, 25 + $seriesIndex * 24, pdfText($item['name']), $palette[$seriesIndex % count($palette)]);
+            }
+        }
+    }
+
+    $temporaryPath = tempnam(sys_get_temp_dir(), 'tekraportti-chart-');
+    $pngPath = $temporaryPath !== false ? $temporaryPath . '.png' : false;
+    if ($temporaryPath !== false) {
+        @unlink($temporaryPath);
+    }
+    $created = $pngPath !== false && imagepng($image, $pngPath);
+    imagedestroy($image);
+    if (!$created) {
+        if ($pngPath !== false) {
+            @unlink($pngPath);
+        }
+        return null;
+    }
+    $temporaryImages[] = $pngPath;
+    return $pngPath;
+}
+
 function localImagePath(string $url): ?string
 {
     if ($url === '' || str_contains($url, '..') || preg_match('/^https?:\/\//i', $url)) {
@@ -327,6 +487,7 @@ $pdf->SetAuthor(pdfText($report['laatija_nimi']));
 $pdf->SetMargins(20, 20, 20);
 $pdf->SetAutoPageBreak(true, 20);
 $temporaryImages = [];
+$chartSelections = is_array($_GET['kaavio'] ?? null) ? $_GET['kaavio'] : [];
 // Osiokuvien kiinteä mallikoko ensimmäisen mallikuvan perusteella.
 $sectionImageWidth = 82.5;
 $sectionImagePixelWidth = 390;
@@ -482,6 +643,16 @@ foreach ($rows as $index => $row) {
             $pdf->SetXY(20, $tableY + $rowHeight);
         }
         $pdf->Ln(6);
+        $chartType = (string) ($chartSelections[(int) $table['id']] ?? '');
+        $chartPath = createTableChart($table, $chartType, $temporaryImages);
+        if ($chartPath !== null) {
+            $chartWidth = $pdf->GetPageWidth() - 40;
+            $chartHeight = $chartWidth * 650 / 1200;
+            $pdf->ensureSpace($chartHeight + 8);
+            $chartY = $pdf->GetY();
+            $pdf->Image($chartPath, 20, $chartY, $chartWidth, $chartHeight, 'PNG');
+            $pdf->SetXY(20, $chartY + $chartHeight + 6);
+        }
     }
 
     $mediaItems = $mediaByRow[(int) $row['id']] ?? [];

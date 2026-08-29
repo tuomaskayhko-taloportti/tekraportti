@@ -419,7 +419,7 @@ openLayoutShell('Muokkaa raporttia – TEKRAPORTTI');
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
     <div><h1 class="h3 mb-1">Muokkaa raporttia</h1><p class="text-body-secondary mb-0"><?= editValue($report['otsikko']) ?></p></div>
     <div class="d-flex gap-2">
-        <a class="btn btn-outline-primary" target="_blank" href="esikatsele_raportti.php?id=<?= $raporttiId ?>">Esikatsele PDF:nä</a>
+        <?php if ($tables): ?><form method="get" action="esikatsele_raportti.php" target="_blank" class="d-flex flex-wrap gap-2 align-items-center"><input type="hidden" name="id" value="<?= $raporttiId ?>"><?php foreach ($tables as $table): ?><label class="visually-hidden" for="kaavio-<?= (int) $table['id'] ?>">Kaavio taulukolle <?= (int) $table['id'] ?></label><select class="form-select form-select-sm" id="kaavio-<?= (int) $table['id'] ?>" name="kaavio[<?= (int) $table['id'] ?>]" title="Taulukon kaavio"><option value="">Ei kaaviota</option><option value="pie">Piirakka</option><option value="bar">Pylväs</option><option value="line">Viiva</option></select><?php endforeach; ?><button class="btn btn-outline-primary" type="submit">Esikatsele PDF:nä</button></form><?php else: ?><a class="btn btn-outline-primary" target="_blank" href="esikatsele_raportti.php?id=<?= $raporttiId ?>">Esikatsele PDF:nä</a><?php endif; ?>
         <a class="btn btn-outline-secondary" href="raportit.php">Takaisin raportteihin</a>
     </div>
 </div>
