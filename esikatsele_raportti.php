@@ -187,6 +187,50 @@ function chartText($image, int $size, int $x, int $y, string $text, int $color, 
     imagestring($image, 5, $x, $y, pdfText($text), $color);
 }
 
+function chartLabelLines(string $label, int $maxCharacters = 14): array
+{
+    $words = preg_split('/\s+/', trim($label)) ?: [''];
+    $lines = [];
+    $line = '';
+    foreach ($words as $word) {
+        if (function_exists('mb_strlen') && mb_strlen($word, 'UTF-8') > $maxCharacters) {
+            $word = mb_substr($word, 0, max(1, $maxCharacters - 1), 'UTF-8') . '…';
+        } elseif (strlen($word) > $maxCharacters) {
+            $word = substr($word, 0, max(1, $maxCharacters - 1)) . '…';
+        }
+        $candidate = $line === '' ? $word : $line . ' ' . $word;
+        $candidateLength = function_exists('mb_strlen')
+            ? mb_strlen($candidate, 'UTF-8')
+            : strlen($candidate);
+        if ($line !== '' && $candidateLength > $maxCharacters) {
+            $lines[] = $line;
+            $line = $word;
+        } else {
+            $line = $candidate;
+        }
+    }
+    if ($line !== '' || !$lines) {
+        $lines[] = $line;
+    }
+    return $lines;
+}
+
+function chartTextWidth(int $size, string $text, bool $bold = false): int
+{
+    $font = chartFontPath($bold);
+    if ($font !== null && function_exists('imagettfbbox')) {
+        $box = imagettfbbox($size, 0, $font, $text);
+        return (int) abs($box[2] - $box[0]);
+    }
+    return strlen($text) * $size;
+}
+
+function chartTextCentered($image, int $size, float $centerX, int $y, string $text, int $color, bool $bold = false): void
+{
+    $x = (int) round($centerX - chartTextWidth($size, $text, $bold) / 2);
+    chartText($image, $size, max(0, $x), $y, $text, $color, $bold);
+}
+
 function createTableChart(array $table, string $chartType, array &$temporaryImages): ?string
 {
     if (!in_array($chartType, ['pie', 'bar', 'line'], true) || count($table['sarakkeet']) < 2 || !$table['rivit']) {
@@ -288,7 +332,9 @@ function createTableChart(array $table, string $chartType, array &$temporaryImag
                     $barTop = $bottom - ($bottom - $top) * $value / $maxValue;
                     imagefilledrectangle($image, (int) ($x - $barWidth / 2), (int) $barTop, (int) ($x + $barWidth / 2), $bottom, $palette[$seriesIndex % count($palette)]);
                 }
-                chartText($image, 16, (int) ($groupX - 35), $bottom + 20, substr($label, 0, 16), $dark, false, 35);
+                foreach (chartLabelLines($label) as $lineIndex => $labelLine) {
+                    chartTextCentered($image, 16, $groupX, $bottom + 12 + $lineIndex * 20, $labelLine, $dark);
+                }
             }
         } else {
             foreach ($series as $seriesIndex => $item) {
@@ -305,7 +351,9 @@ function createTableChart(array $table, string $chartType, array &$temporaryImag
                     $previousX = $x;
                     $previousY = $y;
                     if ($seriesIndex === 0) {
-                        chartText($image, 16, (int) ($x - 35), $bottom + 20, substr($label, 0, 16), $dark, false, 35);
+                        foreach (chartLabelLines($label) as $lineIndex => $labelLine) {
+                            chartTextCentered($image, 16, $x, $bottom + 12 + $lineIndex * 20, $labelLine, $dark);
+                        }
                     }
                 }
             }
