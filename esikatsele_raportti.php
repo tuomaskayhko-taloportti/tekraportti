@@ -837,20 +837,22 @@ foreach ($rows as $index => $row) {
     }
 }
 
-// Laatimispaikka ja laatijan tiedot omalle viimeiselle sivulle.
-$pdf->AddPage();
-$pdf->SetY(90);
-$pdf->SetFont('Helvetica', '', 13);
+// Laatimispaikka ja laatijan tiedot viimeisenä tekstiryhmänä.
 $place = trim((string) ($report['laatimispaikka'] ?? ''));
 $date = pdfDate((string) $report['raporttipvm']);
 $placeAndDate = $place !== '' ? $place . ', ' . $date : $date;
-$pdf->Cell(0, 8, pdfText($placeAndDate), 0, 1, 'C');
+$title = trim((string) ($report['laatija_titteli'] ?? ''));
+
+$closingTextHeight = 8 + 3 + 7 + ($title !== '' ? 7 : 0);
+$pdf->ensureSpace(8 + $closingTextHeight);
+$pdf->Ln(8);
+$pdf->SetFont('Helvetica', '', 13);
+$pdf->Cell(0, 8, pdfText($placeAndDate), 0, 1, 'L');
 $pdf->Ln(3);
 $pdf->SetFont('Helvetica', '', 11);
-$pdf->Cell(0, 7, pdfText((string) $report['laatija_nimi']), 0, 1, 'C');
-$title = trim((string) ($report['laatija_titteli'] ?? ''));
+$pdf->Cell(0, 7, pdfText((string) $report['laatija_nimi']), 0, 1, 'L');
 if ($title !== '') {
-    $pdf->Cell(0, 7, pdfText($title), 0, 1, 'C');
+    $pdf->Cell(0, 7, pdfText($title), 0, 1, 'L');
 }
 
 $pdf->Output('I', 'raportti-' . $raporttiId . '.pdf');
