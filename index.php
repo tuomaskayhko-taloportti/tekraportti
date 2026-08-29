@@ -22,6 +22,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
                 $message = 'Anna voimassa oleva sähköpostiosoite.';
                 $messageType = 'danger';
+            } elseif (isLaatijaLoginBlocked($email)) {
+                $message = 'Kirjautuminen estetty, ole yhteydessä ylläpitoon: asiakaspalvelu@taloportti.fi';
+                $messageType = 'danger';
             } elseif (requestLoginCode($email)) {
                 $_SESSION['login_email'] = $email;
                 $message = 'Jos osoite kuuluu järjestelmään, lähetimme siihen kirjautumiskoodin.';

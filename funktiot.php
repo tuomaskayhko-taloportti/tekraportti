@@ -20,7 +20,7 @@ function openLayoutShell(string $pageTitle = 'TEKRAPORTTI'): void
     $safeSearch = htmlspecialchars((string) ($_GET['haku'] ?? ''), ENT_QUOTES, 'UTF-8');
     $currentPath = basename((string) ($_SERVER['PHP_SELF'] ?? ''));
     $adminNavLink = ((int) ($laatija['id'] ?? 0) === 1)
-        ? '<a class="nav-link' . ($currentPath === 'yllapito.php' ? ' active' : '') . '" style="display:block!important;width:auto;color:#52627a;text-decoration:none!important;border-radius:8px;margin:.35rem .7rem;padding:14px 18px;font-size:1.05rem;" href="yllapito.php">Ylläpito</a>'
+        ? '<a class="nav-link' . ($currentPath === 'yllapito.php' ? ' active' : '') . '" style="display:block!important;width:auto;color:#52627a;text-decoration:none!important;border-radius:8px;margin:.35rem .7rem;padding:14px 18px;font-size:1.05rem;" href="yllapito.php"><svg class="tekra-menu-icon" xmlns="http://www.w3.org/2000/svg" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-1.4 1.4-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-2v-.2a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L9 17l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.6-1H7.6v-2h.2a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L9 9l1.4-1.4.1.1a1.7 1.7 0 0 0 1.9.3 1.7 1.7 0 0 0 1-1.6v-.2h2v.2a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 9l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v2H21a1.7 1.7 0 0 0-1.6 1z"/></svg> Ylläpito</a>'
         : '';
     $layoutHasSidebar = $laatija !== null;
     $reportsNavClass = in_array($currentPath, ['raportit.php', 'luo_raportti.php', 'muokkaa_raportti.php', 'esikatsele_raportti.php'], true) ? ' active' : '';
@@ -438,6 +438,28 @@ function parseReportShareEmails(string $value): array
         }
     }
     return $emails;
+}
+
+function isLaatijaLoginBlocked(string $email): bool
+{
+    $email = strtolower(trim($email));
+
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        return false;
+    }
+
+    try {
+        $query = getDatabaseConnection()->prepare(
+            'SELECT id FROM laatijat WHERE sahkoposti = ? AND aktiivinen = 0 LIMIT 1'
+        );
+        $query->bind_param('s', $email);
+        $query->execute();
+
+        return (bool) $query->get_result()->fetch_assoc();
+    } catch (Throwable $error) {
+        error_log('Estetyn käyttäjän tarkistus epäonnistui: ' . $error->getMessage());
+        return false;
+    }
 }
 
 /**
