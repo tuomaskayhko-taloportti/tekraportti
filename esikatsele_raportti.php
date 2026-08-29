@@ -320,7 +320,7 @@ function createTableChart(array $table, string $chartType, array &$temporaryImag
         }
         $tableTitle = trim((string) ($table['otsikko'] ?? ''));
         if ($tableTitle !== '') {
-            chartText($image, $chartType === 'line' ? 20 : 24, $left, 15, $tableTitle, $dark, true);
+            chartText($image, $chartType === 'line' ? 20 : 24, 10, 15, $tableTitle, $dark, true);
         }
         $count = max(1, count($labels));
         if ($chartType === 'bar') {
