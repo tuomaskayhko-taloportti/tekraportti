@@ -18,8 +18,14 @@ try {
     $query = $db->prepare(
         'SELECT r.*, a.nimi AS asiakas_nimi, a.yritys AS asiakas_yritys,
                 a.osoite AS asiakas_osoite, a.postinro AS asiakas_postinro,
-                a.postitmp AS asiakas_postitmp, p.nimi AS projekti_nimi,
-                l.nimi AS laatija_nimi, l.titteli AS laatija_titteli
+                a.postitmp AS asiakas_postitmp, a.ytunnus AS asiakas_ytunnus,
+                a.sahkoposti AS asiakas_sahkoposti, a.puhelin AS asiakas_puhelin,
+                p.nimi AS projekti_nimi,
+                l.nimi AS laatija_nimi, l.titteli AS laatija_titteli,
+                l.yritys AS laatija_yritys, l.ytunnus AS laatija_ytunnus,
+                l.sahkoposti AS laatija_sahkoposti, l.puhelin AS laatija_puhelin,
+                l.osoite AS laatija_osoite, l.postinro AS laatija_postinro,
+                l.postitmp AS laatija_postitmp
          FROM raportit r
          INNER JOIN asiakkaat a ON a.id = r.asiakas_id
          INNER JOIN laatijat l ON l.id = r.laatijat_id
@@ -38,10 +44,17 @@ try {
     }
     $laatijatId = (int) $report['laatijat_id'];
 
-    $query = $db->prepare('SELECT id, otsikko, sisalto, jarjestys FROM raporttirivit WHERE raportti_id = ? AND laatijat_id = ? ORDER BY jarjestys, id');
+    $query = $db->prepare('SELECT id, otsikko, sisalto, sisaltaa_asiakastiedot, jarjestys FROM raporttirivit WHERE raportti_id = ? AND laatijat_id = ? ORDER BY jarjestys, id');
     $query->bind_param('ii', $raporttiId, $laatijatId);
     $query->execute();
     $rows = $query->get_result()->fetch_all(MYSQLI_ASSOC);
+    $query->close();
+
+    $customerDetails = [];
+    $query = $db->prepare('SELECT nimi, arvo FROM asiakas_lisatiedot WHERE asiakas_id = ? AND laatijat_id = ? ORDER BY jarjestys, id');
+    $query->bind_param('ii', $report['asiakas_id'], $laatijatId);
+    $query->execute();
+    $customerDetails = $query->get_result()->fetch_all(MYSQLI_ASSOC);
     $query->close();
 
     $mediaByRow = [];
@@ -120,6 +133,57 @@ function pdfDate(string $value): string
 {
     $date = DateTime::createFromFormat('Y-m-d', $value);
     return $date ? $date->format('d.m.Y') : $value;
+}
+
+function pdfFooterContact(array $report): string
+{
+    $parts = [];
+    foreach (['laatija_yritys', 'laatija_ytunnus', 'laatija_puhelin', 'laatija_sahkoposti', 'laatija_osoite'] as $field) {
+        $value = trim((string) ($report[$field] ?? ''));
+        if ($value !== '') {
+            $parts[] = $value;
+        }
+    }
+
+    $postalCode = trim((string) ($report['laatija_postinro'] ?? ''));
+    $postalTown = trim((string) ($report['laatija_postitmp'] ?? ''));
+    $postal = trim($postalCode . ' ' . $postalTown);
+    if ($postal !== '') {
+        $parts[] = $postal;
+    }
+
+    return implode(' | ', $parts);
+}
+
+function pdfCustomerInfoLines(array $report, array $customerDetails): array
+{
+    $lines = [];
+    $fields = [
+        'Nimi' => 'asiakas_nimi',
+        'Yritys' => 'asiakas_yritys',
+        'Y-tunnus' => 'asiakas_ytunnus',
+        'Sähköposti' => 'asiakas_sahkoposti',
+        'Puhelin' => 'asiakas_puhelin',
+        'Osoite' => 'asiakas_osoite',
+    ];
+    foreach ($fields as $label => $field) {
+        $value = trim((string) ($report[$field] ?? ''));
+        if ($value !== '') {
+            $lines[] = $label . ': ' . $value;
+        }
+    }
+    $postal = trim((string) ($report['asiakas_postinro'] ?? '') . ' ' . (string) ($report['asiakas_postitmp'] ?? ''));
+    if ($postal !== '') {
+        $lines[] = 'Postinumero ja -toimipaikka: ' . $postal;
+    }
+    foreach ($customerDetails as $detail) {
+        $name = trim((string) ($detail['nimi'] ?? ''));
+        $value = trim((string) ($detail['arvo'] ?? ''));
+        if ($name !== '' && $value !== '') {
+            $lines[] = $name . ': ' . $value;
+        }
+    }
+    return $lines;
 }
 
 function pdfTableLineCount(FPDF $pdf, string $text, float $width): int
@@ -557,22 +621,77 @@ class TekraPdf extends FPDF
 
     public function Header(): void
     {
+        $this->SetY(7);
+        $this->SetFont('Helvetica', '', 8);
+        $this->SetTextColor(0, 0, 0);
+        $this->Cell(125, 5, pdfText((string) $GLOBALS['report']['otsikko']), 0, 0, 'L');
+        $this->Cell(0, 5, pdfText(pdfDate((string) $GLOBALS['report']['raporttipvm'])), 0, 1, 'R');
+        $this->SetDrawColor(110, 110, 110);
+        $this->SetLineWidth(0.2);
+        $this->Line($this->lMargin, 15, $this->GetPageWidth() - $this->rMargin, 15);
+        // FPDF jatkaa Header()-metodin jälkeen siitä kohdasta, johon header jäi.
+        // Palautetaan sisältö alkamaan asetetun ylämarginaalin kohdalta.
+        $this->SetY($this->tMargin);
     }
 
     public function Footer(): void
     {
-        $this->SetY(-15);
+        // Kansisivu ei kuulu raportin sivunumerointiin.
+        if ($this->PageNo() === 1) {
+            return;
+        }
+
+        $this->SetY(-26);
         $this->SetFont('Helvetica', '', 8);
-        $this->SetTextColor(110, 110, 110);
-        $this->Cell(0, 10, pdfText('Sivu ') . $this->PageNo(), 0, 0, 'R');
+        $this->SetTextColor(0, 0, 0);
+        $this->Cell(0, 5, ($this->PageNo() - 1) . ' / ' . '{nb}', 0, 1, 'R');
+        $this->SetDrawColor(110, 110, 110);
+        $this->SetLineWidth(0.2);
+        $this->Line($this->lMargin, $this->GetY() + 1, $this->GetPageWidth() - $this->rMargin, $this->GetY() + 1);
+        $this->SetY($this->GetY() + 3);
+        $this->SetFont('Helvetica', '', 7.5);
+        $this->Cell(0, 5, pdfText(pdfFooterContact($GLOBALS['report'])), 0, 0, 'L');
+    }
+
+    protected function _putpage($pageNumber): void
+    {
+        $this->_newobj();
+        $this->_put('<</Type /Page');
+        $this->_put('/Parent 1 0 R');
+        if (isset($this->PageInfo[$pageNumber]['size'])) {
+            $this->_put(sprintf('/MediaBox [0 0 %.2F %.2F]', $this->PageInfo[$pageNumber]['size'][0], $this->PageInfo[$pageNumber]['size'][1]));
+        }
+        if (isset($this->PageInfo[$pageNumber]['rotation'])) {
+            $this->_put('/Rotate ' . $this->PageInfo[$pageNumber]['rotation']);
+        }
+        $this->_put('/Resources 2 0 R');
+        if (!empty($this->PageLinks[$pageNumber])) {
+            $links = '/Annots [';
+            foreach ($this->PageLinks[$pageNumber] as $link) {
+                $links .= $link[5] . ' 0 R ';
+            }
+            $this->_put($links . ']');
+        }
+        if ($this->WithAlpha) {
+            $this->_put('/Group <</Type /Group /S /Transparency /CS /DeviceRGB>>');
+        }
+        $this->_put('/Contents ' . ($this->n + 1) . ' 0 R>>');
+        $this->_put('endobj');
+
+        if (!empty($this->AliasNbPages)) {
+            $this->pages[$pageNumber] = str_replace($this->AliasNbPages, max(1, $this->page - 1), $this->pages[$pageNumber]);
+        }
+        $this->_putstreamobject($this->pages[$pageNumber]);
+        $this->_putlinks($pageNumber);
     }
 }
 
 $pdf = new TekraPdf();
+$pdf->AliasNbPages();
 $pdf->SetTitle(pdfText($report['otsikko']));
 $pdf->SetAuthor(pdfText($report['laatija_nimi']));
-$pdf->SetMargins(20, 20, 20);
-$pdf->SetAutoPageBreak(true, 20);
+$pdf->SetMargins(20, 22, 20);
+$pdf->SetAutoPageBreak(true, 26);
 $temporaryImages = [];
 $chartSelections = is_array($_GET['kaavio'] ?? null) ? $_GET['kaavio'] : [];
 // Osiokuvien kiinteä mallikoko ensimmäisen mallikuvan perusteella.
@@ -645,7 +764,7 @@ $pdf->Ln(8);
 $pdf->SetFont('Helvetica', '', 12);
 foreach ($rows as $index => $row) {
     $title = ($index + 1) . '. ' . $row['otsikko'];
-    $pageNumber = (string) ($index + 3);
+    $pageNumber = (string) ($index + 2);
     $titleText = pdfText($title);
     $pageNumberText = pdfText($pageNumber);
     $contentWidth = $pdf->GetPageWidth() - 40;
@@ -670,10 +789,22 @@ foreach ($rows as $index => $row) {
     $pdf->AddPage();
     $pdf->SetFont('Helvetica', 'B', 17);
     $pdf->MultiCell(0, 10, pdfText(($index + 1) . '. ' . $row['otsikko']), 0, 'L');
+    if (!empty($row['sisaltaa_asiakastiedot'])) {
+        $customerInfoLines = pdfCustomerInfoLines($report, $customerDetails);
+        if ($customerInfoLines) {
+            $pdf->Ln(2);
+            $pdf->SetFont('Helvetica', '', 10);
+            foreach ($customerInfoLines as $customerInfoLine) {
+                $pdf->MultiCell(0, 5, pdfText($customerInfoLine), 0, 'L');
+            }
+        }
+    }
     $pdf->Ln(5);
     $pdf->SetFont('Helvetica', '', 11);
     $content = trim((string) $row['sisalto']);
-    $pdf->MultiCell(0, 6, pdfText($content !== '' ? $content : 'Ei tekstisisältöä.'), 0, 'L');
+    if ($content !== '') {
+        $pdf->MultiCell(0, 6, pdfText($content), 0, 'L');
+    }
 
     // Osioon liitetyt taulukot.
     foreach ($tablesByRow[(int) $row['id']] ?? [] as $table) {

@@ -39,9 +39,27 @@ CREATE TABLE `asiakkaat` (
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_asiakkaat_id_laatijat_id` (`id`, `laatijat_id`),
     KEY `idx_asiakkaat_laatijat_id` (`laatijat_id`),
     CONSTRAINT `fk_asiakkaat_laatijat`
         FOREIGN KEY (`laatijat_id`) REFERENCES `laatijat` (`id`)
+        ON UPDATE CASCADE ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `asiakas_lisatiedot` (
+    `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `laatijat_id` INT UNSIGNED NOT NULL,
+    `asiakas_id` INT UNSIGNED NOT NULL,
+    `nimi` VARCHAR(200) NOT NULL,
+    `arvo` VARCHAR(1000) NOT NULL,
+    `jarjestys` INT UNSIGNED NOT NULL DEFAULT 1,
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `idx_asiakas_lisatiedot_asiakas_jarjestys` (`asiakas_id`, `jarjestys`, `id`),
+    UNIQUE KEY `uq_asiakas_lisatiedot_id_laatija` (`id`, `laatijat_id`),
+    CONSTRAINT `fk_asiakas_lisatiedot_asiakas`
+        FOREIGN KEY (`asiakas_id`, `laatijat_id`) REFERENCES `asiakkaat` (`id`, `laatijat_id`)
         ON UPDATE CASCADE ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -129,6 +147,7 @@ CREATE TABLE `raporttirivit` (
     `raportti_id` INT UNSIGNED NOT NULL,
     `otsikko` VARCHAR(255) NOT NULL,
     `sisalto` LONGTEXT NULL,
+    `sisaltaa_asiakastiedot` TINYINT(1) NOT NULL DEFAULT 0,
     `jarjestys` INT UNSIGNED NOT NULL DEFAULT 1,
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

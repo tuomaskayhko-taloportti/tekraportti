@@ -27,6 +27,7 @@ $form = [
     'osoite' => '',
     'postinro' => '',
     'postitmp' => '',
+    'lisatiedot' => [],
 ];
 
 try {
@@ -43,6 +44,11 @@ try {
         $query->close();
         if ($existing) {
             $form = array_merge($form, $existing);
+            $query = $db->prepare('SELECT nimi, arvo FROM asiakas_lisatiedot WHERE asiakas_id = ? AND laatijat_id = ? ORDER BY jarjestys, id');
+            $query->bind_param('ii', $editId, $laatijatId);
+            $query->execute();
+            $form['lisatiedot'] = $query->get_result()->fetch_all(MYSQLI_ASSOC);
+            $query->close();
         } else {
             $editId = 0;
             $message = 'Asiakasta ei löytynyt.';
@@ -72,7 +78,20 @@ try {
             }
         } elseif ($action === 'save') {
             foreach (array_keys($form) as $field) {
+                if ($field === 'lisatiedot') {
+                    continue;
+                }
                 $form[$field] = trim((string) ($_POST[$field] ?? ''));
+            }
+            $postedNames = (array) ($_POST['lisatieto_nimi'] ?? []);
+            $postedValues = (array) ($_POST['lisatieto_arvo'] ?? []);
+            $form['lisatiedot'] = [];
+            foreach ($postedNames as $index => $name) {
+                $name = trim((string) $name);
+                $value = trim((string) ($postedValues[$index] ?? ''));
+                if ($name !== '' && $value !== '') {
+                    $form['lisatiedot'][] = ['nimi' => $name, 'arvo' => $value];
+                }
             }
 
             $emailValid = $form['sahkoposti'] === ''
@@ -82,8 +101,11 @@ try {
             } elseif (mb_strlen($form['nimi']) > 200 || mb_strlen($form['yritys']) > 200
                 || mb_strlen($form['ytunnus']) > 20 || mb_strlen($form['sahkoposti']) > 254
                 || mb_strlen($form['puhelin']) > 50 || mb_strlen($form['osoite']) > 255
-                || mb_strlen($form['postinro']) > 20 || mb_strlen($form['postitmp']) > 100) {
+                || mb_strlen($form['postinro']) > 20 || mb_strlen($form['postitmp']) > 100
+                || count($form['lisatiedot']) > 100) {
                 $message = 'Yksi kentistä ylittää sallitun pituuden.';
+            } elseif (array_filter($form['lisatiedot'], static fn (array $item): bool => mb_strlen($item['nimi']) > 200 || mb_strlen($item['arvo']) > 1000)) {
+                $message = 'Lisätiedon nimi tai arvo ylittää sallitun pituuden.';
             } else {
                 $values = [];
                 foreach ($form as $value) {
@@ -91,6 +113,7 @@ try {
                 }
 
                 try {
+                    $db->begin_transaction();
                     if ($editId > 0) {
                         $query = $db->prepare(
                             'UPDATE asiakkaat SET nimi = ?, yritys = ?, ytunnus = ?, sahkoposti = ?,
@@ -101,6 +124,7 @@ try {
                             'ssssssssii', $values[0], $values[1], $values[2], $values[3],
                             $values[4], $values[5], $values[6], $values[7], $editId, $laatijatId
                         );
+                        $customerId = $editId;
                     } else {
                         $query = $db->prepare(
                             'INSERT INTO asiakkaat
@@ -111,14 +135,34 @@ try {
                             'issssssss', $laatijatId, $values[0], $values[1], $values[2], $values[3],
                             $values[4], $values[5], $values[6], $values[7]
                         );
+                        $customerId = 0;
                     }
                     $query->execute();
                     $query->close();
+                    if ($editId < 1) {
+                        $customerId = (int) $db->insert_id;
+                    }
+                    $query = $db->prepare('DELETE FROM asiakas_lisatiedot WHERE asiakas_id = ? AND laatijat_id = ?');
+                    $query->bind_param('ii', $customerId, $laatijatId);
+                    $query->execute();
+                    $query->close();
+                    if ($form['lisatiedot']) {
+                        $query = $db->prepare('INSERT INTO asiakas_lisatiedot (laatijat_id, asiakas_id, nimi, arvo, jarjestys) VALUES (?, ?, ?, ?, ?)');
+                        foreach ($form['lisatiedot'] as $index => $detail) {
+                            $order = $index + 1;
+                            $query->bind_param('iissi', $laatijatId, $customerId, $detail['nimi'], $detail['arvo'], $order);
+                            $query->execute();
+                        }
+                        $query->close();
+                    }
+                    $db->commit();
                     $message = $editId > 0 ? 'Asiakkaan tiedot päivitettiin.' : 'Asiakas lisättiin.';
                     $messageType = 'success';
                     $editId = 0;
                     $form = array_fill_keys(array_keys($form), '');
+                    $form['lisatiedot'] = [];
                 } catch (Throwable $error) {
+                    $db->rollback();
                     $message = 'Asiakkaan tallennus epäonnistui. Tarkista, ettei sähköpostiosoite ole jo käytössä.';
                     error_log('Asiakkaan tallennus epäonnistui: ' . $error->getMessage());
                 }
@@ -223,6 +267,25 @@ openLayoutShell('Asiakkaat – TEKRAPORTTI');
                     <label for="postitmp" class="form-label">Postitoimipaikka</label>
                     <input type="text" class="form-control" id="postitmp" name="postitmp" value="<?= customerValue($form, 'postitmp') ?>" maxlength="100">
                 </div>
+                <div class="col-12">
+                    <label class="form-label">Lisätiedot</label>
+                    <div id="asiakas-lisatiedot">
+                        <?php foreach ($form['lisatiedot'] as $detail): ?>
+                            <div class="row g-2 mb-2 asiakas-lisatieto-rivi">
+                                <div class="col-md-4"><input type="text" class="form-control" name="lisatieto_nimi[]" value="<?= customerValue($detail, 'nimi') ?>" maxlength="200" placeholder="Nimi, esim. Rakennuksia"></div>
+                                <div class="col-md-7"><input type="text" class="form-control" name="lisatieto_arvo[]" value="<?= customerValue($detail, 'arvo') ?>" maxlength="1000" placeholder="Arvo, esim. 1"></div>
+                                <div class="col-md-1"><button type="button" class="btn btn-outline-danger w-100" data-poista-lisatieto>−</button></div>
+                            </div>
+                        <?php endforeach; ?>
+                        <div class="row g-2 mb-2 asiakas-lisatieto-rivi">
+                            <div class="col-md-4"><input type="text" class="form-control" name="lisatieto_nimi[]" maxlength="200" placeholder="Nimi, esim. Rakennuksia"></div>
+                            <div class="col-md-7"><input type="text" class="form-control" name="lisatieto_arvo[]" maxlength="1000" placeholder="Arvo, esim. 1"></div>
+                            <div class="col-md-1"><button type="button" class="btn btn-outline-danger w-100" data-poista-lisatieto>−</button></div>
+                        </div>
+                    </div>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" id="lisaa-lisatieto">+ Lisää lisätieto</button>
+                    <div class="form-text">Lisätiedot tulostetaan raportille muodossa Nimi: Arvo.</div>
+                </div>
             </div>
         </div>
         <div class="card-footer bg-white border-0 px-4 pb-4">
@@ -288,5 +351,20 @@ openLayoutShell('Asiakkaat – TEKRAPORTTI');
         <?php endif; ?>
     </nav>
 <?php endif; ?>
+
+<script>
+document.getElementById('lisaa-lisatieto')?.addEventListener('click', function () {
+    const container = document.getElementById('asiakas-lisatiedot');
+    const row = container.querySelector('.asiakas-lisatieto-rivi').cloneNode(true);
+    row.querySelectorAll('input').forEach(input => input.value = '');
+    container.appendChild(row);
+});
+document.getElementById('asiakas-lisatiedot')?.addEventListener('click', function (event) {
+    if (!event.target.matches('[data-poista-lisatieto]')) return;
+    const rows = this.querySelectorAll('.asiakas-lisatieto-rivi');
+    if (rows.length > 1) event.target.closest('.asiakas-lisatieto-rivi').remove();
+    else event.target.closest('.asiakas-lisatieto-rivi').querySelectorAll('input').forEach(input => input.value = '');
+});
+</script>
 
 <?php closeLayoutShell(); ?>

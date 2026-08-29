@@ -172,6 +172,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } elseif ($action === 'add-row') {
                 $rowTitle = trim((string) ($_POST['rivi_otsikko'] ?? ''));
                 $rowContent = trim((string) ($_POST['rivi_sisalto'] ?? ''));
+                $includeCustomerInfo = isset($_POST['sisaltaa_asiakastiedot']) ? 1 : 0;
                 if ($rowTitle === '') {
                     throw new RuntimeException('Anna osiolle otsikko.');
                 }
@@ -180,8 +181,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $query->execute();
                 $order = (int) $query->get_result()->fetch_assoc()['seuraava'];
                 $query->close();
-                $query = $db->prepare('INSERT INTO raporttirivit (laatijat_id, raportti_id, otsikko, sisalto, jarjestys) VALUES (?, ?, ?, ?, ?)');
-                $query->bind_param('iissi', $laatijatId, $raporttiId, $rowTitle, $rowContent, $order);
+                $query = $db->prepare('INSERT INTO raporttirivit (laatijat_id, raportti_id, otsikko, sisalto, sisaltaa_asiakastiedot, jarjestys) VALUES (?, ?, ?, ?, ?, ?)');
+                $query->bind_param('iissii', $laatijatId, $raporttiId, $rowTitle, $rowContent, $includeCustomerInfo, $order);
                 $query->execute();
                 $query->close();
                 $message = 'Osio lisättiin.';
@@ -190,14 +191,56 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $rowId = (int) ($_POST['rivi_id'] ?? 0);
                 $rowTitle = trim((string) ($_POST['rivi_otsikko'] ?? ''));
                 $rowContent = trim((string) ($_POST['rivi_sisalto'] ?? ''));
+                $includeCustomerInfo = isset($_POST['sisaltaa_asiakastiedot']) ? 1 : 0;
                 if ($rowId < 1 || $rowTitle === '') {
                     throw new RuntimeException('Osion otsikko puuttuu.');
                 }
-                $query = $db->prepare('UPDATE raporttirivit SET otsikko = ?, sisalto = ? WHERE id = ? AND raportti_id = ? AND laatijat_id = ?');
-                $query->bind_param('ssiii', $rowTitle, $rowContent, $rowId, $raporttiId, $laatijatId);
+                $query = $db->prepare('UPDATE raporttirivit SET otsikko = ?, sisalto = ?, sisaltaa_asiakastiedot = ? WHERE id = ? AND raportti_id = ? AND laatijat_id = ?');
+                $query->bind_param('ssiiii', $rowTitle, $rowContent, $includeCustomerInfo, $rowId, $raporttiId, $laatijatId);
                 $query->execute();
                 $query->close();
                 $message = 'Osio tallennettiin.';
+                $messageType = 'success';
+            } elseif ($action === 'move-row') {
+                $rowId = (int) ($_POST['rivi_id'] ?? 0);
+                $direction = (string) ($_POST['suunta'] ?? '');
+                if ($rowId < 1 || !in_array($direction, ['up', 'down'], true)) {
+                    throw new RuntimeException('Osion siirto epäonnistui.');
+                }
+                $query = $db->prepare('SELECT id, jarjestys FROM raporttirivit WHERE id = ? AND raportti_id = ? AND laatijat_id = ? LIMIT 1');
+                $query->bind_param('iii', $rowId, $raporttiId, $laatijatId);
+                $query->execute();
+                $currentRow = $query->get_result()->fetch_assoc();
+                $query->close();
+                if (!$currentRow) {
+                    throw new RuntimeException('Osio ei kuulu raporttiin.');
+                }
+                $currentOrder = (int) $currentRow['jarjestys'];
+                $comparison = $direction === 'up' ? '<' : '>';
+                $sort = $direction === 'up' ? 'DESC' : 'ASC';
+                $query = $db->prepare("SELECT id, jarjestys FROM raporttirivit WHERE raportti_id = ? AND laatijat_id = ? AND jarjestys {$comparison} ? ORDER BY jarjestys {$sort}, id {$sort} LIMIT 1");
+                $query->bind_param('iii', $raporttiId, $laatijatId, $currentOrder);
+                $query->execute();
+                $neighbor = $query->get_result()->fetch_assoc();
+                $query->close();
+                if ($neighbor) {
+                    $neighborId = (int) $neighbor['id'];
+                    $neighborOrder = (int) $neighbor['jarjestys'];
+                    $db->begin_transaction();
+                    try {
+                        $query = $db->prepare('UPDATE raporttirivit SET jarjestys = 0 WHERE id = ? AND raportti_id = ? AND laatijat_id = ?');
+                        $query->bind_param('iii', $rowId, $raporttiId, $laatijatId); $query->execute(); $query->close();
+                        $query = $db->prepare('UPDATE raporttirivit SET jarjestys = ? WHERE id = ? AND raportti_id = ? AND laatijat_id = ?');
+                        $query->bind_param('iiii', $currentOrder, $neighborId, $raporttiId, $laatijatId); $query->execute(); $query->close();
+                        $query = $db->prepare('UPDATE raporttirivit SET jarjestys = ? WHERE id = ? AND raportti_id = ? AND laatijat_id = ?');
+                        $query->bind_param('iiii', $neighborOrder, $rowId, $raporttiId, $laatijatId); $query->execute(); $query->close();
+                        $db->commit();
+                    } catch (Throwable $error) {
+                        $db->rollback();
+                        throw $error;
+                    }
+                }
+                $message = 'Osion järjestys päivitettiin.';
                 $messageType = 'success';
             } elseif ($action === 'add-table') {
                 $rowId = (int) ($_POST['rivi_id'] ?? 0);
@@ -438,7 +481,7 @@ try {
     ) ORDER BY p.nimi');
     $query->bind_param('ii', $laatijatId, $currentLaatijaId); $query->execute(); $result = $query->get_result();
     while ($item = $result->fetch_assoc()) { $projects[] = $item; } $query->close();
-    $query = $db->prepare('SELECT id, otsikko, sisalto, jarjestys FROM raporttirivit WHERE raportti_id = ? AND laatijat_id = ? ORDER BY jarjestys, id');
+    $query = $db->prepare('SELECT id, otsikko, sisalto, sisaltaa_asiakastiedot, jarjestys FROM raporttirivit WHERE raportti_id = ? AND laatijat_id = ? ORDER BY jarjestys, id');
     $query->bind_param('ii', $raporttiId, $laatijatId); $query->execute(); $result = $query->get_result();
     while ($item = $result->fetch_assoc()) { $rows[] = $item; } $query->close();
     $query = $db->prepare('SELECT id, raporttirivi_id, tyyppi, url, kuvateksti FROM raporttimedia WHERE raportti_id = ? AND laatijat_id = ? ORDER BY raporttirivi_id, jarjestys, id');
@@ -538,12 +581,14 @@ openLayoutShell('Muokkaa raporttia – TEKRAPORTTI');
 <div class="card border-0 shadow-sm mb-4"><div class="card-header bg-white"><h2 class="h5 mb-0">Tiivistelmä</h2></div><div class="card-body"><p class="mb-0"><?= nl2br(editValue($report['tiivistelma'] ?: 'Tiivistelmää ei ole vielä lisätty.')) ?></p></div></div>
 
 <div class="d-flex justify-content-between align-items-center mb-3"><h2 class="h4 mb-0">Raporttiosiot</h2></div>
-<?php foreach ($rows as $row): ?>
+<?php foreach ($rows as $rowIndex => $row): ?>
     <div class="card border-0 shadow-sm mb-3" id="osio-<?= (int) $row['id'] ?>"><div class="card-body p-4">
+        <div class="d-flex justify-content-between align-items-center mb-3"><strong>Osio <?= $rowIndex + 1 ?></strong><div class="d-flex gap-2"><form method="post" action="muokkaa_raportti.php?id=<?= $raporttiId ?>"><input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="move-row"><input type="hidden" name="rivi_id" value="<?= (int) $row['id'] ?>"><input type="hidden" name="suunta" value="up"><input type="hidden" name="return_anchor" value="osio-<?= (int) $row['id'] ?>"><button class="btn btn-outline-secondary btn-sm" <?= $rowIndex === 0 ? 'disabled' : '' ?>>↑ Ylös</button></form><form method="post" action="muokkaa_raportti.php?id=<?= $raporttiId ?>"><input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="move-row"><input type="hidden" name="rivi_id" value="<?= (int) $row['id'] ?>"><input type="hidden" name="suunta" value="down"><input type="hidden" name="return_anchor" value="osio-<?= (int) $row['id'] ?>"><button class="btn btn-outline-secondary btn-sm" <?= $rowIndex === count($rows) - 1 ? 'disabled' : '' ?>>↓ Alas</button></form></div></div>
         <form method="post" action="muokkaa_raportti.php?id=<?= $raporttiId ?>">
             <input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="update-row"><input type="hidden" name="rivi_id" value="<?= (int) $row['id'] ?>"><input type="hidden" name="return_anchor" value="osio-<?= (int) $row['id'] ?>">
             <label class="form-label">Osion otsikko</label><input class="form-control mb-3" name="rivi_otsikko" value="<?= editValue($row['otsikko']) ?>" maxlength="255" required>
             <label class="form-label">Tekstisisältö</label><textarea class="form-control mb-3" name="rivi_sisalto" rows="6"><?= editValue($row['sisalto']) ?></textarea>
+            <div class="form-check mb-3"><input class="form-check-input" type="checkbox" id="asiakastiedot-<?= (int) $row['id'] ?>" name="sisaltaa_asiakastiedot" <?= !empty($row['sisaltaa_asiakastiedot']) ? 'checked' : '' ?>><label class="form-check-label" for="asiakastiedot-<?= (int) $row['id'] ?>">Tulosta asiakkaan tiedot tämän osion alussa</label></div>
             <button class="btn btn-primary btn-sm">Tallenna osio</button>
         </form>
         <form method="post" action="muokkaa_raportti.php?id=<?= $raporttiId ?>" class="mt-2" onsubmit="return confirm('Poistetaanko osio?');"><input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="delete-row"><input type="hidden" name="rivi_id" value="<?= (int) $row['id'] ?>"><input type="hidden" name="return_anchor" value="osio-<?= (int) $row['id'] ?>"><button class="btn btn-outline-danger btn-sm">Poista osio</button></form>
@@ -575,7 +620,7 @@ openLayoutShell('Muokkaa raporttia – TEKRAPORTTI');
 <?php endforeach; ?>
 
 <span id="uusi-osio"></span>
-<div class="card border-0 shadow-sm"><div class="card-header bg-white"><h2 class="h5 mb-0">Lisää uusi osio</h2></div><form method="post" action="muokkaa_raportti.php?id=<?= $raporttiId ?>"><input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="add-row"><div class="card-body p-4"><input class="form-control mb-3" name="rivi_otsikko" placeholder="Osion otsikko" maxlength="255" required><textarea class="form-control" name="rivi_sisalto" rows="6" placeholder="Tekstisisältö"></textarea></div><div class="card-footer bg-white border-0 px-4 pb-4"><button class="btn btn-primary">+ Lisää osio</button></div></form></div>
+<div class="card border-0 shadow-sm"><div class="card-header bg-white"><h2 class="h5 mb-0">Lisää uusi osio</h2></div><form method="post" action="muokkaa_raportti.php?id=<?= $raporttiId ?>"><input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="add-row"><div class="card-body p-4"><input class="form-control mb-3" name="rivi_otsikko" placeholder="Osion otsikko" maxlength="255" required><textarea class="form-control mb-3" name="rivi_sisalto" rows="6" placeholder="Tekstisisältö"></textarea><div class="form-check"><input class="form-check-input" type="checkbox" id="uusi-asiakastiedot" name="sisaltaa_asiakastiedot"><label class="form-check-label" for="uusi-asiakastiedot">Tulosta asiakkaan tiedot tämän osion alussa</label></div></div><div class="card-footer bg-white border-0 px-4 pb-4"><button class="btn btn-primary">+ Lisää osio</button></div></form></div>
 
 <script>
 document.querySelectorAll('form[action^="muokkaa_raportti.php"]').forEach(function (form) {
