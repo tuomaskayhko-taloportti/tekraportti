@@ -172,7 +172,7 @@ function closeLayoutShell(): void
     global $layoutHasSidebar;
 
     echo $layoutHasSidebar ? "</main>\n</div>\n</div>\n" : "</main>\n";
-    echo '<footer class="container-fluid text-start pb-3 text-muted small">TEKRAPORTTI v'
+    echo '<footer class="container-fluid text-end pb-3 text-muted small">© Helsingin Kiinteistömanagerit Oy 2026 · TEKRAPORTTI v'
         . htmlspecialchars(APP_VERSION, ENT_QUOTES, 'UTF-8')
         . "</footer>\n";
     echo "<script src=\"https://code.jquery.com/jquery-4.0.0.min.js\"></script>\n";
