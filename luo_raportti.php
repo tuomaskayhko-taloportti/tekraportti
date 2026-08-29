@@ -154,6 +154,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $query->close();
             }
             $db->commit();
+            if ($sharedLaatijaId > 0) {
+                $sharer = getCurrentLaatija() ?: [];
+                sendReportShareNotification(
+                    $sharedEmail,
+                    $form['otsikko'],
+                    (string) ($sharer['nimi'] ?? ''),
+                    (string) ($sharer['yritys'] ?? '')
+                );
+            }
             header('Location: muokkaa_raportti.php?id=' . $reportId);
             exit;
         } catch (Throwable $error) {

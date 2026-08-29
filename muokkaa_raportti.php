@@ -75,6 +75,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $summary = trim((string) ($_POST['tiivistelma'] ?? ''));
                 $cover = trim((string) ($_POST['kansikuva'] ?? ''));
                 $sharedEmail = trim((string) ($_POST['jaettava_sahkoposti'] ?? ''));
+                $oldSharedEmail = trim((string) ($report['jaettava_sahkoposti'] ?? ''));
                 $oldCover = trim((string) ($report['kansikuva'] ?? ''));
                 $dateObject = DateTime::createFromFormat('!Y-m-d', $date);
                 if ($customerId < 1 || $title === '' || !$dateObject || $dateObject->format('Y-m-d') !== $date) {
@@ -126,6 +127,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $query->bind_param('ii', $raporttiId, $sharedLaatijaId);
                     $query->execute();
                     $query->close();
+                }
+                if ($sharedLaatijaId > 0 && strcasecmp($oldSharedEmail, $sharedEmail) !== 0) {
+                    $sharer = getCurrentLaatija() ?: [];
+                    sendReportShareNotification(
+                        $sharedEmail,
+                        $title,
+                        (string) ($sharer['nimi'] ?? ''),
+                        (string) ($sharer['yritys'] ?? '')
+                    );
                 }
                 $message = 'Raportin perustiedot tallennettiin.';
                 $messageType = 'success';

@@ -347,6 +347,79 @@ function deleteStoredFile(string $url): void
 }
 
 /**
+ * Ilmoittaa laatijalle, että raportti on jaettu hänen kanssaan.
+ */
+function sendReportShareNotification(string $recipientEmail, string $reportTitle, string $sharerName, string $sharerCompany = ''): bool
+{
+    $recipientEmail = strtolower(trim($recipientEmail));
+    if (!filter_var($recipientEmail, FILTER_VALIDATE_EMAIL)) {
+        return false;
+    }
+
+    try {
+        $mailSettings = getApplicationSecrets();
+        $sender = filter_var(trim((string) $mailSettings['mailUser']), FILTER_VALIDATE_EMAIL)
+            ? trim((string) $mailSettings['mailUser'])
+            : '';
+        $mailServer = trim((string) $mailSettings['mailServer']);
+        $mailPassword = (string) $mailSettings['mailPWD'];
+        $mailPort = filter_var($mailSettings['mailPort'], FILTER_VALIDATE_INT);
+        $mailEncryption = strtolower(trim((string) $mailSettings['mailEncryption']));
+
+        if ($mailServer === '' || $sender === '' || $mailPassword === '') {
+            throw new RuntimeException('Sähköpostin SMTP-asetukset puuttuvat.');
+        }
+        if ($mailPort === false || $mailPort < 1 || $mailPort > 65535) {
+            throw new RuntimeException('Sähköpostin SMTP-portti on virheellinen.');
+        }
+        if ($mailEncryption === 'ssl' || $mailEncryption === 'smtps') {
+            $smtpSecure = \PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_SMTPS;
+        } elseif ($mailEncryption === 'tls' || $mailEncryption === 'starttls') {
+            $smtpSecure = \PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
+        } elseif ($mailEncryption === 'none' || $mailEncryption === '') {
+            $smtpSecure = '';
+        } else {
+            throw new RuntimeException('Sähköpostin SMTP-salaus on virheellinen.');
+        }
+
+        $mailer = new \PHPMailer\PHPMailer\PHPMailer(true);
+        $mailer->isSMTP();
+        $mailer->Host = $mailServer;
+        $mailer->SMTPAuth = true;
+        $mailer->Username = $sender;
+        $mailer->Password = $mailPassword;
+        $mailer->Port = $mailPort;
+        $mailer->SMTPSecure = $smtpSecure;
+        $mailer->CharSet = \PHPMailer\PHPMailer\PHPMailer::CHARSET_UTF8;
+        $mailer->setFrom($sender, 'TEKRAPORTTI');
+        $mailer->addAddress($recipientEmail);
+        $mailer->Subject = 'Raportti jaettu kanssasi – ' . $reportTitle;
+        $message = "Hei,\n\n"
+            . $sharerName . " on jakanut raportin kanssasi TEKRAPORTTI-palvelussa.\n\n"
+            . 'Raportti: ' . $reportTitle . "\n"
+            . 'Jakaja: ' . $sharerName . "\n";
+        if (trim($sharerCompany) !== '') {
+            $message .= 'Yritys: ' . trim($sharerCompany) . "\n";
+        }
+        $message .= "\nVoit kirjautua TEKRAPORTTI-palveluun tarkastelemaan ja muokkaamaan raporttia.\n";
+        $mailer->Body = $message;
+        $mailer->isHTML(false);
+
+        if (!$mailer->send()) {
+            throw new RuntimeException('PHPMailer ei vahvistanut sähköpostin lähetystä.');
+        }
+        return true;
+    } catch (Throwable $error) {
+        $mailError = isset($mailer) && $mailer instanceof \PHPMailer\PHPMailer\PHPMailer
+            ? $mailer->ErrorInfo
+            : '';
+        error_log('Raportin jakamisilmoituksen lähetys epäonnistui: ' . $error->getMessage()
+            . ($mailError !== '' ? ' | PHPMailer: ' . $mailError : ''));
+        return false;
+    }
+}
+
+/**
  * Lähettää kirjautumiskoodin laatijalle.
  *
  * Paluuarvo on true myös silloin, kun sähköpostiosoitetta ei löydy. Näin
