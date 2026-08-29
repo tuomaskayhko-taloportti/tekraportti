@@ -458,6 +458,7 @@ foreach ($rows as $index => $row) {
             $x += $columnWidths[$columnIndex];
         }
         $tableY = $headerY + $headerHeight;
+        $pdf->SetXY(20, $tableY);
         $pdf->SetFillColor(255, 255, 255);
         foreach ($table['rivit'] as $tableRow) {
             $rowLines = 1;

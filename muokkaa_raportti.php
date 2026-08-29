@@ -343,7 +343,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 // Post/Redirect/Get estää saman lomakkeen lähettämisen uudelleen sivun päivityksessä.
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $messageType === 'success') {
-    header('Location: muokkaa_raportti.php?id=' . $raporttiId . '&saved=1');
+    $returnAnchor = preg_replace('/[^A-Za-z0-9_-]/', '', (string) ($_POST['return_anchor'] ?? ''));
+    if ($returnAnchor === '') {
+        $returnAnchor = match ($action ?? '') {
+            'update-report' => 'perustiedot',
+            'add-row' => 'uusi-osio',
+            'update-row', 'delete-row', 'add-media', 'add-table' => 'osio-' . (int) ($_POST['rivi_id'] ?? 0),
+            'update-table', 'add-table-column', 'add-table-row',
+            'delete-table-column', 'delete-table-row', 'delete-table' => 'taulukko-' . (int) ($_POST['taulukko_id'] ?? 0),
+            default => '',
+        };
+    }
+    header('Location: muokkaa_raportti.php?id=' . $raporttiId . '&saved=1' . ($returnAnchor !== '' ? '#' . $returnAnchor : ''));
     exit;
 }
 
@@ -414,8 +425,8 @@ openLayoutShell('Muokkaa raporttia – TEKRAPORTTI');
 </div>
 <?php if ($message !== ''): ?><div class="alert alert-<?= editValue($messageType) ?>" role="alert"><?= editValue($message) ?></div><?php endif; ?>
 
-<form method="post" enctype="multipart/form-data" action="muokkaa_raportti.php?id=<?= $raporttiId ?>" class="card border-0 shadow-sm mb-4">
-    <input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="update-report">
+<form method="post" enctype="multipart/form-data" action="muokkaa_raportti.php?id=<?= $raporttiId ?>" class="card border-0 shadow-sm mb-4" id="perustiedot">
+    <input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="update-report"><input type="hidden" name="return_anchor" value="perustiedot">
     <div class="card-header bg-white"><h2 class="h5 mb-0">Raportin perustiedot</h2></div><div class="card-body p-4"><div class="row g-3">
         <div class="col-md-6"><label class="form-label" for="asiakas_id">Asiakas</label><select class="form-select" id="asiakas_id" name="asiakas_id" required><?php foreach ($customers as $item): ?><option value="<?= (int) $item['id'] ?>" <?= (int) $report['asiakas_id'] === (int) $item['id'] ? 'selected' : '' ?>><?= editValue($item['yritys'] ? $item['nimi'] . ' – ' . $item['yritys'] : $item['nimi']) ?></option><?php endforeach; ?></select></div>
         <div class="col-md-6"><label class="form-label" for="projekti_id">Projekti</label><select class="form-select" id="projekti_id" name="projekti_id"><option value="">Ei projektia</option><?php foreach ($projects as $item): ?><option value="<?= (int) $item['id'] ?>" <?= (int) $report['projekti_id'] === (int) $item['id'] ? 'selected' : '' ?>><?= editValue($item['nimi']) ?></option><?php endforeach; ?></select></div>
@@ -431,25 +442,25 @@ openLayoutShell('Muokkaa raporttia – TEKRAPORTTI');
 
 <div class="d-flex justify-content-between align-items-center mb-3"><h2 class="h4 mb-0">Raporttiosiot</h2></div>
 <?php foreach ($rows as $row): ?>
-    <div class="card border-0 shadow-sm mb-3"><div class="card-body p-4">
+    <div class="card border-0 shadow-sm mb-3" id="osio-<?= (int) $row['id'] ?>"><div class="card-body p-4">
         <form method="post" action="muokkaa_raportti.php?id=<?= $raporttiId ?>">
-            <input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="update-row"><input type="hidden" name="rivi_id" value="<?= (int) $row['id'] ?>">
+            <input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="update-row"><input type="hidden" name="rivi_id" value="<?= (int) $row['id'] ?>"><input type="hidden" name="return_anchor" value="osio-<?= (int) $row['id'] ?>">
             <label class="form-label">Osion otsikko</label><input class="form-control mb-3" name="rivi_otsikko" value="<?= editValue($row['otsikko']) ?>" maxlength="255" required>
             <label class="form-label">Tekstisisältö</label><textarea class="form-control mb-3" name="rivi_sisalto" rows="6"><?= editValue($row['sisalto']) ?></textarea>
             <button class="btn btn-primary btn-sm">Tallenna osio</button>
         </form>
-        <form method="post" action="muokkaa_raportti.php?id=<?= $raporttiId ?>" class="mt-2" onsubmit="return confirm('Poistetaanko osio?');"><input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="delete-row"><input type="hidden" name="rivi_id" value="<?= (int) $row['id'] ?>"><button class="btn btn-outline-danger btn-sm">Poista osio</button></form>
+        <form method="post" action="muokkaa_raportti.php?id=<?= $raporttiId ?>" class="mt-2" onsubmit="return confirm('Poistetaanko osio?');"><input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="delete-row"><input type="hidden" name="rivi_id" value="<?= (int) $row['id'] ?>"><input type="hidden" name="return_anchor" value="osio-<?= (int) $row['id'] ?>"><button class="btn btn-outline-danger btn-sm">Poista osio</button></form>
         <?php foreach ($media as $item): ?><?php if ((int) $item['raporttirivi_id'] === (int) $row['id']): ?><div class="border-top mt-3 pt-2 small"><strong><?= editValue($item['tyyppi']) ?></strong>: <?= editValue($item['url']) ?>
             <form method="post" action="muokkaa_raportti.php?id=<?= $raporttiId ?>" class="row g-2 mt-1 align-items-center">
-                <input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="update-media"><input type="hidden" name="media_id" value="<?= (int) $item['id'] ?>">
+                <input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="update-media"><input type="hidden" name="media_id" value="<?= (int) $item['id'] ?>"><input type="hidden" name="return_anchor" value="osio-<?= (int) $row['id'] ?>">
                 <div class="col-md-8"><input class="form-control form-control-sm" name="kuvateksti" value="<?= editValue($item['kuvateksti']) ?>" placeholder="Kuvateksti"></div>
                 <div class="col-md-auto"><button class="btn btn-outline-primary btn-sm">Tallenna kuvateksti</button></div>
             </form>
-            <form method="post" action="muokkaa_raportti.php?id=<?= $raporttiId ?>" class="d-inline" onsubmit="return confirm('Poistetaanko media?');"><input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="delete-media"><input type="hidden" name="media_id" value="<?= (int) $item['id'] ?>"><button class="btn btn-link btn-sm text-danger">Poista</button></form>
+            <form method="post" action="muokkaa_raportti.php?id=<?= $raporttiId ?>" class="d-inline" onsubmit="return confirm('Poistetaanko media?');"><input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="delete-media"><input type="hidden" name="media_id" value="<?= (int) $item['id'] ?>"><input type="hidden" name="return_anchor" value="osio-<?= (int) $row['id'] ?>"><button class="btn btn-link btn-sm text-danger">Poista</button></form>
         </div><?php endif; ?><?php endforeach; ?>
         <form method="post" enctype="multipart/form-data" action="muokkaa_raportti.php?id=<?= $raporttiId ?>" class="row g-2 mt-2"><input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="add-media"><input type="hidden" name="rivi_id" value="<?= (int) $row['id'] ?>"><div class="col-md-2"><select class="form-select form-select-sm" name="media_tyyppi" required><option value="kuva">Kuva</option><option value="videolinkki">Videolinkki</option></select></div><div class="col-md-4"><div class="file-drop-zone" data-file-drop><input type="file" class="form-control form-control-sm" name="media_files[]" multiple accept="image/jpeg,image/png,image/webp"><div class="file-drop-zone-hint">Raahaa kuvat tähän tai valitse tiedostot.</div></div><div class="form-text">Voit valita useita kuvia.</div></div><div class="col-md-3"><input class="form-control form-control-sm" name="media_url" placeholder="Videolinkin HTTPS-osoite"></div><div class="col-md-2"><input class="form-control form-control-sm" name="kuvateksti" placeholder="Kuvateksti"></div><div class="col-md-1"><button class="btn btn-outline-primary btn-sm w-100">+</button></div></form>
         <?php foreach ($tables as $table): ?><?php if ((int) $table['raporttirivi_id'] === (int) $row['id']): ?>
-            <div class="border-top mt-4 pt-3">
+            <div class="border-top mt-4 pt-3" id="taulukko-<?= (int) $table['id'] ?>">
                 <div class="d-flex justify-content-between align-items-center mb-2"><strong>Taulukko</strong>
                     <form method="post" action="muokkaa_raportti.php?id=<?= $raporttiId ?>" onsubmit="return confirm('Poistetaanko taulukko ja kaikki sen tiedot?');"><input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="delete-table"><input type="hidden" name="taulukko_id" value="<?= (int) $table['id'] ?>"><button class="btn btn-outline-danger btn-sm">Poista taulukko</button></form>
                 </div>
@@ -466,9 +477,23 @@ openLayoutShell('Muokkaa raporttia – TEKRAPORTTI');
     </div></div>
 <?php endforeach; ?>
 
+<span id="uusi-osio"></span>
 <div class="card border-0 shadow-sm"><div class="card-header bg-white"><h2 class="h5 mb-0">Lisää uusi osio</h2></div><form method="post" action="muokkaa_raportti.php?id=<?= $raporttiId ?>"><input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="add-row"><div class="card-body p-4"><input class="form-control mb-3" name="rivi_otsikko" placeholder="Osion otsikko" maxlength="255" required><textarea class="form-control" name="rivi_sisalto" rows="6" placeholder="Tekstisisältö"></textarea></div><div class="card-footer bg-white border-0 px-4 pb-4"><button class="btn btn-primary">+ Lisää osio</button></div></form></div>
 
 <script>
+document.querySelectorAll('form[action^="muokkaa_raportti.php"]').forEach(function (form) {
+    form.addEventListener('submit', function () {
+        if (form.querySelector('input[name="return_anchor"]')) return;
+        const anchor = form.closest('[id^="taulukko-"], [id^="osio-"], #perustiedot');
+        if (!anchor || !anchor.id) return;
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'return_anchor';
+        input.value = anchor.id;
+        form.appendChild(input);
+    });
+});
+
 document.querySelectorAll('[data-file-drop]').forEach(function (dropZone) {
     const input = dropZone.querySelector('input[type="file"]');
     if (!input) return;
