@@ -31,7 +31,7 @@ try {
     $query = $db->prepare(
         'SELECT r.*, a.nimi AS asiakas_nimi, p.nimi AS projekti_nimi
          FROM raportit r
-         INNER JOIN asiakkaat a ON a.id = r.asiakas_id AND a.laatijat_id = r.laatijat_id
+         INNER JOIN asiakkaat a ON a.id = r.asiakas_id
          LEFT JOIN projektit p ON p.id = r.projekti_id
          WHERE r.id = ? AND (r.laatijat_id = ? OR EXISTS (
              SELECT 1 FROM raporttijaot j WHERE j.raportti_id = r.id AND j.laatijat_id = ?

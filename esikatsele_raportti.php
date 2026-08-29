@@ -21,7 +21,7 @@ try {
                 a.postitmp AS asiakas_postitmp, p.nimi AS projekti_nimi,
                 l.nimi AS laatija_nimi, l.titteli AS laatija_titteli
          FROM raportit r
-         INNER JOIN asiakkaat a ON a.id = r.asiakas_id AND a.laatijat_id = r.laatijat_id
+         INNER JOIN asiakkaat a ON a.id = r.asiakas_id
          INNER JOIN laatijat l ON l.id = r.laatijat_id
          LEFT JOIN projektit p ON p.id = r.projekti_id
          LEFT JOIN raporttijaot j ON j.raportti_id = r.id

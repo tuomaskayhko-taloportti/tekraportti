@@ -118,7 +118,7 @@ try {
     if ($showAll) {
         $countQuery = $db->prepare(
             'SELECT COUNT(*) AS maara FROM raportit r
-             INNER JOIN asiakkaat a ON a.id = r.asiakas_id AND a.laatijat_id = r.laatijat_id ' . $reportWhere
+             INNER JOIN asiakkaat a ON a.id = r.asiakas_id ' . $reportWhere
         );
         $countTypes = 'iii';
         $countParams = [$laatijatId, $laatijatId, $laatijatId];
@@ -136,7 +136,7 @@ try {
         $reportQuery = $db->prepare(
             'SELECT r.id, r.laatijat_id, r.otsikko, r.raporttipvm, a.nimi AS asiakas_nimi, a.yritys AS asiakas_yritys
              FROM raportit r
-             INNER JOIN asiakkaat a ON a.id = r.asiakas_id AND a.laatijat_id = r.laatijat_id
+             INNER JOIN asiakkaat a ON a.id = r.asiakas_id
              ' . $reportWhere . '
              ORDER BY r.raporttipvm DESC, r.id DESC
              LIMIT ? OFFSET ?'
@@ -152,7 +152,7 @@ try {
         $reportQuery = $db->prepare(
             'SELECT r.id, r.laatijat_id, r.otsikko, r.raporttipvm, a.nimi AS asiakas_nimi, a.yritys AS asiakas_yritys
              FROM raportit r
-             INNER JOIN asiakkaat a ON a.id = r.asiakas_id AND a.laatijat_id = r.laatijat_id
+             INNER JOIN asiakkaat a ON a.id = r.asiakas_id
              ' . $reportWhere . '
              ORDER BY r.raporttipvm DESC, r.id DESC
              LIMIT 5'

@@ -462,7 +462,7 @@ function requestLoginCode(string $email): bool
         $transactionStarted = true;
 
         $query = $db->prepare(
-            'SELECT id FROM laatijat WHERE sahkoposti = ? LIMIT 1'
+            'SELECT id FROM laatijat WHERE sahkoposti = ? AND aktiivinen = 1 LIMIT 1'
         );
         $query->bind_param('s', $email);
         $query->execute();
@@ -602,6 +602,7 @@ function verifyLoginCode(string $email, string $code): bool
              FROM kirjautumiskoodit k
              INNER JOIN laatijat l ON l.id = k.laatijat_id
              WHERE l.sahkoposti = ?
+               AND l.aktiivinen = 1
                AND k.used_at IS NULL
                AND k.expires_at > NOW()
                AND k.yritykset < 5

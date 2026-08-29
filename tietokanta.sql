@@ -11,6 +11,7 @@ CREATE TABLE `laatijat` (
     `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
     `nimi` VARCHAR(200) NOT NULL,
     `titteli` VARCHAR(200) NULL,
+    `aktiivinen` TINYINT(1) NOT NULL DEFAULT 1,
     `sahkoposti` VARCHAR(254) NOT NULL,
     `puhelin` VARCHAR(50) NOT NULL,
     `yritys` VARCHAR(200) NULL,
@@ -39,7 +40,6 @@ CREATE TABLE `asiakkaat` (
     `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
     KEY `idx_asiakkaat_laatijat_id` (`laatijat_id`),
-    UNIQUE KEY `uq_asiakkaat_id_laatijat_id` (`id`, `laatijat_id`),
     CONSTRAINT `fk_asiakkaat_laatijat`
         FOREIGN KEY (`laatijat_id`) REFERENCES `laatijat` (`id`)
         ON UPDATE CASCADE ON DELETE CASCADE
@@ -100,7 +100,7 @@ CREATE TABLE `raportit` (
         FOREIGN KEY (`laatijat_id`) REFERENCES `laatijat` (`id`)
         ON UPDATE CASCADE ON DELETE CASCADE,
     CONSTRAINT `fk_raportit_asiakas`
-        FOREIGN KEY (`asiakas_id`, `laatijat_id`) REFERENCES `asiakkaat` (`id`, `laatijat_id`)
+        FOREIGN KEY (`asiakas_id`) REFERENCES `asiakkaat` (`id`)
         ON UPDATE CASCADE ON DELETE RESTRICT,
     CONSTRAINT `fk_raportit_projekti`
         FOREIGN KEY (`projekti_id`) REFERENCES `projektit` (`id`)
