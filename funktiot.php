@@ -111,7 +111,7 @@ HTML;
             ]))),
         ];
 
-        echo '<div class="d-flex align-items-center gap-3 ms-auto"><span class="text-white fs-4" aria-label="Ilmoitukset" title="Ilmoitukset">♧<sup class="badge rounded-pill bg-danger" style="font-size:.55rem;">2</sup></span><div class="dropdown">';
+        echo '<div class="d-flex align-items-center gap-3 ms-auto"><div class="dropdown">';
         $initials = mb_strtoupper(mb_substr((string) ($laatija['nimi'] ?? ''), 0, 2));
         echo '<button class="btn tekra-user-menu dropdown-toggle" type="button" data-bs-toggle="dropdown" '
             . 'aria-expanded="false"><span class="tekra-avatar">' . htmlspecialchars($initials, ENT_QUOTES, 'UTF-8') . '</span>' . $safeLaatijaNimi . '</button>';
