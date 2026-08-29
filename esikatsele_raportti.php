@@ -177,11 +177,11 @@ function chartFontPath(bool $bold = false): ?string
     return null;
 }
 
-function chartText($image, int $size, int $x, int $y, string $text, int $color, bool $bold = false): void
+function chartText($image, int $size, int $x, int $y, string $text, int $color, bool $bold = false, int $angle = 0): void
 {
     $font = chartFontPath($bold);
     if ($font !== null && function_exists('imagettftext')) {
-        imagettftext($image, $size, 0, $x, $y + $size, $color, $font, $text);
+        imagettftext($image, $size, $angle, $x, $y + $size, $color, $font, $text);
         return;
     }
     imagestring($image, 5, $x, $y, pdfText($text), $color);
@@ -252,10 +252,10 @@ function createTableChart(array $table, string $chartType, array &$temporaryImag
             $legendY += 32;
         }
     } else {
-        $left = 90;
+        $left = 140;
         $right = 1130;
         $top = 75;
-        $bottom = 555;
+        $bottom = 545;
         $maxValue = 0.0;
         foreach ($series as $item) {
             foreach ($item['values'] as $value) {
@@ -274,7 +274,7 @@ function createTableChart(array $table, string $chartType, array &$temporaryImag
         }
         $tableTitle = trim((string) ($table['otsikko'] ?? ''));
         if ($tableTitle !== '') {
-            chartText($image, 24, $left, 15, $tableTitle, $dark, true);
+            chartText($image, $chartType === 'line' ? 20 : 24, $left, 15, $tableTitle, $dark, true);
         }
         $count = max(1, count($labels));
         if ($chartType === 'bar') {
@@ -288,7 +288,7 @@ function createTableChart(array $table, string $chartType, array &$temporaryImag
                     $barTop = $bottom - ($bottom - $top) * $value / $maxValue;
                     imagefilledrectangle($image, (int) ($x - $barWidth / 2), (int) $barTop, (int) ($x + $barWidth / 2), $bottom, $palette[$seriesIndex % count($palette)]);
                 }
-                chartText($image, 18, (int) ($groupX - 45), $bottom + 12, substr($label, 0, 16), $dark);
+                chartText($image, 16, (int) ($groupX - 35), $bottom + 20, substr($label, 0, 16), $dark, false, 35);
             }
         } else {
             foreach ($series as $seriesIndex => $item) {
@@ -305,12 +305,12 @@ function createTableChart(array $table, string $chartType, array &$temporaryImag
                     $previousX = $x;
                     $previousY = $y;
                     if ($seriesIndex === 0) {
-                        chartText($image, 18, (int) ($x - 45), $bottom + 12, substr($label, 0, 16), $dark);
+                        chartText($image, 16, (int) ($x - 35), $bottom + 20, substr($label, 0, 16), $dark, false, 35);
                     }
                 }
             }
             foreach ($series as $seriesIndex => $item) {
-                chartText($image, 20, 1000, 20 + $seriesIndex * 28, $item['name'], $palette[$seriesIndex % count($palette)], true);
+                chartText($image, 18, 1000, 20 + $seriesIndex * 26, $item['name'], $palette[$seriesIndex % count($palette)], true);
             }
         }
     }
