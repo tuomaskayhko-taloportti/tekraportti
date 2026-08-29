@@ -10,8 +10,10 @@ if (!isset($_SESSION['laatijat_id'])) {
 }
 
 $laatijatId = (int) $_SESSION['laatijat_id'];
-$showAll = isset($_GET['kaikki']) && $_GET['kaikki'] === '1';
 $projectId = max(0, (int) ($_GET['projekti_id'] ?? 0));
+$search = trim((string) ($_GET['haku'] ?? ''));
+$showAll = (isset($_GET['kaikki']) && $_GET['kaikki'] === '1') || $search !== '';
+$searchTerms = $search === '' ? [] : (preg_split('/\s+/', $search) ?: []);
 $currentPage = max(1, (int) ($_GET['sivu'] ?? 1));
 $perPage = 25;
 $reports = [];
@@ -107,16 +109,22 @@ try {
     if ($projectId > 0) {
         $reportWhere .= ' AND r.projekti_id = ?';
     }
+    if ($search !== '') {
+        $reportWhere .= ' AND ' . implode(' AND ', array_fill(0, count($searchTerms), 'CONCAT_WS(\' \', r.otsikko, a.nimi, a.yritys) LIKE ?'));
+    }
+
+    $searchLikes = array_map(static fn (string $term): string => '%' . $term . '%', $searchTerms);
 
     if ($showAll) {
         $countQuery = $db->prepare(
-            'SELECT COUNT(*) AS maara FROM raportit r ' . $reportWhere
+            'SELECT COUNT(*) AS maara FROM raportit r
+             INNER JOIN asiakkaat a ON a.id = r.asiakas_id AND a.laatijat_id = r.laatijat_id ' . $reportWhere
         );
-        if ($projectId > 0) {
-            $countQuery->bind_param('iiii', $laatijatId, $laatijatId, $laatijatId, $projectId);
-        } else {
-            $countQuery->bind_param('iii', $laatijatId, $laatijatId, $laatijatId);
-        }
+        $countTypes = 'iii';
+        $countParams = [$laatijatId, $laatijatId, $laatijatId];
+        if ($projectId > 0) { $countTypes .= 'i'; $countParams[] = $projectId; }
+        foreach ($searchLikes as $searchLike) { $countTypes .= 's'; $countParams[] = $searchLike; }
+        bindReportParams($countQuery, $countTypes, $countParams);
         $countQuery->execute();
         $totalReports = (int) $countQuery->get_result()->fetch_assoc()['maara'];
         $countQuery->close();
@@ -133,11 +141,12 @@ try {
              ORDER BY r.raporttipvm DESC, r.id DESC
              LIMIT ? OFFSET ?'
         );
-        if ($projectId > 0) {
-            $reportQuery->bind_param('iiiiii', $laatijatId, $laatijatId, $laatijatId, $projectId, $perPage, $offset);
-        } else {
-            $reportQuery->bind_param('iiiii', $laatijatId, $laatijatId, $laatijatId, $perPage, $offset);
-        }
+        $reportTypes = 'iii';
+        $reportParams = [$laatijatId, $laatijatId, $laatijatId];
+        if ($projectId > 0) { $reportTypes .= 'i'; $reportParams[] = $projectId; }
+        foreach ($searchLikes as $searchLike) { $reportTypes .= 's'; $reportParams[] = $searchLike; }
+        $reportTypes .= 'ii'; $reportParams[] = $perPage; $reportParams[] = $offset;
+        bindReportParams($reportQuery, $reportTypes, $reportParams);
     } else {
         $totalPages = 1;
         $reportQuery = $db->prepare(
@@ -148,11 +157,11 @@ try {
              ORDER BY r.raporttipvm DESC, r.id DESC
              LIMIT 5'
         );
-        if ($projectId > 0) {
-            $reportQuery->bind_param('iiii', $laatijatId, $laatijatId, $laatijatId, $projectId);
-        } else {
-            $reportQuery->bind_param('iii', $laatijatId, $laatijatId, $laatijatId);
-        }
+        $reportTypes = 'iii';
+        $reportParams = [$laatijatId, $laatijatId, $laatijatId];
+        if ($projectId > 0) { $reportTypes .= 'i'; $reportParams[] = $projectId; }
+        foreach ($searchLikes as $searchLike) { $reportTypes .= 's'; $reportParams[] = $searchLike; }
+        bindReportParams($reportQuery, $reportTypes, $reportParams);
     }
 
     $reportQuery->execute();
@@ -192,9 +201,20 @@ function formatReportDate(string $date): string
 
 function reportPageUrl(int $page): string
 {
-    global $projectId;
-    $url = 'raportit.php?kaikki=1&sivu=' . max(1, $page);
-    return $projectId > 0 ? $url . '&projekti_id=' . $projectId : $url;
+    global $projectId, $search;
+    $params = ['kaikki' => 1, 'sivu' => max(1, $page)];
+    if ($projectId > 0) { $params['projekti_id'] = $projectId; }
+    if ($search !== '') { $params['haku'] = $search; }
+    return 'raportit.php?' . http_build_query($params);
+}
+
+function bindReportParams(mysqli_stmt $query, string $types, array $params): void
+{
+    $references = [];
+    foreach ($params as $index => &$param) {
+        $references[$index] =& $param;
+    }
+    $query->bind_param($types, ...$references);
 }
 
 openLayoutShell('Raportit – TEKRAPORTTI');
@@ -229,7 +249,7 @@ openLayoutShell('Raportit – TEKRAPORTTI');
     <div>
         <h1 class="h3 mb-1">Raportit</h1>
         <p class="text-body-secondary mb-0">
-            <?= $showAll ? 'Kaikki tallennetut raportit' : 'Viimeisimmät raportit' ?>
+            <?= $search !== '' ? 'Hakutulokset' : ($showAll ? 'Kaikki tallennetut raportit' : 'Viimeisimmät raportit') ?>
         </p>
     </div>
     <div class="d-flex flex-wrap gap-2">
@@ -243,6 +263,7 @@ openLayoutShell('Raportit – TEKRAPORTTI');
 <form method="get" action="raportit.php" class="card border-0 shadow-sm mb-4 p-3">
     <div class="row g-2 align-items-end">
         <div class="col-md-6"><label class="form-label mb-1" for="projekti_id">Suodata projektin mukaan</label><select class="form-select" id="projekti_id" name="projekti_id"><option value="0">Kaikki projektit</option><?php foreach ($projects as $project): ?><option value="<?= (int) $project['id'] ?>" <?= $projectId === (int) $project['id'] ? 'selected' : '' ?>><?= htmlspecialchars($project['nimi'], ENT_QUOTES, 'UTF-8') ?></option><?php endforeach; ?></select></div>
+        <?php if ($search !== ''): ?><input type="hidden" name="haku" value="<?= htmlspecialchars($search, ENT_QUOTES, 'UTF-8') ?>"><?php endif; ?>
         <?php if ($showAll): ?><input type="hidden" name="kaikki" value="1"><?php endif; ?>
         <div class="col-md-auto"><button class="btn btn-outline-primary">Suodata</button></div>
     </div>

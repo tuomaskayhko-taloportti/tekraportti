@@ -17,6 +17,7 @@ function openLayoutShell(string $pageTitle = 'TEKRAPORTTI'): void
     $csrfToken = getApplicationCsrfToken();
     $safeCsrfToken = htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8');
     $safeLaatijaNimi = htmlspecialchars((string) ($laatija['nimi'] ?? ''), ENT_QUOTES, 'UTF-8');
+    $safeSearch = htmlspecialchars((string) ($_GET['haku'] ?? ''), ENT_QUOTES, 'UTF-8');
     $layoutHasSidebar = $laatija !== null;
     $currentPath = basename((string) ($_SERVER['PHP_SELF'] ?? ''));
     $reportsNavClass = in_array($currentPath, ['raportit.php', 'luo_raportti.php', 'muokkaa_raportti.php', 'esikatsele_raportti.php'], true) ? ' active' : '';
@@ -91,10 +92,10 @@ function openLayoutShell(string $pageTitle = 'TEKRAPORTTI'): void
                 <span class="navbar-toggler-icon"></span>
             </button>
             <a class="navbar-brand tekra-brand ms-2 me-4" href="#">TEKRAPORTTI <small>RAPORTOINTI</small></a>
-            <div class="tekra-search position-relative">
+            <form class="tekra-search position-relative" method="get" action="raportit.php">
                 <span class="tekra-search-icon" aria-hidden="true">⌕</span>
-                <input class="form-control" type="search" placeholder="Hae raportteja, asiakkaita tai projekteja..." aria-label="Hae raportteja, asiakkaita tai projekteja">
-            </div>
+                <input class="form-control" type="search" name="haku" value="{$safeSearch}" placeholder="Hae raportteja, asiakkaita tai yrityksiä..." aria-label="Hae raportteja, asiakkaita tai yrityksiä">
+            </form>
 HTML;
 
     if ($laatija !== null) {
