@@ -13,7 +13,6 @@ $laatijatId = (int) $_SESSION['laatijat_id'];
 $csrfToken = getApplicationCsrfToken();
 $asiakkaat = [];
 $projektit = [];
-$laatijat = [];
 $message = '';
 $messageType = 'danger';
 $form = [
@@ -46,14 +45,6 @@ try {
     }
     $query->close();
 
-    $query = $db->prepare('SELECT id, nimi, yritys FROM laatijat WHERE id <> ? ORDER BY nimi, id');
-    $query->bind_param('i', $laatijatId);
-    $query->execute();
-    $result = $query->get_result();
-    while ($laatija = $result->fetch_assoc()) {
-        $laatijat[] = $laatija;
-    }
-    $query->close();
 } catch (Throwable $error) {
     $message = 'Asiakkaiden ja projektien haku epäonnistui.';
     error_log('Raportin luontisivun tietojen haku epäonnistui: ' . $error->getMessage());
@@ -67,7 +58,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $form['laatimispaikka'] = trim((string) ($_POST['laatimispaikka'] ?? ''));
     $form['tiivistelma'] = trim((string) ($_POST['tiivistelma'] ?? ''));
     $form['kansikuva'] = trim((string) ($_POST['kansikuva'] ?? ''));
-    $form['jaettava_laatija_id'] = (int) ($_POST['jaettava_laatija_id'] ?? 0);
+    $form['jaettava_sahkoposti'] = trim((string) ($_POST['jaettava_sahkoposti'] ?? ''));
     $postedToken = (string) ($_POST['csrf_token'] ?? '');
     $date = DateTime::createFromFormat('!Y-m-d', $form['raporttipvm']);
     $validDate = $date && $date->format('Y-m-d') === $form['raporttipvm'];
@@ -108,16 +99,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
 
-            $sharedLaatijaId = (int) ($form['jaettava_laatija_id'] ?? 0);
-            if ($sharedLaatijaId > 0) {
-                $query = $db->prepare('SELECT id FROM laatijat WHERE id = ? AND id <> ? LIMIT 1');
-                $query->bind_param('ii', $sharedLaatijaId, $laatijatId);
+            $sharedEmail = (string) ($form['jaettava_sahkoposti'] ?? '');
+            $sharedLaatijaId = 0;
+            if ($sharedEmail !== '') {
+                $query = $db->prepare('SELECT id FROM laatijat WHERE sahkoposti = ? AND id <> ? LIMIT 1');
+                $query->bind_param('si', $sharedEmail, $laatijatId);
                 $query->execute();
-                $sharedLaatijaExists = (bool) $query->get_result()->fetch_assoc();
+                $sharedLaatija = $query->get_result()->fetch_assoc();
                 $query->close();
-                if (!$sharedLaatijaExists) {
-                    throw new RuntimeException('Valittua laatijaa ei löytynyt.');
+                if (!$sharedLaatija) {
+                    throw new RuntimeException('Sähköpostiosoitetta ei löytynyt laatijoista.');
                 }
+                $sharedLaatijaId = (int) $sharedLaatija['id'];
             }
 
             $locationValue = $form['laatimispaikka'] !== '' ? $form['laatimispaikka'] : null;
@@ -241,14 +234,8 @@ openLayoutShell('Luo raportti – TEKRAPORTTI');
                     <textarea class="form-control" id="tiivistelma" name="tiivistelma" rows="5" placeholder="Raportin lyhyt kuvaus"><?= formValue($form, 'tiivistelma') ?></textarea>
                 </div>
                 <div class="col-12 col-md-6">
-                    <label for="jaettava_laatija_id" class="form-label">Jaa raportti laatijalle</label>
-                    <select class="form-select" id="jaettava_laatija_id" name="jaettava_laatija_id">
-                        <option value="0">Ei jaeta</option>
-                        <?php foreach ($laatijat as $laatija): ?>
-                            <?php $laatijaNimi = $laatija['yritys'] ? $laatija['nimi'] . ' – ' . $laatija['yritys'] : $laatija['nimi']; ?>
-                            <option value="<?= (int) $laatija['id'] ?>" <?= (int) ($form['jaettava_laatija_id'] ?? 0) === (int) $laatija['id'] ? 'selected' : '' ?>><?= htmlspecialchars($laatijaNimi, ENT_QUOTES, 'UTF-8') ?></option>
-                        <?php endforeach; ?>
-                    </select>
+                    <label for="jaettava_sahkoposti" class="form-label">Jaa raportti laatijalle</label>
+                    <input type="email" class="form-control" id="jaettava_sahkoposti" name="jaettava_sahkoposti" value="<?= formValue($form, 'jaettava_sahkoposti') ?>" maxlength="254" placeholder="laatija@example.fi">
                     <div class="form-text">Jaettu laatija voi muokata raporttia.</div>
                 </div>
                 <div class="col-12">
