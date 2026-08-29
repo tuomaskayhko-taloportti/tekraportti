@@ -147,7 +147,6 @@ HTML;
     <div class="d-flex align-items-stretch">
         <aside class="bg-white border-end tekra-sidebar" tabindex="-1"
                id="paavalikko" aria-label="Sivupalkin valikko">
-            <h2 class="tekra-sidebar-title mb-0" style="padding:30px 28px 18px;font-size:1.05rem;font-weight:600;"><svg class="tekra-menu-icon" xmlns="http://www.w3.org/2000/svg" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16M4 12h16M4 19h16"/></svg> Valikko</h2>
             <div class="p-2 p-lg-3">
                 <nav style="display:block;">
                     <details class="tekra-reports-menu"{$reportsNavOpen} style="display:block;">
