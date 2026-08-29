@@ -349,7 +349,7 @@ function deleteStoredFile(string $url): void
 /**
  * Ilmoittaa laatijalle, että raportti on jaettu hänen kanssaan.
  */
-function sendReportShareNotification(string $recipientEmail, string $reportTitle, string $sharerName, string $sharerCompany = ''): bool
+function sendReportShareNotification(string $recipientEmail, string $itemTitle, string $sharerName, string $sharerCompany = '', string $itemType = 'Raportti'): bool
 {
     $recipientEmail = strtolower(trim($recipientEmail));
     if (!filter_var($recipientEmail, FILTER_VALIDATE_EMAIL)) {
@@ -393,10 +393,11 @@ function sendReportShareNotification(string $recipientEmail, string $reportTitle
         $mailer->CharSet = \PHPMailer\PHPMailer\PHPMailer::CHARSET_UTF8;
         $mailer->setFrom($sender, 'TEKRAPORTTI');
         $mailer->addAddress($recipientEmail);
-        $mailer->Subject = 'Raportti jaettu kanssasi – ' . $reportTitle;
+        $mailer->Subject = $itemType . ' jaettu kanssasi – ' . $itemTitle;
+        $itemObject = $itemType === 'Projekti' ? 'projektin' : 'raportin';
         $message = "Hei,\n\n"
-            . $sharerName . " on jakanut raportin kanssasi TEKRAPORTTI-palvelussa.\n\n"
-            . 'Raportti: ' . $reportTitle . "\n"
+            . $sharerName . ' on jakanut ' . $itemObject . " kanssasi TEKRAPORTTI-palvelussa.\n\n"
+            . $itemType . ': ' . $itemTitle . "\n"
             . 'Jakaja: ' . $sharerName . "\n";
         if (trim($sharerCompany) !== '') {
             $message .= 'Yritys: ' . trim($sharerCompany) . "\n";

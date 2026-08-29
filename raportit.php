@@ -91,14 +91,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string) ($_POST['action'] ?? '') =
 
 try {
     $db = getDatabaseConnection();
-    $projectQuery = $db->prepare('SELECT id, nimi FROM projektit WHERE laatijat_id = ? ORDER BY nimi, id');
-    $projectQuery->bind_param('i', $laatijatId);
+    $projectQuery = $db->prepare('SELECT p.id, p.nimi FROM projektit p WHERE p.laatijat_id = ? OR EXISTS (
+        SELECT 1 FROM projektijaot j WHERE j.projekti_id = p.id AND j.laatijat_id = ?
+    ) ORDER BY p.nimi, p.id');
+    $projectQuery->bind_param('ii', $laatijatId, $laatijatId);
     $projectQuery->execute();
     $projects = $projectQuery->get_result()->fetch_all(MYSQLI_ASSOC);
     $projectQuery->close();
 
     $reportWhere = 'WHERE (r.laatijat_id = ? OR EXISTS (
         SELECT 1 FROM raporttijaot j WHERE j.raportti_id = r.id AND j.laatijat_id = ?
+    ) OR EXISTS (
+        SELECT 1 FROM projektijaot pj WHERE pj.projekti_id = r.projekti_id AND pj.laatijat_id = ?
     ))';
     if ($projectId > 0) {
         $reportWhere .= ' AND r.projekti_id = ?';
@@ -109,9 +113,9 @@ try {
             'SELECT COUNT(*) AS maara FROM raportit r ' . $reportWhere
         );
         if ($projectId > 0) {
-            $countQuery->bind_param('iii', $laatijatId, $laatijatId, $projectId);
+            $countQuery->bind_param('iiii', $laatijatId, $laatijatId, $laatijatId, $projectId);
         } else {
-            $countQuery->bind_param('ii', $laatijatId, $laatijatId);
+            $countQuery->bind_param('iii', $laatijatId, $laatijatId, $laatijatId);
         }
         $countQuery->execute();
         $totalReports = (int) $countQuery->get_result()->fetch_assoc()['maara'];
@@ -122,7 +126,7 @@ try {
         $offset = ($currentPage - 1) * $perPage;
 
         $reportQuery = $db->prepare(
-            'SELECT r.id, r.laatijat_id, r.otsikko, r.raporttipvm, a.nimi AS asiakas_nimi
+            'SELECT r.id, r.laatijat_id, r.otsikko, r.raporttipvm, a.nimi AS asiakas_nimi, a.yritys AS asiakas_yritys
              FROM raportit r
              INNER JOIN asiakkaat a ON a.id = r.asiakas_id AND a.laatijat_id = r.laatijat_id
              ' . $reportWhere . '
@@ -130,14 +134,14 @@ try {
              LIMIT ? OFFSET ?'
         );
         if ($projectId > 0) {
-            $reportQuery->bind_param('iiiii', $laatijatId, $laatijatId, $projectId, $perPage, $offset);
+            $reportQuery->bind_param('iiiiii', $laatijatId, $laatijatId, $laatijatId, $projectId, $perPage, $offset);
         } else {
-            $reportQuery->bind_param('iiii', $laatijatId, $laatijatId, $perPage, $offset);
+            $reportQuery->bind_param('iiiii', $laatijatId, $laatijatId, $laatijatId, $perPage, $offset);
         }
     } else {
         $totalPages = 1;
         $reportQuery = $db->prepare(
-            'SELECT r.id, r.laatijat_id, r.otsikko, r.raporttipvm, a.nimi AS asiakas_nimi
+            'SELECT r.id, r.laatijat_id, r.otsikko, r.raporttipvm, a.nimi AS asiakas_nimi, a.yritys AS asiakas_yritys
              FROM raportit r
              INNER JOIN asiakkaat a ON a.id = r.asiakas_id AND a.laatijat_id = r.laatijat_id
              ' . $reportWhere . '
@@ -145,9 +149,9 @@ try {
              LIMIT 5'
         );
         if ($projectId > 0) {
-            $reportQuery->bind_param('iii', $laatijatId, $laatijatId, $projectId);
+            $reportQuery->bind_param('iiii', $laatijatId, $laatijatId, $laatijatId, $projectId);
         } else {
-            $reportQuery->bind_param('ii', $laatijatId, $laatijatId);
+            $reportQuery->bind_param('iii', $laatijatId, $laatijatId, $laatijatId);
         }
     }
 
@@ -164,9 +168,11 @@ try {
          INNER JOIN raportit r ON r.id = t.raportti_id AND r.laatijat_id = t.laatijat_id
          WHERE r.laatijat_id = ? OR EXISTS (
              SELECT 1 FROM raporttijaot j WHERE j.raportti_id = r.id AND j.laatijat_id = ?
+         ) OR EXISTS (
+             SELECT 1 FROM projektijaot pj WHERE pj.projekti_id = r.projekti_id AND pj.laatijat_id = ?
          ) ORDER BY t.raportti_id, t.jarjestys, t.id'
     );
-    $tableQuery->bind_param('ii', $laatijatId, $laatijatId);
+    $tableQuery->bind_param('iii', $laatijatId, $laatijatId, $laatijatId);
     $tableQuery->execute();
     $tableResult = $tableQuery->get_result();
     while ($table = $tableResult->fetch_assoc()) {
@@ -260,6 +266,7 @@ openLayoutShell('Raportit – TEKRAPORTTI');
                     <tr>
                         <th scope="col">Raportti</th>
                         <th scope="col">Asiakas</th>
+                        <th scope="col">Yritys</th>
                         <th scope="col">Päivämäärä</th>
                         <th scope="col" class="text-end">Toiminnot</th>
                     </tr>
@@ -269,6 +276,7 @@ openLayoutShell('Raportit – TEKRAPORTTI');
                         <tr>
                             <td><?= htmlspecialchars($report['otsikko'], ENT_QUOTES, 'UTF-8') ?></td>
                             <td><?= htmlspecialchars($report['asiakas_nimi'], ENT_QUOTES, 'UTF-8') ?></td>
+                            <td><?= htmlspecialchars((string) ($report['asiakas_yritys'] ?? ''), ENT_QUOTES, 'UTF-8') ?></td>
                             <td><?= htmlspecialchars(formatReportDate($report['raporttipvm']), ENT_QUOTES, 'UTF-8') ?></td>
                             <td>
                                 <div class="report-actions">

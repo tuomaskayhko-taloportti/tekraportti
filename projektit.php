@@ -9,24 +9,38 @@ if (!isset($_SESSION['laatijat_id'])) {
 }
 
 $laatijatId = (int) $_SESSION['laatijat_id'];
+$currentLaatijaId = $laatijatId;
 $csrfToken = getApplicationCsrfToken();
 $editId = max(0, (int) ($_GET['muokkaa'] ?? $_POST['id'] ?? 0));
 $projects = [];
 $message = '';
 $messageType = 'danger';
-$form = ['nimi' => '', 'kuvaus' => '', 'alkupvm' => '', 'loppupvm' => ''];
+$form = ['nimi' => '', 'kuvaus' => '', 'alkupvm' => '', 'loppupvm' => '', 'jaettava_sahkoposti' => ''];
+$sharedEmails = [];
 
 try {
     $db = getDatabaseConnection();
 
-    if ($editId > 0 && $_SERVER['REQUEST_METHOD'] !== 'POST') {
-        $query = $db->prepare('SELECT nimi, kuvaus, alkupvm, loppupvm FROM projektit WHERE id = ? AND laatijat_id = ? LIMIT 1');
-        $query->bind_param('ii', $editId, $laatijatId);
+    if ($editId > 0) {
+        $query = $db->prepare('SELECT p.nimi, p.kuvaus, p.alkupvm, p.loppupvm, p.laatijat_id
+            FROM projektit p WHERE p.id = ? AND (p.laatijat_id = ? OR EXISTS (
+                SELECT 1 FROM projektijaot j WHERE j.projekti_id = p.id AND j.laatijat_id = ?
+            )) LIMIT 1');
+        $query->bind_param('iii', $editId, $currentLaatijaId, $currentLaatijaId);
         $query->execute();
         $existing = $query->get_result()->fetch_assoc();
         $query->close();
         if ($existing) {
-            $form = array_merge($form, $existing);
+            $laatijatId = (int) $existing['laatijat_id'];
+            $shareQuery = $db->prepare('SELECT l.sahkoposti FROM projektijaot j INNER JOIN laatijat l ON l.id = j.laatijat_id WHERE j.projekti_id = ? ORDER BY j.id');
+            $shareQuery->bind_param('i', $editId);
+            $shareQuery->execute();
+            $shareResult = $shareQuery->get_result();
+            while ($share = $shareResult->fetch_assoc()) { $sharedEmails[] = (string) $share['sahkoposti']; }
+            $shareQuery->close();
+            if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+                $form = array_merge($form, $existing);
+            }
         } else {
             $editId = 0;
             $message = 'Projektia ei löytynyt.';
@@ -57,6 +71,7 @@ try {
                 $messageType = $deleted ? 'success' : 'danger';
             }
         } elseif ($action === 'save') {
+            $oldSharedEmails = array_map('strtolower', $sharedEmails);
             foreach (array_keys($form) as $field) {
                 $form[$field] = trim((string) ($_POST[$field] ?? ''));
             }
@@ -67,10 +82,20 @@ try {
                 && (!$startDate || !$endDate || $form['alkupvm'] <= $form['loppupvm']);
             if ($form['nimi'] === '' || !$datesValid) {
                 $message = 'Anna projektin nimi ja voimassa olevat päivämäärät.';
-            } elseif (mb_strlen($form['nimi']) > 200) {
+            } elseif (mb_strlen($form['nimi']) > 200 || mb_strlen($form['jaettava_sahkoposti']) > 4000) {
                 $message = 'Projektin nimi on liian pitkä.';
             } else {
+                $sharedEmails = parseReportShareEmails($form['jaettava_sahkoposti']);
+                $sharedLaatijat = [];
+                foreach ($sharedEmails as $sharedEmail) {
+                    $query = $db->prepare('SELECT id FROM laatijat WHERE sahkoposti = ? AND id <> ? LIMIT 1');
+                    $query->bind_param('si', $sharedEmail, $laatijatId); $query->execute();
+                    $sharedLaatija = $query->get_result()->fetch_assoc(); $query->close();
+                    if (!$sharedLaatija) { throw new RuntimeException('Sähköpostiosoitetta ei löytynyt laatijoista: ' . $sharedEmail); }
+                    $sharedLaatijat[] = ['id' => (int) $sharedLaatija['id'], 'email' => $sharedEmail];
+                }
                 $values = array_values(array_map(static fn (string $value): ?string => $value !== '' ? $value : null, $form));
+                $db->begin_transaction();
                 if ($editId > 0) {
                     $query = $db->prepare('UPDATE projektit SET nimi = ?, kuvaus = ?, alkupvm = ?, loppupvm = ? WHERE id = ? AND laatijat_id = ?');
                     $query->bind_param('ssssii', $values[0], $values[1], $values[2], $values[3], $editId, $laatijatId);
@@ -80,20 +105,37 @@ try {
                 }
                 $query->execute();
                 $query->close();
+                $projectId = $editId > 0 ? $editId : (int) $db->insert_id;
+                $query = $db->prepare('DELETE FROM projektijaot WHERE projekti_id = ?');
+                $query->bind_param('i', $projectId); $query->execute(); $query->close();
+                foreach ($sharedLaatijat as $sharedLaatija) {
+                    $sharedLaatijaId = $sharedLaatija['id'];
+                    $query = $db->prepare('INSERT INTO projektijaot (projekti_id, laatijat_id) VALUES (?, ?)');
+                    $query->bind_param('ii', $projectId, $sharedLaatijaId); $query->execute(); $query->close();
+                }
+                $db->commit();
+                $newSharedEmails = array_diff($sharedEmails, $oldSharedEmails);
+                if ($newSharedEmails) {
+                    $sharer = getCurrentLaatija() ?: [];
+                    foreach ($newSharedEmails as $sharedEmail) {
+                        sendReportShareNotification($sharedEmail, $form['nimi'], (string) ($sharer['nimi'] ?? ''), (string) ($sharer['yritys'] ?? ''), 'Projekti');
+                    }
+                }
                 $message = $editId > 0 ? 'Projektin tiedot päivitettiin.' : 'Projekti lisättiin.';
                 $messageType = 'success';
                 $editId = 0;
-                $form = ['nimi' => '', 'kuvaus' => '', 'alkupvm' => '', 'loppupvm' => ''];
+                $form = ['nimi' => '', 'kuvaus' => '', 'alkupvm' => '', 'loppupvm' => '', 'jaettava_sahkoposti' => ''];
             }
         }
     }
 
     $query = $db->prepare(
-        'SELECT p.id, p.nimi, p.kuvaus, p.alkupvm, p.loppupvm, COUNT(r.id) AS raporttien_maara
+        'SELECT p.id, p.laatijat_id, p.nimi, p.kuvaus, p.alkupvm, p.loppupvm, COUNT(r.id) AS raporttien_maara
          FROM projektit p LEFT JOIN raportit r ON r.projekti_id = p.id AND r.laatijat_id = p.laatijat_id
-         WHERE p.laatijat_id = ? GROUP BY p.id, p.nimi, p.kuvaus, p.alkupvm, p.loppupvm ORDER BY p.nimi, p.id'
+         WHERE p.laatijat_id = ? OR EXISTS (SELECT 1 FROM projektijaot j WHERE j.projekti_id = p.id AND j.laatijat_id = ?)
+         GROUP BY p.id, p.laatijat_id, p.nimi, p.kuvaus, p.alkupvm, p.loppupvm ORDER BY p.nimi, p.id'
     );
-    $query->bind_param('i', $laatijatId);
+    $query->bind_param('ii', $currentLaatijaId, $currentLaatijaId);
     $query->execute();
     $projects = $query->get_result()->fetch_all(MYSQLI_ASSOC);
     $query->close();
@@ -132,6 +174,7 @@ openLayoutShell('Projektit – TEKRAPORTTI');
             <div class="col-md-3"><label class="form-label" for="alkupvm">Alkupäivä</label><input type="date" class="form-control" id="alkupvm" name="alkupvm" value="<?= projectValue($form, 'alkupvm') ?>"></div>
             <div class="col-md-3"><label class="form-label" for="loppupvm">Loppupäivä</label><input type="date" class="form-control" id="loppupvm" name="loppupvm" value="<?= projectValue($form, 'loppupvm') ?>"></div>
             <div class="col-12"><label class="form-label" for="kuvaus">Kuvaus</label><textarea class="form-control" id="kuvaus" name="kuvaus" rows="4"><?= projectValue($form, 'kuvaus') ?></textarea></div>
+            <div class="col-12"><label class="form-label" for="jaettava_sahkoposti">Jaa projekti laatijoille</label><textarea class="form-control" id="jaettava_sahkoposti" name="jaettava_sahkoposti" rows="3" maxlength="4000" placeholder="laatija1@example.fi&#10;laatija2@example.fi"><?= projectValue($form, 'jaettava_sahkoposti') !== '' ? projectValue($form, 'jaettava_sahkoposti') : projectValue(['jaettava_sahkoposti' => implode("\n", $sharedEmails)], 'jaettava_sahkoposti') ?></textarea><div class="form-text">Yksi sähköpostiosoite riville. Osoitteiden täytyy löytyä laatijoista.</div></div>
         </div></div><div class="card-footer bg-white border-0 px-4 pb-4"><button class="btn btn-primary"><?= $editId > 0 ? 'Tallenna muutokset' : 'Lisää projekti' ?></button><?php if ($editId > 0): ?> <a class="btn btn-outline-secondary" href="projektit.php">Peruuta</a><?php endif; ?></div>
     </form>
 </div>
@@ -139,6 +182,6 @@ openLayoutShell('Projektit – TEKRAPORTTI');
 <?php if (!$projects): ?><tr><td colspan="5" class="text-center text-body-secondary py-4">Ei tallennettuja projekteja.</td></tr><?php else: foreach ($projects as $project): ?><tr>
     <td><?= projectValue($project, 'nimi') ?></td><td><?= nl2br(projectValue($project, 'kuvaus')) ?></td>
     <td><?= projectDate($project['alkupvm']) ?><?= $project['alkupvm'] && $project['loppupvm'] ? ' – ' : '' ?><?= projectDate($project['loppupvm']) ?></td>
-    <td><?= (int) $project['raporttien_maara'] ?></td><td class="text-end text-nowrap"><a class="btn btn-sm btn-outline-primary" href="projektit.php?muokkaa=<?= (int) $project['id'] ?>#projektlomake">Muokkaa</a> <form method="post" action="projektit.php" class="d-inline" onsubmit="return confirm('Poistetaanko projekti?');"><input type="hidden" name="csrf_token" value="<?= projectValue(['value' => $csrfToken], 'value') ?>"><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="<?= (int) $project['id'] ?>"><button class="btn btn-sm btn-outline-danger">Poista</button></form></td>
+    <td><?= (int) $project['raporttien_maara'] ?></td><td class="text-end text-nowrap"><a class="btn btn-sm btn-outline-primary" href="projektit.php?muokkaa=<?= (int) $project['id'] ?>#projektlomake">Muokkaa</a> <?php if ((int) $project['laatijat_id'] === $laatijatId): ?><form method="post" action="projektit.php" class="d-inline" onsubmit="return confirm('Poistetaanko projekti?');"><input type="hidden" name="csrf_token" value="<?= projectValue(['value' => $csrfToken], 'value') ?>"><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="<?= (int) $project['id'] ?>"><button class="btn btn-sm btn-outline-danger">Poista</button></form><?php endif; ?></td>
 </tr><?php endforeach; endif; ?></tbody></table></div></div>
 <?php closeLayoutShell(); ?>

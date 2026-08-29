@@ -35,9 +35,11 @@ try {
          LEFT JOIN projektit p ON p.id = r.projekti_id AND p.laatijat_id = r.laatijat_id
          WHERE r.id = ? AND (r.laatijat_id = ? OR EXISTS (
              SELECT 1 FROM raporttijaot j WHERE j.raportti_id = r.id AND j.laatijat_id = ?
+         ) OR EXISTS (
+             SELECT 1 FROM projektijaot pj WHERE pj.projekti_id = r.projekti_id AND pj.laatijat_id = ?
          )) LIMIT 1'
     );
-    $query->bind_param('iii', $raporttiId, $currentLaatijaId, $currentLaatijaId);
+    $query->bind_param('iiii', $raporttiId, $currentLaatijaId, $currentLaatijaId, $currentLaatijaId);
     $query->execute();
     $report = $query->get_result()->fetch_assoc();
     $query->close();

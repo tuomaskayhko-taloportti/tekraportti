@@ -62,6 +62,22 @@ CREATE TABLE `projektit` (
         ON UPDATE CASCADE ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE `projektijaot` (
+    `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `projekti_id` INT UNSIGNED NOT NULL,
+    `laatijat_id` INT UNSIGNED NOT NULL,
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_projektijaot_projekti_laatija` (`projekti_id`, `laatijat_id`),
+    KEY `idx_projektijaot_laatijat_id` (`laatijat_id`),
+    CONSTRAINT `fk_projektijaot_projekti`
+        FOREIGN KEY (`projekti_id`) REFERENCES `projektit` (`id`)
+        ON UPDATE CASCADE ON DELETE CASCADE,
+    CONSTRAINT `fk_projektijaot_laatija`
+        FOREIGN KEY (`laatijat_id`) REFERENCES `laatijat` (`id`)
+        ON UPDATE CASCADE ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE `raportit` (
     `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
     `laatijat_id` INT UNSIGNED NOT NULL,
