@@ -97,7 +97,9 @@ try {
     $projects = $projectQuery->get_result()->fetch_all(MYSQLI_ASSOC);
     $projectQuery->close();
 
-    $reportWhere = 'WHERE r.laatijat_id = ?';
+    $reportWhere = 'WHERE (r.laatijat_id = ? OR EXISTS (
+        SELECT 1 FROM raporttijaot j WHERE j.raportti_id = r.id AND j.laatijat_id = ?
+    ))';
     if ($projectId > 0) {
         $reportWhere .= ' AND r.projekti_id = ?';
     }
@@ -107,9 +109,9 @@ try {
             'SELECT COUNT(*) AS maara FROM raportit r ' . $reportWhere
         );
         if ($projectId > 0) {
-            $countQuery->bind_param('ii', $laatijatId, $projectId);
+            $countQuery->bind_param('iii', $laatijatId, $laatijatId, $projectId);
         } else {
-            $countQuery->bind_param('i', $laatijatId);
+            $countQuery->bind_param('ii', $laatijatId, $laatijatId);
         }
         $countQuery->execute();
         $totalReports = (int) $countQuery->get_result()->fetch_assoc()['maara'];
@@ -120,7 +122,7 @@ try {
         $offset = ($currentPage - 1) * $perPage;
 
         $reportQuery = $db->prepare(
-            'SELECT r.id, r.otsikko, r.raporttipvm, a.nimi AS asiakas_nimi
+            'SELECT r.id, r.laatijat_id, r.otsikko, r.raporttipvm, a.nimi AS asiakas_nimi
              FROM raportit r
              INNER JOIN asiakkaat a ON a.id = r.asiakas_id AND a.laatijat_id = r.laatijat_id
              ' . $reportWhere . '
@@ -128,14 +130,14 @@ try {
              LIMIT ? OFFSET ?'
         );
         if ($projectId > 0) {
-            $reportQuery->bind_param('iiii', $laatijatId, $projectId, $perPage, $offset);
+            $reportQuery->bind_param('iiiii', $laatijatId, $laatijatId, $projectId, $perPage, $offset);
         } else {
-            $reportQuery->bind_param('iii', $laatijatId, $perPage, $offset);
+            $reportQuery->bind_param('iiii', $laatijatId, $laatijatId, $perPage, $offset);
         }
     } else {
         $totalPages = 1;
         $reportQuery = $db->prepare(
-            'SELECT r.id, r.otsikko, r.raporttipvm, a.nimi AS asiakas_nimi
+            'SELECT r.id, r.laatijat_id, r.otsikko, r.raporttipvm, a.nimi AS asiakas_nimi
              FROM raportit r
              INNER JOIN asiakkaat a ON a.id = r.asiakas_id AND a.laatijat_id = r.laatijat_id
              ' . $reportWhere . '
@@ -143,9 +145,9 @@ try {
              LIMIT 5'
         );
         if ($projectId > 0) {
-            $reportQuery->bind_param('ii', $laatijatId, $projectId);
+            $reportQuery->bind_param('iii', $laatijatId, $laatijatId, $projectId);
         } else {
-            $reportQuery->bind_param('i', $laatijatId);
+            $reportQuery->bind_param('ii', $laatijatId, $laatijatId);
         }
     }
 
@@ -156,8 +158,15 @@ try {
     }
     $reportQuery->close();
 
-    $tableQuery = $db->prepare('SELECT id, raportti_id, otsikko FROM raporttitaulukot WHERE laatijat_id = ? ORDER BY raportti_id, jarjestys, id');
-    $tableQuery->bind_param('i', $laatijatId);
+    $tableQuery = $db->prepare(
+        'SELECT t.id, t.raportti_id, t.otsikko
+         FROM raporttitaulukot t
+         INNER JOIN raportit r ON r.id = t.raportti_id AND r.laatijat_id = t.laatijat_id
+         WHERE r.laatijat_id = ? OR EXISTS (
+             SELECT 1 FROM raporttijaot j WHERE j.raportti_id = r.id AND j.laatijat_id = ?
+         ) ORDER BY t.raportti_id, t.jarjestys, t.id'
+    );
+    $tableQuery->bind_param('ii', $laatijatId, $laatijatId);
     $tableQuery->execute();
     $tableResult = $tableQuery->get_result();
     while ($table = $tableResult->fetch_assoc()) {
@@ -269,14 +278,14 @@ openLayoutShell('Raportit – TEKRAPORTTI');
                                     <a class="btn btn-outline-primary btn-sm" href="muokkaa_raportti.php?id=<?= (int) $report['id'] ?>" title="Muokkaa raporttia" aria-label="Muokkaa raporttia">
                                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M12.854.146a.5.5 0 0 1 .707 0l2.293 2.293a.5.5 0 0 1 0 .707l-9.5 9.5L3 13l.354-3.354zM2.5 13.5l-.5 2 2-.5z"/></svg><span class="d-none d-md-inline ms-1">Muokkaa</span>
                                     </a>
-                                    <form method="post" action="raportit.php<?= $showAll ? '?kaikki=1&sivu=' . $currentPage : '' ?>" class="d-inline" onsubmit="return confirm('Haluatko todella poistaa raportin ja kaikki siihen liittyvät tiedot?');">
+                                    <?php if ((int) $report['laatijat_id'] === $laatijatId): ?><form method="post" action="raportit.php<?= $showAll ? '?kaikki=1&sivu=' . $currentPage : '' ?>" class="d-inline" onsubmit="return confirm('Haluatko todella poistaa raportin ja kaikki siihen liittyvät tiedot?');">
                                         <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8') ?>">
                                         <input type="hidden" name="action" value="delete-report">
                                         <input type="hidden" name="raportti_id" value="<?= (int) $report['id'] ?>">
                                         <button class="btn btn-outline-danger btn-sm" type="submit" title="Poista raportti" aria-label="Poista raportti">
                                             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0A.5.5 0 0 1 8.5 6v6a.5.5 0 0 1-1 0V6A.5.5 0 0 1 8 5.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z"/><path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1 0-2h3.086A1.5 1.5 0 0 1 7 1h2a1.5 1.5 0 0 1 1.414 1H13.5a1 1 0 0 1 1 1M4 4v9a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4zM6.5 2a.5.5 0 0 0-.5.5V3h4v-.5a.5.5 0 0 0-.5-.5z"/></svg><span class="d-none d-md-inline ms-1">Poista</span>
                                         </button>
-                                    </form>
+                                    </form><?php endif; ?>
                                 </div>
                             </td>
                         </tr>

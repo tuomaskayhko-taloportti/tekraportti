@@ -10,6 +10,7 @@ if (!isset($_SESSION['laatijat_id'])) {
 }
 
 $laatijatId = (int) $_SESSION['laatijat_id'];
+$currentLaatijaId = $laatijatId;
 $raporttiId = (int) ($_GET['id'] ?? 0);
 
 try {
@@ -23,15 +24,17 @@ try {
          INNER JOIN asiakkaat a ON a.id = r.asiakas_id AND a.laatijat_id = r.laatijat_id
          INNER JOIN laatijat l ON l.id = r.laatijat_id
          LEFT JOIN projektit p ON p.id = r.projekti_id AND p.laatijat_id = r.laatijat_id
-         WHERE r.id = ? AND r.laatijat_id = ? LIMIT 1'
+         LEFT JOIN raporttijaot j ON j.raportti_id = r.id
+         WHERE r.id = ? AND (r.laatijat_id = ? OR j.laatijat_id = ?) LIMIT 1'
     );
-    $query->bind_param('ii', $raporttiId, $laatijatId);
+    $query->bind_param('iii', $raporttiId, $currentLaatijaId, $currentLaatijaId);
     $query->execute();
     $report = $query->get_result()->fetch_assoc();
     $query->close();
     if (!$report) {
         throw new RuntimeException('Raporttia ei löytynyt.');
     }
+    $laatijatId = (int) $report['laatijat_id'];
 
     $query = $db->prepare('SELECT id, otsikko, sisalto, jarjestys FROM raporttirivit WHERE raportti_id = ? AND laatijat_id = ? ORDER BY jarjestys, id');
     $query->bind_param('ii', $raporttiId, $laatijatId);

@@ -9,6 +9,7 @@ if (!isset($_SESSION['laatijat_id'])) {
 }
 
 $laatijatId = (int) $_SESSION['laatijat_id'];
+$currentLaatijaId = $laatijatId;
 $raporttiId = (int) ($_GET['id'] ?? $_POST['raportti_id'] ?? 0);
 $csrfToken = getApplicationCsrfToken();
 $message = '';
@@ -16,6 +17,7 @@ $messageType = 'danger';
 $report = null;
 $customers = [];
 $projects = [];
+$laatijat = [];
 $rows = [];
 $media = [];
 $tables = [];
@@ -27,16 +29,21 @@ if ((string) ($_GET['saved'] ?? '') === '1') {
 try {
     $db = getDatabaseConnection();
     $query = $db->prepare(
-        'SELECT r.*, a.nimi AS asiakas_nimi, p.nimi AS projekti_nimi
+        'SELECT r.*, a.nimi AS asiakas_nimi, p.nimi AS projekti_nimi,
+                j.laatijat_id AS jaettava_laatija_id
          FROM raportit r
          INNER JOIN asiakkaat a ON a.id = r.asiakas_id AND a.laatijat_id = r.laatijat_id
          LEFT JOIN projektit p ON p.id = r.projekti_id AND p.laatijat_id = r.laatijat_id
-         WHERE r.id = ? AND r.laatijat_id = ? LIMIT 1'
+         LEFT JOIN raporttijaot j ON j.raportti_id = r.id
+         WHERE r.id = ? AND (r.laatijat_id = ? OR j.laatijat_id = ?) LIMIT 1'
     );
-    $query->bind_param('ii', $raporttiId, $laatijatId);
+    $query->bind_param('iii', $raporttiId, $currentLaatijaId, $currentLaatijaId);
     $query->execute();
     $report = $query->get_result()->fetch_assoc();
     $query->close();
+    if ($report) {
+        $laatijatId = (int) $report['laatijat_id'];
+    }
 } catch (Throwable $error) {
     $message = 'Raportin haku epäonnistui.';
     error_log('Muokattavan raportin haku epäonnistui: ' . $error->getMessage());
@@ -67,6 +74,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $place = trim((string) ($_POST['laatimispaikka'] ?? ''));
                 $summary = trim((string) ($_POST['tiivistelma'] ?? ''));
                 $cover = trim((string) ($_POST['kansikuva'] ?? ''));
+                $sharedLaatijaId = (int) ($_POST['jaettava_laatija_id'] ?? 0);
                 $oldCover = trim((string) ($report['kansikuva'] ?? ''));
                 $dateObject = DateTime::createFromFormat('!Y-m-d', $date);
                 if ($customerId < 1 || $title === '' || !$dateObject || $dateObject->format('Y-m-d') !== $date) {
@@ -78,6 +86,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $coverValue = $cover !== '' ? $cover : ($oldCover !== '' ? $oldCover : null);
                 if (isset($_FILES['kansikuva']) && ($_FILES['kansikuva']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
                     $coverValue = storeUploadedFile($_FILES['kansikuva'], 'kansikuvat');
+                }
+                if ($sharedLaatijaId > 0) {
+                    $query = $db->prepare('SELECT id FROM laatijat WHERE id = ? AND id <> ? LIMIT 1');
+                    $query->bind_param('ii', $sharedLaatijaId, $laatijatId);
+                    $query->execute();
+                    $sharedLaatijaExists = (bool) $query->get_result()->fetch_assoc();
+                    $query->close();
+                    if (!$sharedLaatijaExists) {
+                        throw new RuntimeException('Valittua laatijaa ei löytynyt.');
+                    }
                 }
                 if ($projectValue === null) {
                     $query = $db->prepare(
@@ -96,6 +114,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $query->close();
                 if ($oldCover !== '' && $oldCover !== $coverValue) {
                     deleteStoredFile($oldCover);
+                }
+                $query = $db->prepare('DELETE FROM raporttijaot WHERE raportti_id = ?');
+                $query->bind_param('i', $raporttiId);
+                $query->execute();
+                $query->close();
+                if ($sharedLaatijaId > 0) {
+                    $query = $db->prepare('INSERT INTO raporttijaot (raportti_id, laatijat_id) VALUES (?, ?)');
+                    $query->bind_param('ii', $raporttiId, $sharedLaatijaId);
+                    $query->execute();
+                    $query->close();
                 }
                 $message = 'Raportin perustiedot tallennettiin.';
                 $messageType = 'success';
@@ -363,6 +391,9 @@ try {
     $query = $db->prepare('SELECT id, nimi, yritys FROM asiakkaat WHERE laatijat_id = ? ORDER BY nimi, yritys');
     $query->bind_param('i', $laatijatId); $query->execute(); $result = $query->get_result();
     while ($item = $result->fetch_assoc()) { $customers[] = $item; } $query->close();
+    $query = $db->prepare('SELECT id, nimi, yritys FROM laatijat WHERE id <> ? ORDER BY nimi, id');
+    $query->bind_param('i', $laatijatId); $query->execute(); $result = $query->get_result();
+    while ($item = $result->fetch_assoc()) { $laatijat[] = $item; } $query->close();
     $query = $db->prepare('SELECT id, nimi FROM projektit WHERE laatijat_id = ? ORDER BY nimi');
     $query->bind_param('i', $laatijatId); $query->execute(); $result = $query->get_result();
     while ($item = $result->fetch_assoc()) { $projects[] = $item; } $query->close();
@@ -457,6 +488,7 @@ openLayoutShell('Muokkaa raporttia – TEKRAPORTTI');
         <div class="col-12"><label class="form-label" for="otsikko">Otsikko</label><input class="form-control" id="otsikko" name="otsikko" value="<?= editValue($report['otsikko']) ?>" maxlength="255" required></div>
         <div class="col-md-6"><label class="form-label" for="raporttipvm">Raporttipäivämäärä</label><input type="date" class="form-control" id="raporttipvm" name="raporttipvm" value="<?= editValue($report['raporttipvm']) ?>" required></div>
         <div class="col-md-6"><label class="form-label" for="laatimispaikka">Laatimispaikka</label><input class="form-control" id="laatimispaikka" name="laatimispaikka" value="<?= editValue($report['laatimispaikka']) ?>" maxlength="200"></div>
+        <div class="col-md-6"><label class="form-label" for="jaettava_laatija_id">Jaa raportti laatijalle</label><select class="form-select" id="jaettava_laatija_id" name="jaettava_laatija_id"><option value="0">Ei jaeta</option><?php foreach ($laatijat as $item): ?><option value="<?= (int) $item['id'] ?>" <?= (int) ($report['jaettava_laatija_id'] ?? 0) === (int) $item['id'] ? 'selected' : '' ?>><?= editValue($item['yritys'] ? $item['nimi'] . ' – ' . $item['yritys'] : $item['nimi']) ?></option><?php endforeach; ?></select><div class="form-text">Jaettu laatija voi muokata raporttia.</div></div>
         <div class="col-12"><label class="form-label" for="tiivistelma">Tiivistelmä</label><textarea class="form-control" id="tiivistelma" name="tiivistelma" rows="5"><?= editValue($report['tiivistelma']) ?></textarea></div>
         <div class="col-12"><label class="form-label" for="kansikuva">Kansikuva</label><div class="file-drop-zone" data-file-drop><input type="file" class="form-control" id="kansikuva" name="kansikuva" accept="image/jpeg,image/png,image/webp"><div class="file-drop-zone-hint">Voit myös raahata kuvan tähän.</div></div><div class="form-text">Uusi kuva korvaa nykyisen kansikuvan. JPG, PNG tai WebP, enintään 10 MB.</div></div>
     </div></div><div class="card-footer bg-white border-0 px-4 pb-4"><button class="btn btn-primary">Tallenna perustiedot</button></div>

@@ -92,6 +92,22 @@ CREATE TABLE `raportit` (
         ON UPDATE CASCADE ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE `raporttijaot` (
+    `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `raportti_id` INT UNSIGNED NOT NULL,
+    `laatijat_id` INT UNSIGNED NOT NULL,
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_raporttijaot_raportti` (`raportti_id`),
+    KEY `idx_raporttijaot_laatijat_id` (`laatijat_id`),
+    CONSTRAINT `fk_raporttijaot_raportti`
+        FOREIGN KEY (`raportti_id`) REFERENCES `raportit` (`id`)
+        ON UPDATE CASCADE ON DELETE CASCADE,
+    CONSTRAINT `fk_raporttijaot_laatija`
+        FOREIGN KEY (`laatijat_id`) REFERENCES `laatijat` (`id`)
+        ON UPDATE CASCADE ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE `raporttirivit` (
     `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
     `laatijat_id` INT UNSIGNED NOT NULL,
