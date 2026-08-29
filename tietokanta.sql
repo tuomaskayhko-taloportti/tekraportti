@@ -98,7 +98,7 @@ CREATE TABLE `raporttijaot` (
     `laatijat_id` INT UNSIGNED NOT NULL,
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
-    UNIQUE KEY `uq_raporttijaot_raportti` (`raportti_id`),
+    UNIQUE KEY `uq_raporttijaot_raportti_laatija` (`raportti_id`, `laatijat_id`),
     KEY `idx_raporttijaot_laatijat_id` (`laatijat_id`),
     CONSTRAINT `fk_raporttijaot_raportti`
         FOREIGN KEY (`raportti_id`) REFERENCES `raportit` (`id`)

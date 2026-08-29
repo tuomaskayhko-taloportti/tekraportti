@@ -420,6 +420,21 @@ function sendReportShareNotification(string $recipientEmail, string $reportTitle
 }
 
 /**
+ * Muuntaa raportin jakokentän yksilöidyiksi sähköpostiosoitteiksi.
+ */
+function parseReportShareEmails(string $value): array
+{
+    $emails = [];
+    foreach (preg_split('/[\s,;]+/', trim($value)) ?: [] as $email) {
+        $email = strtolower(trim($email));
+        if ($email !== '' && !in_array($email, $emails, true)) {
+            $emails[] = $email;
+        }
+    }
+    return $emails;
+}
+
+/**
  * Lähettää kirjautumiskoodin laatijalle.
  *
  * Paluuarvo on true myös silloin, kun sähköpostiosoitetta ei löydy. Näin

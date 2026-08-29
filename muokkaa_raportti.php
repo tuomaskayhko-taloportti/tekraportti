@@ -17,6 +17,7 @@ $messageType = 'danger';
 $report = null;
 $customers = [];
 $projects = [];
+$sharedEmails = [];
 $rows = [];
 $media = [];
 $tables = [];
@@ -28,14 +29,13 @@ if ((string) ($_GET['saved'] ?? '') === '1') {
 try {
     $db = getDatabaseConnection();
     $query = $db->prepare(
-        'SELECT r.*, a.nimi AS asiakas_nimi, p.nimi AS projekti_nimi,
-                ja.sahkoposti AS jaettava_sahkoposti
+        'SELECT r.*, a.nimi AS asiakas_nimi, p.nimi AS projekti_nimi
          FROM raportit r
          INNER JOIN asiakkaat a ON a.id = r.asiakas_id AND a.laatijat_id = r.laatijat_id
          LEFT JOIN projektit p ON p.id = r.projekti_id AND p.laatijat_id = r.laatijat_id
-         LEFT JOIN raporttijaot j ON j.raportti_id = r.id
-         LEFT JOIN laatijat ja ON ja.id = j.laatijat_id
-         WHERE r.id = ? AND (r.laatijat_id = ? OR j.laatijat_id = ?) LIMIT 1'
+         WHERE r.id = ? AND (r.laatijat_id = ? OR EXISTS (
+             SELECT 1 FROM raporttijaot j WHERE j.raportti_id = r.id AND j.laatijat_id = ?
+         )) LIMIT 1'
     );
     $query->bind_param('iii', $raporttiId, $currentLaatijaId, $currentLaatijaId);
     $query->execute();
@@ -43,6 +43,18 @@ try {
     $query->close();
     if ($report) {
         $laatijatId = (int) $report['laatijat_id'];
+        $shareQuery = $db->prepare(
+            'SELECT l.sahkoposti FROM raporttijaot j
+             INNER JOIN laatijat l ON l.id = j.laatijat_id
+             WHERE j.raportti_id = ? ORDER BY j.id'
+        );
+        $shareQuery->bind_param('i', $raporttiId);
+        $shareQuery->execute();
+        $shareResult = $shareQuery->get_result();
+        while ($share = $shareResult->fetch_assoc()) {
+            $sharedEmails[] = (string) $share['sahkoposti'];
+        }
+        $shareQuery->close();
     }
 } catch (Throwable $error) {
     $message = 'Raportin haku epäonnistui.';
@@ -74,8 +86,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $place = trim((string) ($_POST['laatimispaikka'] ?? ''));
                 $summary = trim((string) ($_POST['tiivistelma'] ?? ''));
                 $cover = trim((string) ($_POST['kansikuva'] ?? ''));
-                $sharedEmail = trim((string) ($_POST['jaettava_sahkoposti'] ?? ''));
-                $oldSharedEmail = trim((string) ($report['jaettava_sahkoposti'] ?? ''));
+                $oldSharedEmails = array_map('strtolower', $sharedEmails);
+                $sharedEmails = parseReportShareEmails((string) ($_POST['jaettava_sahkoposti'] ?? ''));
                 $oldCover = trim((string) ($report['kansikuva'] ?? ''));
                 $dateObject = DateTime::createFromFormat('!Y-m-d', $date);
                 if ($customerId < 1 || $title === '' || !$dateObject || $dateObject->format('Y-m-d') !== $date) {
@@ -88,17 +100,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (isset($_FILES['kansikuva']) && ($_FILES['kansikuva']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
                     $coverValue = storeUploadedFile($_FILES['kansikuva'], 'kansikuvat');
                 }
-                $sharedLaatijaId = 0;
-                if ($sharedEmail !== '') {
+                $sharedLaatijat = [];
+                foreach ($sharedEmails as $sharedEmail) {
                     $query = $db->prepare('SELECT id FROM laatijat WHERE sahkoposti = ? AND id <> ? LIMIT 1');
                     $query->bind_param('si', $sharedEmail, $laatijatId);
                     $query->execute();
                     $sharedLaatija = $query->get_result()->fetch_assoc();
                     $query->close();
                     if (!$sharedLaatija) {
-                        throw new RuntimeException('Sähköpostiosoitetta ei löytynyt laatijoista.');
+                        throw new RuntimeException('Sähköpostiosoitetta ei löytynyt laatijoista: ' . $sharedEmail);
                     }
-                    $sharedLaatijaId = (int) $sharedLaatija['id'];
+                    $sharedLaatijat[] = ['id' => (int) $sharedLaatija['id'], 'email' => $sharedEmail];
                 }
                 if ($projectValue === null) {
                     $query = $db->prepare(
@@ -122,20 +134,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $query->bind_param('i', $raporttiId);
                 $query->execute();
                 $query->close();
-                if ($sharedLaatijaId > 0) {
+                foreach ($sharedLaatijat as $sharedLaatija) {
+                    $sharedLaatijaId = $sharedLaatija['id'];
                     $query = $db->prepare('INSERT INTO raporttijaot (raportti_id, laatijat_id) VALUES (?, ?)');
                     $query->bind_param('ii', $raporttiId, $sharedLaatijaId);
                     $query->execute();
                     $query->close();
                 }
-                if ($sharedLaatijaId > 0 && strcasecmp($oldSharedEmail, $sharedEmail) !== 0) {
+                $newSharedEmails = array_diff($sharedEmails, $oldSharedEmails);
+                if ($newSharedEmails) {
                     $sharer = getCurrentLaatija() ?: [];
-                    sendReportShareNotification(
-                        $sharedEmail,
-                        $title,
-                        (string) ($sharer['nimi'] ?? ''),
-                        (string) ($sharer['yritys'] ?? '')
-                    );
+                    foreach ($newSharedEmails as $sharedEmail) {
+                        sendReportShareNotification(
+                            $sharedEmail,
+                            $title,
+                            (string) ($sharer['nimi'] ?? ''),
+                            (string) ($sharer['yritys'] ?? '')
+                        );
+                    }
                 }
                 $message = 'Raportin perustiedot tallennettiin.';
                 $messageType = 'success';
@@ -497,7 +513,7 @@ openLayoutShell('Muokkaa raporttia – TEKRAPORTTI');
         <div class="col-12"><label class="form-label" for="otsikko">Otsikko</label><input class="form-control" id="otsikko" name="otsikko" value="<?= editValue($report['otsikko']) ?>" maxlength="255" required></div>
         <div class="col-md-6"><label class="form-label" for="raporttipvm">Raporttipäivämäärä</label><input type="date" class="form-control" id="raporttipvm" name="raporttipvm" value="<?= editValue($report['raporttipvm']) ?>" required></div>
         <div class="col-md-6"><label class="form-label" for="laatimispaikka">Laatimispaikka</label><input class="form-control" id="laatimispaikka" name="laatimispaikka" value="<?= editValue($report['laatimispaikka']) ?>" maxlength="200"></div>
-        <div class="col-md-6"><label class="form-label" for="jaettava_sahkoposti">Jaa raportti laatijalle</label><input type="email" class="form-control" id="jaettava_sahkoposti" name="jaettava_sahkoposti" value="<?= editValue($report['jaettava_sahkoposti'] ?? '') ?>" maxlength="254" placeholder="laatija@example.fi"><div class="form-text">Sähköpostiosoitteen täytyy löytyä laatijoista.</div></div>
+        <div class="col-md-6"><label class="form-label" for="jaettava_sahkoposti">Jaa raportti laatijoille</label><textarea class="form-control" id="jaettava_sahkoposti" name="jaettava_sahkoposti" rows="3" maxlength="4000" placeholder="laatija1@example.fi&#10;laatija2@example.fi"><?= editValue(implode("\n", $sharedEmails)) ?></textarea><div class="form-text">Yksi sähköpostiosoite riville. Osoitteiden täytyy löytyä laatijoista.</div></div>
         <div class="col-12"><label class="form-label" for="tiivistelma">Tiivistelmä</label><textarea class="form-control" id="tiivistelma" name="tiivistelma" rows="5"><?= editValue($report['tiivistelma']) ?></textarea></div>
         <div class="col-12"><label class="form-label" for="kansikuva">Kansikuva</label><div class="file-drop-zone" data-file-drop><input type="file" class="form-control" id="kansikuva" name="kansikuva" accept="image/jpeg,image/png,image/webp"><div class="file-drop-zone-hint">Voit myös raahata kuvan tähän.</div></div><div class="form-text">Uusi kuva korvaa nykyisen kansikuvan. JPG, PNG tai WebP, enintään 10 MB.</div></div>
     </div></div><div class="card-footer bg-white border-0 px-4 pb-4"><button class="btn btn-primary">Tallenna perustiedot</button></div>

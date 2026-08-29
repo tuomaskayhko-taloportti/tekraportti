@@ -99,18 +99,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
 
-            $sharedEmail = (string) ($form['jaettava_sahkoposti'] ?? '');
-            $sharedLaatijaId = 0;
-            if ($sharedEmail !== '') {
+            $sharedEmails = parseReportShareEmails((string) ($form['jaettava_sahkoposti'] ?? ''));
+            $sharedLaatijat = [];
+            foreach ($sharedEmails as $sharedEmail) {
                 $query = $db->prepare('SELECT id FROM laatijat WHERE sahkoposti = ? AND id <> ? LIMIT 1');
                 $query->bind_param('si', $sharedEmail, $laatijatId);
                 $query->execute();
                 $sharedLaatija = $query->get_result()->fetch_assoc();
                 $query->close();
                 if (!$sharedLaatija) {
-                    throw new RuntimeException('Sähköpostiosoitetta ei löytynyt laatijoista.');
+                    throw new RuntimeException('Sähköpostiosoitetta ei löytynyt laatijoista: ' . $sharedEmail);
                 }
-                $sharedLaatijaId = (int) $sharedLaatija['id'];
+                $sharedLaatijat[] = ['id' => (int) $sharedLaatija['id'], 'email' => $sharedEmail];
             }
 
             $locationValue = $form['laatimispaikka'] !== '' ? $form['laatimispaikka'] : null;
@@ -147,21 +147,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $query->execute();
             $query->close();
             $reportId = (int) $db->insert_id;
-            if ($sharedLaatijaId > 0) {
+            foreach ($sharedLaatijat as $sharedLaatija) {
                 $query = $db->prepare('INSERT INTO raporttijaot (raportti_id, laatijat_id) VALUES (?, ?)');
+                $sharedLaatijaId = $sharedLaatija['id'];
                 $query->bind_param('ii', $reportId, $sharedLaatijaId);
                 $query->execute();
                 $query->close();
             }
             $db->commit();
-            if ($sharedLaatijaId > 0) {
+            if ($sharedLaatijat) {
                 $sharer = getCurrentLaatija() ?: [];
-                sendReportShareNotification(
-                    $sharedEmail,
-                    $form['otsikko'],
-                    (string) ($sharer['nimi'] ?? ''),
-                    (string) ($sharer['yritys'] ?? '')
-                );
+                foreach ($sharedLaatijat as $sharedLaatija) {
+                    sendReportShareNotification(
+                        $sharedLaatija['email'],
+                        $form['otsikko'],
+                        (string) ($sharer['nimi'] ?? ''),
+                        (string) ($sharer['yritys'] ?? '')
+                    );
+                }
             }
             header('Location: muokkaa_raportti.php?id=' . $reportId);
             exit;
@@ -243,9 +246,9 @@ openLayoutShell('Luo raportti – TEKRAPORTTI');
                     <textarea class="form-control" id="tiivistelma" name="tiivistelma" rows="5" placeholder="Raportin lyhyt kuvaus"><?= formValue($form, 'tiivistelma') ?></textarea>
                 </div>
                 <div class="col-12 col-md-6">
-                    <label for="jaettava_sahkoposti" class="form-label">Jaa raportti laatijalle</label>
-                    <input type="email" class="form-control" id="jaettava_sahkoposti" name="jaettava_sahkoposti" value="<?= formValue($form, 'jaettava_sahkoposti') ?>" maxlength="254" placeholder="laatija@example.fi">
-                    <div class="form-text">Jaettu laatija voi muokata raporttia.</div>
+                    <label for="jaettava_sahkoposti" class="form-label">Jaa raportti laatijoille</label>
+                    <textarea class="form-control" id="jaettava_sahkoposti" name="jaettava_sahkoposti" rows="3" maxlength="4000" placeholder="laatija1@example.fi&#10;laatija2@example.fi"><?= formValue($form, 'jaettava_sahkoposti') ?></textarea>
+                    <div class="form-text">Yksi sähköpostiosoite riville. Jaetut laatijat voivat muokata raporttia.</div>
                 </div>
                 <div class="col-12">
                     <label for="kansikuva" class="form-label">Kansikuva</label>
