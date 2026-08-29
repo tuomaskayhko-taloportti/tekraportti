@@ -552,10 +552,6 @@ class TekraPdf extends FPDF
 
     public function Header(): void
     {
-        $this->SetFont('Helvetica', 'B', 9);
-        $this->SetTextColor(90, 100, 115);
-        $this->Cell(0, 8, pdfText('TEKRAPORTTI – Esikatselu'), 0, 1, 'R');
-        $this->SetTextColor(0, 0, 0);
     }
 
     public function Footer(): void
