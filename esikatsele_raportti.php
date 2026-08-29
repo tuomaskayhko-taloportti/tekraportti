@@ -46,6 +46,57 @@ try {
         $mediaByRow[(int) $item['raporttirivi_id']][] = $item;
     }
     $query->close();
+
+    $tablesByRow = [];
+    $tables = [];
+    $query = $db->prepare('SELECT id, raporttirivi_id, otsikko, jarjestys FROM raporttitaulukot WHERE raportti_id = ? AND laatijat_id = ? ORDER BY raporttirivi_id, jarjestys, id');
+    $query->bind_param('ii', $raporttiId, $laatijatId);
+    $query->execute();
+    $tableResult = $query->get_result();
+    while ($item = $tableResult->fetch_assoc()) {
+        $item['sarakkeet'] = [];
+        $item['rivit'] = [];
+        $item['solut'] = [];
+        $tables[(int) $item['id']] = $item;
+    }
+    $query->close();
+    if ($tables) {
+        $query = $db->prepare('SELECT id, taulukko_id, nimi, jarjestys FROM raporttitaulukko_sarakkeet WHERE laatijat_id = ? ORDER BY taulukko_id, jarjestys, id');
+        $query->bind_param('i', $laatijatId);
+        $query->execute();
+        $result = $query->get_result();
+        while ($item = $result->fetch_assoc()) {
+            if (isset($tables[(int) $item['taulukko_id']])) {
+                $tables[(int) $item['taulukko_id']]['sarakkeet'][] = $item;
+            }
+        }
+        $query->close();
+
+        $query = $db->prepare('SELECT id, taulukko_id, jarjestys FROM raporttitaulukko_rivit WHERE laatijat_id = ? ORDER BY taulukko_id, jarjestys, id');
+        $query->bind_param('i', $laatijatId);
+        $query->execute();
+        $result = $query->get_result();
+        while ($item = $result->fetch_assoc()) {
+            if (isset($tables[(int) $item['taulukko_id']])) {
+                $tables[(int) $item['taulukko_id']]['rivit'][] = $item;
+            }
+        }
+        $query->close();
+
+        $query = $db->prepare('SELECT taulukko_id, rivi_id, sarake_id, sisalto FROM raporttitaulukko_solut WHERE laatijat_id = ? ORDER BY taulukko_id, rivi_id, sarake_id');
+        $query->bind_param('i', $laatijatId);
+        $query->execute();
+        $result = $query->get_result();
+        while ($item = $result->fetch_assoc()) {
+            if (isset($tables[(int) $item['taulukko_id']])) {
+                $tables[(int) $item['taulukko_id']]['solut'][(int) $item['rivi_id']][(int) $item['sarake_id']] = (string) $item['sisalto'];
+            }
+        }
+        $query->close();
+    }
+    foreach ($tables as $table) {
+        $tablesByRow[(int) $table['raporttirivi_id']][] = $table;
+    }
 } catch (Throwable $error) {
     http_response_code(404);
     echo htmlspecialchars($error->getMessage(), ENT_QUOTES, 'UTF-8');
@@ -62,6 +113,27 @@ function pdfDate(string $value): string
 {
     $date = DateTime::createFromFormat('Y-m-d', $value);
     return $date ? $date->format('d.m.Y') : $value;
+}
+
+function pdfTableLineCount(FPDF $pdf, string $text, float $width): int
+{
+    $lines = 0;
+    foreach (preg_split('/\r\n|\r|\n/', $text) ?: [''] as $paragraph) {
+        $words = preg_split('/\s+/', trim($paragraph)) ?: [''];
+        $lineWidth = 0.0;
+        $paragraphLines = 1;
+        foreach ($words as $word) {
+            $wordWidth = $pdf->GetStringWidth(pdfText($word . ' '));
+            if ($lineWidth > 0 && $lineWidth + $wordWidth > max(1, $width - 2)) {
+                $paragraphLines++;
+                $lineWidth = $wordWidth;
+            } else {
+                $lineWidth += $wordWidth;
+            }
+        }
+        $lines += $paragraphLines;
+    }
+    return max(1, $lines);
 }
 
 function localImagePath(string $url): ?string
@@ -337,6 +409,80 @@ foreach ($rows as $index => $row) {
     $pdf->SetFont('Helvetica', '', 11);
     $content = trim((string) $row['sisalto']);
     $pdf->MultiCell(0, 6, pdfText($content !== '' ? $content : 'Ei tekstisisältöä.'), 0, 'L');
+
+    // Osioon liitetyt taulukot.
+    foreach ($tablesByRow[(int) $row['id']] ?? [] as $table) {
+        $columns = $table['sarakkeet'];
+        if (!$columns) {
+            continue;
+        }
+        $tableWidth = $pdf->GetPageWidth() - 40;
+        $columnWidths = [];
+        $widthTotal = 0.0;
+        foreach ($columns as $column) {
+            $columnWidth = (float) ($column['leveys'] ?? 0);
+            $columnWidths[] = $columnWidth;
+            $widthTotal += $columnWidth > 0 ? $columnWidth : 0;
+        }
+        if ($widthTotal <= 0) {
+            $columnWidths = array_fill(0, count($columns), $tableWidth / count($columns));
+        } else {
+            foreach ($columnWidths as $columnIndex => $columnWidth) {
+                $columnWidths[$columnIndex] = ($columnWidth > 0 ? $columnWidth : $widthTotal / count($columns)) * $tableWidth / $widthTotal;
+            }
+        }
+
+        $tableTitle = trim((string) ($table['otsikko'] ?? ''));
+        $headerHeight = 8;
+        $estimatedHeight = $headerHeight + 4;
+        foreach ($table['rivit'] as $tableRow) {
+            $rowLines = 1;
+            foreach ($columns as $columnIndex => $column) {
+                $cellText = (string) ($table['solut'][(int) $tableRow['id']][(int) $column['id']] ?? '');
+                $rowLines = max($rowLines, pdfTableLineCount($pdf, $cellText, $columnWidths[$columnIndex]));
+            }
+            $estimatedHeight += $rowLines * 5 + 2;
+        }
+        $pdf->ensureSpace($estimatedHeight);
+        if ($tableTitle !== '') {
+            $pdf->SetFont('Helvetica', 'B', 10);
+            $pdf->Cell(0, 6, pdfText($tableTitle), 0, 1);
+        }
+        $headerY = $pdf->GetY() + 2;
+        $pdf->SetFont('Helvetica', 'B', 9);
+        $pdf->SetFillColor(230, 235, 242);
+        $x = 20;
+        foreach ($columns as $columnIndex => $column) {
+            $pdf->SetXY($x, $headerY);
+            $pdf->Cell($columnWidths[$columnIndex], $headerHeight, pdfText((string) $column['nimi']), 1, 0, 'L', true);
+            $x += $columnWidths[$columnIndex];
+        }
+        $tableY = $headerY + $headerHeight;
+        $pdf->SetFillColor(255, 255, 255);
+        foreach ($table['rivit'] as $tableRow) {
+            $rowLines = 1;
+            foreach ($columns as $columnIndex => $column) {
+                $cellText = (string) ($table['solut'][(int) $tableRow['id']][(int) $column['id']] ?? '');
+                $rowLines = max($rowLines, pdfTableLineCount($pdf, $cellText, $columnWidths[$columnIndex]));
+            }
+            $rowHeight = $rowLines * 5 + 2;
+            $pdf->ensureSpace($rowHeight);
+            $tableY = $pdf->GetY();
+            $x = 20;
+            $pdf->SetFont('Helvetica', '', 9);
+            foreach ($columns as $columnIndex => $column) {
+                $cellText = (string) ($table['solut'][(int) $tableRow['id']][(int) $column['id']] ?? '');
+                $pdf->SetXY($x, $tableY);
+                $pdf->Cell($columnWidths[$columnIndex], $rowHeight, '', 1);
+                $pdf->SetXY($x + 1, $tableY + 1);
+                $pdf->MultiCell($columnWidths[$columnIndex] - 2, 5, pdfText($cellText), 0, 'L');
+                $x += $columnWidths[$columnIndex];
+            }
+            $pdf->SetXY(20, $tableY + $rowHeight);
+        }
+        $pdf->Ln(6);
+    }
+
     $mediaItems = $mediaByRow[(int) $row['id']] ?? [];
     $mediaCount = count($mediaItems);
     for ($mediaIndex = 0; $mediaIndex < $mediaCount; $mediaIndex++) {
