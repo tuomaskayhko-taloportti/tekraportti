@@ -23,7 +23,7 @@ try {
          FROM raportit r
          INNER JOIN asiakkaat a ON a.id = r.asiakas_id AND a.laatijat_id = r.laatijat_id
          INNER JOIN laatijat l ON l.id = r.laatijat_id
-         LEFT JOIN projektit p ON p.id = r.projekti_id AND p.laatijat_id = r.laatijat_id
+         LEFT JOIN projektit p ON p.id = r.projekti_id
          LEFT JOIN raporttijaot j ON j.raportti_id = r.id
          WHERE r.id = ? AND (r.laatijat_id = ? OR j.laatijat_id = ? OR EXISTS (
              SELECT 1 FROM projektijaot pj WHERE pj.projekti_id = r.projekti_id AND pj.laatijat_id = ?

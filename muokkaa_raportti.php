@@ -32,7 +32,7 @@ try {
         'SELECT r.*, a.nimi AS asiakas_nimi, p.nimi AS projekti_nimi
          FROM raportit r
          INNER JOIN asiakkaat a ON a.id = r.asiakas_id AND a.laatijat_id = r.laatijat_id
-         LEFT JOIN projektit p ON p.id = r.projekti_id AND p.laatijat_id = r.laatijat_id
+         LEFT JOIN projektit p ON p.id = r.projekti_id
          WHERE r.id = ? AND (r.laatijat_id = ? OR EXISTS (
              SELECT 1 FROM raporttijaot j WHERE j.raportti_id = r.id AND j.laatijat_id = ?
          ) OR EXISTS (
@@ -101,6 +101,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $coverValue = $cover !== '' ? $cover : ($oldCover !== '' ? $oldCover : null);
                 if (isset($_FILES['kansikuva']) && ($_FILES['kansikuva']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
                     $coverValue = storeUploadedFile($_FILES['kansikuva'], 'kansikuvat');
+                }
+                if ($projectValue !== null) {
+                    $query = $db->prepare('SELECT p.id FROM projektit p WHERE p.id = ? AND (p.laatijat_id = ? OR EXISTS (
+                        SELECT 1 FROM projektijaot j WHERE j.projekti_id = p.id AND j.laatijat_id = ?
+                    )) LIMIT 1');
+                    $query->bind_param('iii', $projectValue, $laatijatId, $currentLaatijaId);
+                    $query->execute();
+                    $projectExists = (bool) $query->get_result()->fetch_assoc();
+                    $query->close();
+                    if (!$projectExists) {
+                        throw new RuntimeException('Valittu projekti ei ole käytettävissä.');
+                    }
                 }
                 $sharedLaatijat = [];
                 foreach ($sharedEmails as $sharedEmail) {
@@ -421,8 +433,10 @@ try {
     $query = $db->prepare('SELECT id, nimi, yritys FROM asiakkaat WHERE laatijat_id = ? ORDER BY nimi, yritys');
     $query->bind_param('i', $laatijatId); $query->execute(); $result = $query->get_result();
     while ($item = $result->fetch_assoc()) { $customers[] = $item; } $query->close();
-    $query = $db->prepare('SELECT id, nimi FROM projektit WHERE laatijat_id = ? ORDER BY nimi');
-    $query->bind_param('i', $laatijatId); $query->execute(); $result = $query->get_result();
+    $query = $db->prepare('SELECT p.id, p.nimi FROM projektit p WHERE p.laatijat_id = ? OR EXISTS (
+        SELECT 1 FROM projektijaot j WHERE j.projekti_id = p.id AND j.laatijat_id = ?
+    ) ORDER BY p.nimi');
+    $query->bind_param('ii', $laatijatId, $currentLaatijaId); $query->execute(); $result = $query->get_result();
     while ($item = $result->fetch_assoc()) { $projects[] = $item; } $query->close();
     $query = $db->prepare('SELECT id, otsikko, sisalto, jarjestys FROM raporttirivit WHERE raportti_id = ? AND laatijat_id = ? ORDER BY jarjestys, id');
     $query->bind_param('ii', $raporttiId, $laatijatId); $query->execute(); $result = $query->get_result();

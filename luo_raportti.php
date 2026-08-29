@@ -35,9 +35,11 @@ try {
     $query->close();
 
     $query = $db->prepare(
-        'SELECT id, nimi FROM projektit WHERE laatijat_id = ? ORDER BY nimi'
+        'SELECT p.id, p.nimi FROM projektit p WHERE p.laatijat_id = ? OR EXISTS (
+            SELECT 1 FROM projektijaot j WHERE j.projekti_id = p.id AND j.laatijat_id = ?
+        ) ORDER BY p.nimi'
     );
-    $query->bind_param('i', $laatijatId);
+    $query->bind_param('ii', $laatijatId, $laatijatId);
     $query->execute();
     $result = $query->get_result();
     while ($projekti = $result->fetch_assoc()) {
@@ -88,14 +90,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             if ($projectId !== null) {
                 $query = $db->prepare(
-                    'SELECT id FROM projektit WHERE id = ? AND laatijat_id = ? LIMIT 1'
+                    'SELECT p.id FROM projektit p WHERE p.id = ? AND (p.laatijat_id = ? OR EXISTS (
+                        SELECT 1 FROM projektijaot j WHERE j.projekti_id = p.id AND j.laatijat_id = ?
+                    )) LIMIT 1'
                 );
-                $query->bind_param('ii', $projectId, $laatijatId);
+                $query->bind_param('iii', $projectId, $laatijatId, $laatijatId);
                 $query->execute();
                 $projectExists = (bool) $query->get_result()->fetch_assoc();
                 $query->close();
                 if (!$projectExists) {
-                    throw new RuntimeException('Valittu projekti ei kuulu kirjautuneelle laatijalle.');
+                throw new RuntimeException('Valittu projekti ei ole käytettävissä.');
                 }
             }
 

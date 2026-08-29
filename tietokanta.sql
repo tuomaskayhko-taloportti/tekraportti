@@ -56,7 +56,6 @@ CREATE TABLE `projektit` (
     `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
     KEY `idx_projektit_laatijat_id` (`laatijat_id`),
-    UNIQUE KEY `uq_projektit_id_laatijat_id` (`id`, `laatijat_id`),
     CONSTRAINT `fk_projektit_laatijat`
         FOREIGN KEY (`laatijat_id`) REFERENCES `laatijat` (`id`)
         ON UPDATE CASCADE ON DELETE CASCADE
@@ -104,7 +103,7 @@ CREATE TABLE `raportit` (
         FOREIGN KEY (`asiakas_id`, `laatijat_id`) REFERENCES `asiakkaat` (`id`, `laatijat_id`)
         ON UPDATE CASCADE ON DELETE RESTRICT,
     CONSTRAINT `fk_raportit_projekti`
-        FOREIGN KEY (`projekti_id`, `laatijat_id`) REFERENCES `projektit` (`id`, `laatijat_id`)
+        FOREIGN KEY (`projekti_id`) REFERENCES `projektit` (`id`)
         ON UPDATE CASCADE ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

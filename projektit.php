@@ -131,7 +131,7 @@ try {
 
     $query = $db->prepare(
         'SELECT p.id, p.laatijat_id, p.nimi, p.kuvaus, p.alkupvm, p.loppupvm, COUNT(r.id) AS raporttien_maara
-         FROM projektit p LEFT JOIN raportit r ON r.projekti_id = p.id AND r.laatijat_id = p.laatijat_id
+         FROM projektit p LEFT JOIN raportit r ON r.projekti_id = p.id
          WHERE p.laatijat_id = ? OR EXISTS (SELECT 1 FROM projektijaot j WHERE j.projekti_id = p.id AND j.laatijat_id = ?)
          GROUP BY p.id, p.laatijat_id, p.nimi, p.kuvaus, p.alkupvm, p.loppupvm ORDER BY p.nimi, p.id'
     );
