@@ -155,6 +155,38 @@ function chartNumber(string $value): ?float
     return is_numeric($number) ? (float) $number : null;
 }
 
+function chartFontPath(bool $bold = false): ?string
+{
+    static $paths = [
+        'regular' => [
+            '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+            '/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf',
+            '/Library/Fonts/Arial.ttf',
+        ],
+        'bold' => [
+            '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
+            '/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf',
+            '/Library/Fonts/Arial Bold.ttf',
+        ],
+    ];
+    foreach ($paths[$bold ? 'bold' : 'regular'] as $path) {
+        if (is_readable($path)) {
+            return $path;
+        }
+    }
+    return null;
+}
+
+function chartText($image, int $size, int $x, int $y, string $text, int $color, bool $bold = false): void
+{
+    $font = chartFontPath($bold);
+    if ($font !== null && function_exists('imagettftext')) {
+        imagettftext($image, $size, 0, $x, $y + $size, $color, $font, $text);
+        return;
+    }
+    imagestring($image, 5, $x, $y, pdfText($text), $color);
+}
+
 function createTableChart(array $table, string $chartType, array &$temporaryImages): ?string
 {
     if (!in_array($chartType, ['pie', 'bar', 'line'], true) || count($table['sarakkeet']) < 2 || !$table['rivit']) {
@@ -213,10 +245,10 @@ function createTableChart(array $table, string $chartType, array &$temporaryImag
             $start += $angle;
         }
         $legendY = 100;
-        imagestring($image, 5, 730, 55, pdfText($series[0]['name']), $dark);
+        chartText($image, 24, 730, 55, $series[0]['name'], $dark, true);
         foreach ($labels as $index => $label) {
             imagefilledrectangle($image, 730, $legendY, 750, $legendY + 20, $palette[$index % count($palette)]);
-            imagestring($image, 4, 765, $legendY + 3, pdfText($label), $dark);
+            chartText($image, 20, 765, $legendY - 1, $label, $dark);
             $legendY += 32;
         }
     } else {
@@ -238,7 +270,11 @@ function createTableChart(array $table, string $chartType, array &$temporaryImag
             $value = $maxValue * $tick / 5;
             $grid = imagecolorallocate($image, 220, 225, 232);
             imageline($image, $left, (int) $y, $right, (int) $y, $grid);
-            imagestring($image, 3, 35, (int) $y - 7, pdfText(number_format($value, 1, ',', ' ')), $dark);
+            chartText($image, 18, 10, (int) $y - 10, number_format($value, 1, ',', ' '), $dark);
+        }
+        $tableTitle = trim((string) ($table['otsikko'] ?? ''));
+        if ($tableTitle !== '') {
+            chartText($image, 24, $left, 15, $tableTitle, $dark, true);
         }
         $count = max(1, count($labels));
         if ($chartType === 'bar') {
@@ -252,7 +288,7 @@ function createTableChart(array $table, string $chartType, array &$temporaryImag
                     $barTop = $bottom - ($bottom - $top) * $value / $maxValue;
                     imagefilledrectangle($image, (int) ($x - $barWidth / 2), (int) $barTop, (int) ($x + $barWidth / 2), $bottom, $palette[$seriesIndex % count($palette)]);
                 }
-                imagestring($image, 3, (int) ($groupX - 25), $bottom + 12, pdfText(substr($label, 0, 16)), $dark);
+                chartText($image, 18, (int) ($groupX - 45), $bottom + 12, substr($label, 0, 16), $dark);
             }
         } else {
             foreach ($series as $seriesIndex => $item) {
@@ -269,12 +305,12 @@ function createTableChart(array $table, string $chartType, array &$temporaryImag
                     $previousX = $x;
                     $previousY = $y;
                     if ($seriesIndex === 0) {
-                        imagestring($image, 3, (int) ($x - 25), $bottom + 12, pdfText(substr($label, 0, 16)), $dark);
+                        chartText($image, 18, (int) ($x - 45), $bottom + 12, substr($label, 0, 16), $dark);
                     }
                 }
             }
             foreach ($series as $seriesIndex => $item) {
-                imagestring($image, 4, 1000, 25 + $seriesIndex * 24, pdfText($item['name']), $palette[$seriesIndex % count($palette)]);
+                chartText($image, 20, 1000, 20 + $seriesIndex * 28, $item['name'], $palette[$seriesIndex % count($palette)], true);
             }
         }
     }
