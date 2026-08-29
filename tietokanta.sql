@@ -10,6 +10,7 @@ USE `tekraportti`;
 CREATE TABLE `laatijat` (
     `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
     `nimi` VARCHAR(200) NOT NULL,
+    `titteli` VARCHAR(200) NULL,
     `sahkoposti` VARCHAR(254) NOT NULL,
     `puhelin` VARCHAR(50) NOT NULL,
     `yritys` VARCHAR(200) NULL,
@@ -105,6 +106,73 @@ CREATE TABLE `raporttirivit` (
     UNIQUE KEY `uq_raporttirivit_id_laatijat_id` (`id`, `laatijat_id`),
     CONSTRAINT `fk_raporttirivit_raportti`
         FOREIGN KEY (`raportti_id`, `laatijat_id`) REFERENCES `raportit` (`id`, `laatijat_id`)
+        ON UPDATE CASCADE ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `raporttitaulukot` (
+    `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `laatijat_id` INT UNSIGNED NOT NULL,
+    `raportti_id` INT UNSIGNED NOT NULL,
+    `raporttirivi_id` INT UNSIGNED NOT NULL,
+    `otsikko` VARCHAR(255) NULL,
+    `jarjestys` INT UNSIGNED NOT NULL DEFAULT 1,
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `idx_raporttitaulukot_raporttirivi_jarjestys` (`raporttirivi_id`, `jarjestys`),
+    UNIQUE KEY `uq_raporttitaulukot_id_laatijat_id` (`id`, `laatijat_id`),
+    CONSTRAINT `fk_raporttitaulukot_raportti`
+        FOREIGN KEY (`raportti_id`, `laatijat_id`) REFERENCES `raportit` (`id`, `laatijat_id`)
+        ON UPDATE CASCADE ON DELETE CASCADE,
+    CONSTRAINT `fk_raporttitaulukot_raporttirivi`
+        FOREIGN KEY (`raporttirivi_id`, `laatijat_id`) REFERENCES `raporttirivit` (`id`, `laatijat_id`)
+        ON UPDATE CASCADE ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `raporttitaulukko_sarakkeet` (
+    `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `laatijat_id` INT UNSIGNED NOT NULL,
+    `taulukko_id` INT UNSIGNED NOT NULL,
+    `nimi` VARCHAR(255) NOT NULL,
+    `leveys` DECIMAL(10,2) NULL,
+    `jarjestys` INT UNSIGNED NOT NULL DEFAULT 1,
+    PRIMARY KEY (`id`),
+    KEY `idx_raporttitaulukko_sarakkeet_taulukko_jarjestys` (`taulukko_id`, `jarjestys`),
+    UNIQUE KEY `uq_raporttitaulukko_sarakkeet_id_laatijat_id` (`id`, `laatijat_id`),
+    CONSTRAINT `fk_raporttitaulukko_sarakkeet_taulukko`
+        FOREIGN KEY (`taulukko_id`, `laatijat_id`) REFERENCES `raporttitaulukot` (`id`, `laatijat_id`)
+        ON UPDATE CASCADE ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `raporttitaulukko_rivit` (
+    `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `laatijat_id` INT UNSIGNED NOT NULL,
+    `taulukko_id` INT UNSIGNED NOT NULL,
+    `jarjestys` INT UNSIGNED NOT NULL DEFAULT 1,
+    PRIMARY KEY (`id`),
+    KEY `idx_raporttitaulukko_rivit_taulukko_jarjestys` (`taulukko_id`, `jarjestys`),
+    UNIQUE KEY `uq_raporttitaulukko_rivit_id_laatijat_id` (`id`, `laatijat_id`),
+    CONSTRAINT `fk_raporttitaulukko_rivit_taulukko`
+        FOREIGN KEY (`taulukko_id`, `laatijat_id`) REFERENCES `raporttitaulukot` (`id`, `laatijat_id`)
+        ON UPDATE CASCADE ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `raporttitaulukko_solut` (
+    `laatijat_id` INT UNSIGNED NOT NULL,
+    `taulukko_id` INT UNSIGNED NOT NULL,
+    `rivi_id` INT UNSIGNED NOT NULL,
+    `sarake_id` INT UNSIGNED NOT NULL,
+    `sisalto` TEXT NULL,
+    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`taulukko_id`, `rivi_id`, `sarake_id`, `laatijat_id`),
+    CONSTRAINT `fk_raporttitaulukko_solut_taulukko`
+        FOREIGN KEY (`taulukko_id`, `laatijat_id`) REFERENCES `raporttitaulukot` (`id`, `laatijat_id`)
+        ON UPDATE CASCADE ON DELETE CASCADE,
+    CONSTRAINT `fk_raporttitaulukko_solut_rivi`
+        FOREIGN KEY (`rivi_id`, `laatijat_id`) REFERENCES `raporttitaulukko_rivit` (`id`, `laatijat_id`)
+        ON UPDATE CASCADE ON DELETE CASCADE,
+    CONSTRAINT `fk_raporttitaulukko_solut_sarake`
+        FOREIGN KEY (`sarake_id`, `laatijat_id`) REFERENCES `raporttitaulukko_sarakkeet` (`id`, `laatijat_id`)
         ON UPDATE CASCADE ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

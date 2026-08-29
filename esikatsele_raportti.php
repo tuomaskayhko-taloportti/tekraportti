@@ -15,8 +15,10 @@ $raporttiId = (int) ($_GET['id'] ?? 0);
 try {
     $db = getDatabaseConnection();
     $query = $db->prepare(
-        'SELECT r.*, a.nimi AS asiakas_nimi, p.nimi AS projekti_nimi,
-                l.nimi AS laatija_nimi, l.yritys AS laatija_yritys
+        'SELECT r.*, a.nimi AS asiakas_nimi, a.yritys AS asiakas_yritys,
+                a.osoite AS asiakas_osoite, a.postinro AS asiakas_postinro,
+                a.postitmp AS asiakas_postitmp, p.nimi AS projekti_nimi,
+                l.nimi AS laatija_nimi, l.titteli AS laatija_titteli
          FROM raportit r
          INNER JOIN asiakkaat a ON a.id = r.asiakas_id AND a.laatijat_id = r.laatijat_id
          INNER JOIN laatijat l ON l.id = r.laatijat_id
@@ -608,7 +610,24 @@ $pdf->SetFont('Helvetica', 'B', 24);
 $pdf->MultiCell(0, 12, pdfText($report['otsikko']), 0, 'C');
 $pdf->Ln(8);
 $pdf->SetFont('Helvetica', '', 13);
-$pdf->Cell(0, 8, pdfText($report['asiakas_nimi']), 0, 1, 'C');
+$customerCompany = trim((string) ($report['asiakas_yritys'] ?? ''));
+$customerAddress = trim((string) ($report['asiakas_osoite'] ?? ''));
+$customerPostal = trim((string) ($report['asiakas_postinro'] ?? ''));
+$customerCity = trim((string) ($report['asiakas_postitmp'] ?? ''));
+if ($customerCompany !== '') {
+    $coverCustomerLines = [$customerCompany];
+} elseif ($customerAddress !== '') {
+    $coverCustomerLines = [$customerAddress];
+    $postalLine = trim($customerPostal . ($customerPostal !== '' && $customerCity !== '' ? ' ' : '') . $customerCity);
+    if ($postalLine !== '') {
+        $coverCustomerLines[] = $postalLine;
+    }
+} else {
+    $coverCustomerLines = [trim((string) $report['asiakas_nimi'])];
+}
+foreach ($coverCustomerLines as $coverCustomerLine) {
+    $pdf->Cell(0, 8, pdfText($coverCustomerLine), 0, 1, 'C');
+}
 $pdf->Cell(0, 8, pdfText(pdfDate($report['raporttipvm'])), 0, 1, 'C');
 $pdf->Ln(18);
 $pdf->SetFont('Helvetica', '', 11);
@@ -816,6 +835,22 @@ foreach ($rows as $index => $row) {
             }
         }
     }
+}
+
+// Laatimispaikka ja laatijan tiedot omalle viimeiselle sivulle.
+$pdf->AddPage();
+$pdf->SetY(90);
+$pdf->SetFont('Helvetica', '', 13);
+$place = trim((string) ($report['laatimispaikka'] ?? ''));
+$date = pdfDate((string) $report['raporttipvm']);
+$placeAndDate = $place !== '' ? $place . ', ' . $date : $date;
+$pdf->Cell(0, 8, pdfText($placeAndDate), 0, 1, 'C');
+$pdf->Ln(3);
+$pdf->SetFont('Helvetica', '', 11);
+$pdf->Cell(0, 7, pdfText((string) $report['laatija_nimi']), 0, 1, 'C');
+$title = trim((string) ($report['laatija_titteli'] ?? ''));
+if ($title !== '') {
+    $pdf->Cell(0, 7, pdfText($title), 0, 1, 'C');
 }
 
 $pdf->Output('I', 'raportti-' . $raporttiId . '.pdf');
