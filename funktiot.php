@@ -18,8 +18,11 @@ function openLayoutShell(string $pageTitle = 'TEKRAPORTTI'): void
     $safeCsrfToken = htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8');
     $safeLaatijaNimi = htmlspecialchars((string) ($laatija['nimi'] ?? ''), ENT_QUOTES, 'UTF-8');
     $safeSearch = htmlspecialchars((string) ($_GET['haku'] ?? ''), ENT_QUOTES, 'UTF-8');
-    $layoutHasSidebar = $laatija !== null;
     $currentPath = basename((string) ($_SERVER['PHP_SELF'] ?? ''));
+    $adminNavLink = ((int) ($laatija['id'] ?? 0) === 1)
+        ? '<a class="nav-link' . ($currentPath === 'yllapito.php' ? ' active' : '') . '" style="display:block!important;width:auto;color:#52627a;text-decoration:none!important;border-radius:8px;margin:.35rem .7rem;padding:14px 18px;font-size:1.05rem;" href="yllapito.php">Ylläpito</a>'
+        : '';
+    $layoutHasSidebar = $laatija !== null;
     $reportsNavClass = in_array($currentPath, ['raportit.php', 'luo_raportti.php', 'muokkaa_raportti.php', 'esikatsele_raportti.php'], true) ? ' active' : '';
     $reportsNavOpen = $reportsNavClass !== '' ? ' open' : '';
     $projectsNavClass = $currentPath === 'projektit.php' ? ' active' : '';
@@ -153,6 +156,7 @@ HTML;
                     </details>
                     <a class="nav-link{$projectsNavClass}" style="display:block!important;width:auto;color:#52627a;text-decoration:none!important;border-radius:8px;margin:.35rem .7rem;padding:14px 18px;font-size:1.05rem;" href="projektit.php"><svg class="tekra-menu-icon" xmlns="http://www.w3.org/2000/svg" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7.5A2.5 2.5 0 0 1 5.5 5h4l2 2H18.5A2.5 2.5 0 0 1 21 9.5v7A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5z"/></svg> Projektit</a>
                     <a class="nav-link{$customersNavClass}" style="display:block!important;width:auto;color:#52627a;text-decoration:none!important;border-radius:8px;margin:.35rem .7rem;padding:14px 18px;font-size:1.05rem;" href="asiakkaat.php"><svg class="tekra-menu-icon" xmlns="http://www.w3.org/2000/svg" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3 19a6 6 0 0 1 12 0M16 11a3 3 0 1 0 0-6M16 14a5 5 0 0 1 5 5"/></svg> Asiakkaat</a>
+                    {$adminNavLink}
                 </nav>
             </div>
         </aside>
@@ -278,7 +282,7 @@ function getCurrentLaatija(): ?array
 
     try {
         $query = getDatabaseConnection()->prepare(
-            'SELECT nimi, sahkoposti, puhelin, yritys, ytunnus, osoite, postinro, postitmp
+            'SELECT id, nimi, sahkoposti, puhelin, yritys, ytunnus, osoite, postinro, postitmp
              FROM laatijat WHERE id = ? LIMIT 1'
         );
         $laatijatId = (int) $_SESSION['laatijat_id'];
