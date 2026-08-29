@@ -621,11 +621,12 @@ class TekraPdf extends FPDF
 
     public function Header(): void
     {
+        $printDate = (string) ($GLOBALS['printDate'] ?? '');
         $this->SetY(7);
         $this->SetFont('Helvetica', '', 8);
         $this->SetTextColor(0, 0, 0);
         $this->Cell(125, 5, pdfText((string) $GLOBALS['report']['otsikko']), 0, 0, 'L');
-        $this->Cell(0, 5, pdfText(pdfDate((string) $GLOBALS['report']['raporttipvm'])), 0, 1, 'R');
+        $this->Cell(0, 5, pdfText($printDate), 0, 1, 'R');
         $this->SetDrawColor(110, 110, 110);
         $this->SetLineWidth(0.2);
         $this->Line($this->lMargin, 15, $this->GetPageWidth() - $this->rMargin, 15);
@@ -687,6 +688,7 @@ class TekraPdf extends FPDF
 }
 
 $pdf = new TekraPdf();
+$GLOBALS['printDate'] = date('d.m.Y');
 $pdf->AliasNbPages();
 $pdf->SetTitle(pdfText($report['otsikko']));
 $pdf->SetAuthor(pdfText($report['laatija_nimi']));
@@ -971,7 +973,7 @@ foreach ($rows as $index => $row) {
 
 // Laatimispaikka ja laatijan tiedot viimeisenä tekstiryhmänä.
 $place = trim((string) ($report['laatimispaikka'] ?? ''));
-$date = pdfDate((string) $report['raporttipvm']);
+$date = (string) $GLOBALS['printDate'];
 $placeAndDate = $place !== '' ? $place . ', ' . $date : $date;
 $title = trim((string) ($report['laatija_titteli'] ?? ''));
 
