@@ -143,7 +143,7 @@ function pdfTextWithLists(FPDF $pdf, string $text): void
     $lines = preg_split('/\r\n|\r|\n/', $text) ?: [''];
 
     foreach ($lines as $line) {
-        if (preg_match('/^\s*(\d+[.)]|[-*]|o)(?:\s+|$)(.*)$/u', $line, $matches)) {
+        if (preg_match('/^\s*(\d+[.)]|[-*–—−]|o)(?:\s+|$)(.*)$/u', $line, $matches)) {
             $content = (string) $matches[2];
             $listWidth = $pdf->GetPageWidth() - 40 - ($listIndent * 2);
             $pdf->SetX($listStart);
@@ -151,7 +151,7 @@ function pdfTextWithLists(FPDF $pdf, string $text): void
                 $pdf->drawOpenListMarker();
             } elseif ($matches[1] === '*') {
                 $pdf->drawClosedListMarker();
-            } elseif ($matches[1] === '-') {
+            } elseif (in_array($matches[1], ['-', '–', '—', '−'], true)) {
                 $pdf->drawFilledListMarker();
             } else {
                 $pdf->Cell(5, 6, pdfText($matches[1]), 0, 0, 'C');
