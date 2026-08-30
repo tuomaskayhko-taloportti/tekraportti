@@ -567,17 +567,7 @@ openLayoutShell('Muokkaa raporttia – TEKRAPORTTI');
     content: '▴';
 }
 .report-section > .card-body > .report-section-header {
-    display: flex !important;
-    margin: 0 0 1rem;
-    padding: 0;
-    background: transparent;
-    color: inherit;
-    border-bottom: 0;
-    cursor: default;
-    justify-content: flex-end;
-}
-.report-section > .card-body > .report-section-header::after {
-    display: none;
+    display: none !important;
 }
 .report-section > .card-body > .report-section-header > strong {
     display: none;
@@ -631,7 +621,7 @@ openLayoutShell('Muokkaa raporttia – TEKRAPORTTI');
 
 <div class="d-flex justify-content-between align-items-center mb-3"><h2 class="h4 mb-0">Raporttiosiot</h2></div>
 <?php foreach ($rows as $rowIndex => $row): ?>
-    <details class="card border-0 shadow-sm mb-3 report-section" id="osio-<?= (int) $row['id'] ?>" open><summary class="report-section-header"><strong>Osio <?= $rowIndex + 1 ?>: <?= editValue($row['otsikko']) ?></strong></summary><div class="card-body p-4">
+    <details class="card border-0 shadow-sm mb-3 report-section" id="osio-<?= (int) $row['id'] ?>" open><summary class="report-section-header d-flex justify-content-between align-items-center"><strong>Osio <?= $rowIndex + 1 ?>: <?= editValue($row['otsikko']) ?></strong><div class="d-flex gap-2 ms-auto" onclick="event.stopPropagation()"><form method="post" action="muokkaa_raportti.php?id=<?= $raporttiId ?>"><input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="move-row"><input type="hidden" name="rivi_id" value="<?= (int) $row['id'] ?>"><input type="hidden" name="suunta" value="up"><input type="hidden" name="return_anchor" value="osio-<?= (int) $row['id'] ?>"><button class="btn btn-outline-secondary btn-sm" <?= $rowIndex === 0 ? 'disabled' : '' ?>>↑ Ylös</button></form><form method="post" action="muokkaa_raportti.php?id=<?= $raporttiId ?>"><input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="move-row"><input type="hidden" name="rivi_id" value="<?= (int) $row['id'] ?>"><input type="hidden" name="suunta" value="down"><input type="hidden" name="return_anchor" value="osio-<?= (int) $row['id'] ?>"><button class="btn btn-outline-secondary btn-sm" <?= $rowIndex === count($rows) - 1 ? 'disabled' : '' ?>>↓ Alas</button></form></div></summary><div class="card-body p-4">
         <div class="report-section-header d-flex justify-content-between align-items-center"><strong>Osio <?= $rowIndex + 1 ?></strong><div class="d-flex gap-2"><form method="post" action="muokkaa_raportti.php?id=<?= $raporttiId ?>"><input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="move-row"><input type="hidden" name="rivi_id" value="<?= (int) $row['id'] ?>"><input type="hidden" name="suunta" value="up"><input type="hidden" name="return_anchor" value="osio-<?= (int) $row['id'] ?>"><button class="btn btn-outline-secondary btn-sm" <?= $rowIndex === 0 ? 'disabled' : '' ?>>↑ Ylös</button></form><form method="post" action="muokkaa_raportti.php?id=<?= $raporttiId ?>"><input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="move-row"><input type="hidden" name="rivi_id" value="<?= (int) $row['id'] ?>"><input type="hidden" name="suunta" value="down"><input type="hidden" name="return_anchor" value="osio-<?= (int) $row['id'] ?>"><button class="btn btn-outline-secondary btn-sm" <?= $rowIndex === count($rows) - 1 ? 'disabled' : '' ?>>↓ Alas</button></form></div></div>
         <form method="post" action="muokkaa_raportti.php?id=<?= $raporttiId ?>">
             <input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="update-row"><input type="hidden" name="rivi_id" value="<?= (int) $row['id'] ?>"><input type="hidden" name="return_anchor" value="osio-<?= (int) $row['id'] ?>">
