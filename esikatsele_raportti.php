@@ -151,7 +151,9 @@ function pdfTextWithLists(FPDF $pdf, string $text): void
                 $pdf->drawOpenListMarker();
             } elseif ($matches[1] === '*') {
                 $pdf->drawClosedListMarker();
-            } elseif (in_array($matches[1], ['-', '–', '—', '−'], true)) {
+            } elseif ($matches[1] === '-') {
+                $pdf->Cell(5, 6, pdfText('–'), 0, 0, 'C');
+            } elseif (in_array($matches[1], ['–', '—', '−'], true)) {
                 $pdf->drawFilledListMarker();
             } else {
                 $pdf->Cell(5, 6, pdfText($matches[1]), 0, 0, 'C');
