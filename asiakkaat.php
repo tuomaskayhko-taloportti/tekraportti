@@ -236,7 +236,7 @@ openLayoutShell('Asiakkaat – TEKRAPORTTI');
         <div class="card-body p-4">
             <div class="row g-3">
                 <div class="col-12 col-md-6">
-                    <label for="nimi" class="form-label">Nimi <span class="text-danger">*</span></label>
+                    <label for="nimi" class="form-label">Yhteyshenkilö <span class="text-danger">*</span></label>
                     <input type="text" class="form-control" id="nimi" name="nimi" value="<?= customerValue($form, 'nimi') ?>" maxlength="200" required>
                 </div>
                 <div class="col-12 col-md-6">
