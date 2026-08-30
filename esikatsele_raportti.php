@@ -142,18 +142,17 @@ function pdfTextWithLists(FPDF $pdf, string $text): void
     foreach ($lines as $line) {
         if (preg_match('/^\s*(\d+[.)]|[-*]|o)(?:\s+|$)(.*)$/u', $line, $matches)) {
             $content = (string) $matches[2];
-            $isNumbered = ctype_digit($matches[1][0]);
-            $listIndent = $isNumbered ? 10 : 7;
+            $listIndent = 7;
             $listWidth = $pdf->GetPageWidth() - 40 - $listIndent;
             $pdf->SetX(20);
             if ($matches[1] === 'o') {
                 $pdf->drawOpenListMarker();
             } elseif ($matches[1] === '*') {
-                $pdf->Cell(5, 6, chr(149), 0, 0, 'C');
+                $pdf->drawClosedListMarker();
             } elseif ($matches[1] === '-') {
                 $pdf->drawFilledListMarker();
             } else {
-                $pdf->Cell(8, 6, pdfText($matches[1]), 0, 0, 'R');
+                $pdf->Cell(5, 6, pdfText($matches[1]), 0, 0, 'C');
             }
             $pdf->SetX(20 + $listIndent);
             $pdf->MultiCell($listWidth, 6, pdfText($content), 0, 'L');
@@ -647,6 +646,21 @@ function youtubeThumbnailPath(string $url, array &$temporaryImages): ?string
 
 class TekraPdf extends FPDF
 {
+    public function drawClosedListMarker(): void
+    {
+        $centerX = $this->GetX() + 2.5;
+        $centerY = $this->GetY() + 3;
+        $radius = 1.2;
+        $this->SetDrawColor(0, 0, 0);
+        $this->SetLineWidth(0.4);
+        for ($offset = -1.0; $offset <= 1.0; $offset += 0.5) {
+            $halfWidth = sqrt(max(0, $radius * $radius - $offset * $offset));
+            $this->Line($centerX - $halfWidth, $centerY + $offset, $centerX + $halfWidth, $centerY + $offset);
+        }
+        $this->SetLineWidth(0.2);
+        $this->Cell(5, 6, '', 0, 0);
+    }
+
     public function drawFilledListMarker(): void
     {
         $this->SetFillColor(0, 0, 0);
