@@ -191,7 +191,7 @@ function pdfCustomerInfoLines(array $report, array $customerDetails): array
 {
     $lines = [];
     $fields = [
-        'Nimi' => 'asiakas_nimi',
+        'Yhteyshenkilö' => 'asiakas_nimi',
         'Yritys' => 'asiakas_yritys',
         'Y-tunnus' => 'asiakas_ytunnus',
         'Sähköposti' => 'asiakas_sahkoposti',
