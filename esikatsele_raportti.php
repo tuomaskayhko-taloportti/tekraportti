@@ -1055,8 +1055,10 @@ $placeAndDate = $place !== '' ? $place . ', ' . $date : $date;
 $title = trim((string) ($report['laatija_titteli'] ?? ''));
 
 $closingTextHeight = 8 + 3 + 7 + ($title !== '' ? 7 : 0);
-$pdf->ensureSpace(8 + $closingTextHeight);
-$pdf->Ln(8);
+$closingLineGap = 14;
+$closingFooterGap = 14;
+$pdf->ensureSpace($closingLineGap + $closingTextHeight + $closingFooterGap);
+$pdf->Ln($closingLineGap);
 $pdf->SetFont('Helvetica', '', 13);
 $pdf->Cell(0, 8, pdfText($placeAndDate), 0, 1, 'L');
 $pdf->Ln(3);
