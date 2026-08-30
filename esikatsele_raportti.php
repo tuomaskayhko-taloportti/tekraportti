@@ -129,6 +129,35 @@ function pdfText(string $value): string
     return $converted === false ? '?' : $converted;
 }
 
+/**
+ * Tulostaa tekstin ja muuttaa rivien alussa olevat luettelomerkit PDF-listaksi.
+ * Numero- ja viivamerkityt rivit saavat täytetyn luettelomerkin, tähdellä
+ * merkityt rivit avoimen ympyrän.
+ */
+function pdfTextWithLists(FPDF $pdf, string $text): void
+{
+    $listIndent = 7;
+    $lines = preg_split('/\r\n|\r|\n/', $text) ?: [''];
+
+    foreach ($lines as $line) {
+        if (preg_match('/^\s*(\d+[.)]|[-*])(?:\s+|$)(.*)$/u', $line, $matches)) {
+            $content = (string) $matches[2];
+            $listWidth = $pdf->GetPageWidth() - 40 - $listIndent;
+            $pdf->SetX(20);
+            if ($matches[1] === '*') {
+                $pdf->drawOpenListMarker();
+            } else {
+                $pdf->Cell(5, 6, chr(149), 0, 0, 'C');
+            }
+            $pdf->SetX(20 + $listIndent);
+            $pdf->MultiCell($listWidth, 6, pdfText($content), 0, 'L');
+            continue;
+        }
+
+        $pdf->MultiCell(0, 6, pdfText($line), 0, 'L');
+    }
+}
+
 function pdfDate(string $value): string
 {
     $date = DateTime::createFromFormat('Y-m-d', $value);
@@ -612,6 +641,23 @@ function youtubeThumbnailPath(string $url, array &$temporaryImages): ?string
 
 class TekraPdf extends FPDF
 {
+    public function drawOpenListMarker(): void
+    {
+        $centerX = $this->GetX() + 2.5;
+        $centerY = $this->GetY() + 3;
+        $radius = 1.2;
+        $points = [];
+        for ($index = 0; $index < 13; $index++) {
+            $angle = 2 * M_PI * $index / 12;
+            $points[] = [$centerX + cos($angle) * $radius, $centerY + sin($angle) * $radius];
+        }
+        $this->SetLineWidth(0.25);
+        for ($index = 0; $index < 12; $index++) {
+            $this->Line($points[$index][0], $points[$index][1], $points[$index + 1][0], $points[$index + 1][1]);
+        }
+        $this->Cell(5, 6, '', 0, 0);
+    }
+
     public function ensureSpace(float $height): void
     {
         if ($this->GetY() + $height > $this->PageBreakTrigger) {
@@ -805,7 +851,7 @@ foreach ($rows as $index => $row) {
     $pdf->SetFont('Helvetica', '', 11);
     $content = trim((string) $row['sisalto']);
     if ($content !== '') {
-        $pdf->MultiCell(0, 6, pdfText($content), 0, 'L');
+        pdfTextWithLists($pdf, $content);
     }
 
     // Osioon liitetyt taulukot.
