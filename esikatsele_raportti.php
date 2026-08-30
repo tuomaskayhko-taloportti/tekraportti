@@ -131,23 +131,26 @@ function pdfText(string $value): string
 
 /**
  * Tulostaa tekstin ja muuttaa rivien alussa olevat luettelomerkit PDF-listaksi.
- * Numero- ja viivamerkityt rivit saavat täytetyn luettelomerkin, tähdellä
- * merkityt rivit avoimen ympyrän.
+ * Viivamerkityt rivit saavat neliömerkin, tähdellä merkityt rivit avoimen
+ * ympyrän ja numeroidut rivit säilyttävät alkuperäisen numeronsa.
  */
 function pdfTextWithLists(FPDF $pdf, string $text): void
 {
-    $listIndent = 7;
     $lines = preg_split('/\r\n|\r|\n/', $text) ?: [''];
 
     foreach ($lines as $line) {
         if (preg_match('/^\s*(\d+[.)]|[-*])(?:\s+|$)(.*)$/u', $line, $matches)) {
             $content = (string) $matches[2];
+            $isNumbered = ctype_digit($matches[1][0]);
+            $listIndent = $isNumbered ? 10 : 7;
             $listWidth = $pdf->GetPageWidth() - 40 - $listIndent;
             $pdf->SetX(20);
             if ($matches[1] === '*') {
                 $pdf->drawOpenListMarker();
+            } elseif ($matches[1] === '-') {
+                $pdf->drawFilledListMarker();
             } else {
-                $pdf->Cell(5, 6, chr(149), 0, 0, 'C');
+                $pdf->Cell(8, 6, pdfText($matches[1]), 0, 0, 'R');
             }
             $pdf->SetX(20 + $listIndent);
             $pdf->MultiCell($listWidth, 6, pdfText($content), 0, 'L');
@@ -641,6 +644,13 @@ function youtubeThumbnailPath(string $url, array &$temporaryImages): ?string
 
 class TekraPdf extends FPDF
 {
+    public function drawFilledListMarker(): void
+    {
+        $this->SetFillColor(0, 0, 0);
+        $this->Rect($this->GetX() + 1.5, $this->GetY() + 2, 2.5, 2.5, 'F');
+        $this->Cell(5, 6, '', 0, 0);
+    }
+
     public function drawOpenListMarker(): void
     {
         $centerX = $this->GetX() + 2.5;
