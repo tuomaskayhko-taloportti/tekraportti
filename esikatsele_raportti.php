@@ -1057,8 +1057,14 @@ $title = trim((string) ($report['laatija_titteli'] ?? ''));
 $closingTextHeight = 8 + 3 + 7 + ($title !== '' ? 7 : 0);
 $closingLineGap = 14;
 $closingFooterGap = 14;
-$pdf->ensureSpace($closingLineGap + $closingTextHeight + $closingFooterGap);
-$pdf->Ln($closingLineGap);
+$closingPageBreakY = $pdf->GetPageHeight() - 26;
+$closingTargetY = $closingPageBreakY - $closingFooterGap - $closingTextHeight;
+if ($pdf->GetY() + $closingLineGap > $closingTargetY) {
+    $pdf->AddPage();
+    $pdf->Ln($closingLineGap);
+} else {
+    $pdf->SetY($closingTargetY);
+}
 $pdf->SetFont('Helvetica', '', 13);
 $pdf->Cell(0, 8, pdfText($placeAndDate), 0, 1, 'L');
 $pdf->Ln(3);
