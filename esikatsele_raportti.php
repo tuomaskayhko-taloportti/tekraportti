@@ -131,22 +131,25 @@ function pdfText(string $value): string
 
 /**
  * Tulostaa tekstin ja muuttaa rivien alussa olevat luettelomerkit PDF-listaksi.
- * Viivamerkityt rivit saavat neliömerkin, tähdellä merkityt rivit avoimen
- * ympyrän ja numeroidut rivit säilyttävät alkuperäisen numeronsa.
+ * Viivamerkityt rivit saavat neliömerkin, tähdellä merkityt rivit suljetun
+ * ympyrän, o-merkillä merkityt rivit avoimen ympyrän ja numeroidut rivit
+ * säilyttävät alkuperäisen numeronsa.
  */
 function pdfTextWithLists(FPDF $pdf, string $text): void
 {
     $lines = preg_split('/\r\n|\r|\n/', $text) ?: [''];
 
     foreach ($lines as $line) {
-        if (preg_match('/^\s*(\d+[.)]|[-*])(?:\s+|$)(.*)$/u', $line, $matches)) {
+        if (preg_match('/^\s*(\d+[.)]|[-*]|o)(?:\s+|$)(.*)$/u', $line, $matches)) {
             $content = (string) $matches[2];
             $isNumbered = ctype_digit($matches[1][0]);
             $listIndent = $isNumbered ? 10 : 7;
             $listWidth = $pdf->GetPageWidth() - 40 - $listIndent;
             $pdf->SetX(20);
-            if ($matches[1] === '*') {
+            if ($matches[1] === 'o') {
                 $pdf->drawOpenListMarker();
+            } elseif ($matches[1] === '*') {
+                $pdf->Cell(5, 6, chr(149), 0, 0, 'C');
             } elseif ($matches[1] === '-') {
                 $pdf->drawFilledListMarker();
             } else {
