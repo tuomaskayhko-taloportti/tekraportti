@@ -3,6 +3,12 @@
 require_once __DIR__ . '/funktiot.php';
 
 startApplicationSession();
+
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'GET' && isset($_SESSION['laatijat_id'])) {
+    header('Location: raportit.php');
+    exit;
+}
+
 $csrfToken = getApplicationCsrfToken();
 $message = '';
 $messageType = 'info';
