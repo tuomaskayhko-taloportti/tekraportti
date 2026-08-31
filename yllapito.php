@@ -3,16 +3,16 @@
 require_once __DIR__ . '/funktiot.php';
 
 startApplicationSession();
-if ((int) ($_SESSION['laatijat_id'] ?? 0) !== 1) {
+$currentLaatijaId = (int) ($_SESSION['laatijat_id'] ?? 0);
+$isAdmin = $currentLaatijaId === 1;
+$requestedEditId = (int) ($_GET['muokkaa'] ?? $_POST['id'] ?? 0);
+$editId = $isAdmin ? max(0, $requestedEditId) : ($requestedEditId > 0 ? $requestedEditId : $currentLaatijaId);
+if (!$isAdmin && $editId !== $currentLaatijaId) {
     http_response_code(403);
-    openLayoutShell('Ylläpito – TEKRAPORTTI');
-    echo '<div class="alert alert-danger">Tälle sivulle ei ole käyttöoikeutta.</div>';
-    closeLayoutShell();
-    exit;
+    exit('Voit muokata vain omia tietojasi.');
 }
 
 $csrfToken = getApplicationCsrfToken();
-$editId = max(0, (int) ($_GET['muokkaa'] ?? $_POST['id'] ?? 0));
 $message = (string) ($_GET['saved'] ?? '') === '1' ? 'Muutokset tallennettiin.' : '';
 $messageType = 'success';
 $laatijat = [];
@@ -45,6 +45,9 @@ try {
             throw new RuntimeException('Pyyntö vanheni. Lataa sivu uudelleen ja yritä uudestaan.');
         }
         if ($action === 'toggle-status') {
+            if (!$isAdmin) {
+                throw new RuntimeException('Vain pääkäyttäjä voi muuttaa laatijan tilaa.');
+            }
             $statusId = (int) ($_POST['id'] ?? 0);
             if ($statusId === 1) {
                 throw new RuntimeException('Ylläpitokäyttäjän kirjautumista ei voi estää.');
@@ -57,6 +60,9 @@ try {
             exit;
         }
         if ($action === 'delete') {
+            if (!$isAdmin) {
+                throw new RuntimeException('Vain pääkäyttäjä voi poistaa laatijoita.');
+            }
             $deleteId = (int) ($_POST['id'] ?? 0);
             if ($deleteId === 1) {
                 throw new RuntimeException('Ylläpitokäyttäjää ei voi poistaa.');
@@ -130,7 +136,17 @@ try {
         }
 
         foreach (array_keys($form) as $field) {
+            if ($field === 'sahkoposti' && !$isAdmin) {
+                continue;
+            }
             $form[$field] = trim((string) ($_POST[$field] ?? ''));
+        }
+        if (!$isAdmin) {
+            $query = $db->prepare('SELECT sahkoposti FROM laatijat WHERE id = ? LIMIT 1');
+            $query->bind_param('i', $currentLaatijaId);
+            $query->execute();
+            $form['sahkoposti'] = (string) ($query->get_result()->fetch_assoc()['sahkoposti'] ?? '');
+            $query->close();
         }
         $form['sahkoposti'] = strtolower($form['sahkoposti']);
         if ($form['nimi'] === '' || $form['sahkoposti'] === '' || $form['puhelin'] === '') {
@@ -145,7 +161,7 @@ try {
                 throw new RuntimeException('Kenttä ' . $field . ' on liian pitkä.');
             }
         }
-        $values = array_map(static fn (string $value): ?string => $value !== '' ? $value : null, $form);
+        $values = array_values(array_map(static fn (string $value): ?string => $value !== '' ? $value : null, $form));
         if ($editId > 0) {
             $query = $db->prepare('UPDATE laatijat SET nimi = ?, titteli = ?, sahkoposti = ?, puhelin = ?, yritys = ?, ytunnus = ?, osoite = ?, postinro = ?, postitmp = ? WHERE id = ?');
             $query->bind_param('sssssssssi', $values[0], $values[1], $values[2], $values[3], $values[4], $values[5], $values[6], $values[7], $values[8], $editId);
@@ -159,7 +175,12 @@ try {
         exit;
     }
 
-    $query = $db->prepare('SELECT id, nimi, titteli, aktiivinen, sahkoposti, puhelin, yritys, ytunnus, osoite, postinro, postitmp FROM laatijat ORDER BY nimi, id');
+    $query = $isAdmin
+        ? $db->prepare('SELECT id, nimi, titteli, aktiivinen, sahkoposti, puhelin, yritys, ytunnus, osoite, postinro, postitmp FROM laatijat ORDER BY nimi, id')
+        : $db->prepare('SELECT id, nimi, titteli, aktiivinen, sahkoposti, puhelin, yritys, ytunnus, osoite, postinro, postitmp FROM laatijat WHERE id = ?');
+    if (!$isAdmin) {
+        $query->bind_param('i', $currentLaatijaId);
+    }
     $query->execute();
     $laatijat = $query->get_result()->fetch_all(MYSQLI_ASSOC);
     $query->close();
@@ -184,13 +205,13 @@ openLayoutShell('Ylläpito – TEKRAPORTTI');
 </div>
 <?php if ($message !== ''): ?><div class="alert alert-<?= adminValue(['value' => $messageType], 'value') ?>" role="alert"><?= adminValue(['value' => $message], 'value') ?></div><?php endif; ?>
 <div class="card border-0 shadow-sm mb-4" id="laatijalomake">
-    <div class="card-header bg-white"><h2 class="h5 mb-0"><?= $editId > 0 ? 'Muokkaa laatijaa' : 'Lisää laatija' ?></h2></div>
+    <div class="card-header bg-white"><h2 class="h5 mb-0"><?= $editId > 0 ? 'Muokkaa omia tietoja' : 'Lisää laatija' ?></h2></div>
     <form method="post" action="yllapito.php<?= $editId > 0 ? '?muokkaa=' . $editId : '' ?>">
         <input type="hidden" name="csrf_token" value="<?= adminValue(['value' => $csrfToken], 'value') ?>"><input type="hidden" name="action" value="save"><input type="hidden" name="id" value="<?= $editId ?>">
         <div class="card-body p-4"><div class="row g-3">
             <div class="col-md-6"><label class="form-label" for="nimi">Nimi *</label><input class="form-control" id="nimi" name="nimi" value="<?= adminValue($form, 'nimi') ?>" maxlength="200" required></div>
             <div class="col-md-6"><label class="form-label" for="titteli">Titteli</label><input class="form-control" id="titteli" name="titteli" value="<?= adminValue($form, 'titteli') ?>" maxlength="200"></div>
-            <div class="col-md-6"><label class="form-label" for="sahkoposti">Sähköposti *</label><input type="email" class="form-control" id="sahkoposti" name="sahkoposti" value="<?= adminValue($form, 'sahkoposti') ?>" maxlength="254" required></div>
+            <div class="col-md-6"><label class="form-label" for="sahkoposti">Sähköposti *</label><input type="email" class="form-control" id="sahkoposti" name="sahkoposti" value="<?= adminValue($form, 'sahkoposti') ?>" maxlength="254" required <?= !$isAdmin ? 'readonly' : '' ?>><?php if (!$isAdmin): ?><div class="form-text">Sähköpostiosoitteen voi vaihtaa vain pääkäyttäjä.</div><?php endif; ?></div>
             <div class="col-md-6"><label class="form-label" for="puhelin">Puhelin *</label><input class="form-control" id="puhelin" name="puhelin" value="<?= adminValue($form, 'puhelin') ?>" maxlength="50" required></div>
             <div class="col-md-6"><label class="form-label" for="yritys">Yritys</label><input class="form-control" id="yritys" name="yritys" value="<?= adminValue($form, 'yritys') ?>" maxlength="200"></div>
             <div class="col-md-6"><label class="form-label" for="ytunnus">Y-tunnus</label><input class="form-control" id="ytunnus" name="ytunnus" value="<?= adminValue($form, 'ytunnus') ?>" maxlength="20"></div>
@@ -201,6 +222,6 @@ openLayoutShell('Ylläpito – TEKRAPORTTI');
     </form>
 </div>
 <div class="card border-0 shadow-sm"><div class="table-responsive"><table class="table table-hover align-middle mb-0"><thead class="table-light"><tr><th>Nimi</th><th>Titteli</th><th>Sähköposti</th><th>Yritys</th><th>Tila</th><th class="text-end">Toiminnot</th></tr></thead><tbody>
-<?php foreach ($laatijat as $laatija): ?><tr><td><?= adminValue($laatija, 'nimi') ?></td><td><?= adminValue($laatija, 'titteli') ?></td><td><?= adminValue($laatija, 'sahkoposti') ?></td><td><?= adminValue($laatija, 'yritys') ?></td><td><?= (int) $laatija['aktiivinen'] === 1 ? 'Aktiivinen' : 'Estetty' ?></td><td class="text-end text-nowrap"><a class="btn btn-sm btn-outline-primary" href="yllapito.php?muokkaa=<?= (int) $laatija['id'] ?>#laatijalomake">Muokkaa</a> <?php if ((int) $laatija['id'] !== 1): ?><form method="post" action="yllapito.php" class="d-inline"><input type="hidden" name="csrf_token" value="<?= adminValue(['value' => $csrfToken], 'value') ?>"><input type="hidden" name="action" value="toggle-status"><input type="hidden" name="id" value="<?= (int) $laatija['id'] ?>"><button class="btn btn-sm btn-outline-warning"><?= (int) $laatija['aktiivinen'] === 1 ? 'Estä kirjautuminen' : 'Salli kirjautuminen' ?></button></form> <form method="post" action="yllapito.php" class="d-inline" onsubmit="return confirm('Poistetaanko laatija ja kaikki hänen tietonsa?');"><input type="hidden" name="csrf_token" value="<?= adminValue(['value' => $csrfToken], 'value') ?>"><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="<?= (int) $laatija['id'] ?>"><button class="btn btn-sm btn-outline-danger">Poista</button></form><?php endif; ?></td></tr><?php endforeach; ?>
+<?php foreach ($laatijat as $laatija): ?><tr><td><?= adminValue($laatija, 'nimi') ?></td><td><?= adminValue($laatija, 'titteli') ?></td><td><?= adminValue($laatija, 'sahkoposti') ?></td><td><?= adminValue($laatija, 'yritys') ?></td><td><?= (int) $laatija['aktiivinen'] === 1 ? 'Aktiivinen' : 'Estetty' ?></td><td class="text-end text-nowrap"><a class="btn btn-sm btn-outline-primary" href="yllapito.php?muokkaa=<?= (int) $laatija['id'] ?>#laatijalomake">Muokkaa</a><?php if ($isAdmin && (int) $laatija['id'] !== 1): ?> <form method="post" action="yllapito.php" class="d-inline"><input type="hidden" name="csrf_token" value="<?= adminValue(['value' => $csrfToken], 'value') ?>"><input type="hidden" name="action" value="toggle-status"><input type="hidden" name="id" value="<?= (int) $laatija['id'] ?>"><button class="btn btn-sm btn-outline-warning"><?= (int) $laatija['aktiivinen'] === 1 ? 'Estä kirjautuminen' : 'Salli kirjautuminen' ?></button></form> <form method="post" action="yllapito.php" class="d-inline" onsubmit="return confirm('Poistetaanko laatija ja kaikki hänen tietonsa?');"><input type="hidden" name="csrf_token" value="<?= adminValue(['value' => $csrfToken], 'value') ?>"><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="<?= (int) $laatija['id'] ?>"><button class="btn btn-sm btn-outline-danger">Poista</button></form><?php endif; ?></td></tr><?php endforeach; ?>
 <?php if (!$laatijat): ?><tr><td colspan="6" class="text-center text-body-secondary py-4">Ei laatijoita.</td></tr><?php endif; ?></tbody></table></div></div>
 <?php closeLayoutShell(); ?>

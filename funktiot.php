@@ -42,6 +42,12 @@ function openLayoutShell(string $pageTitle = 'TEKRAPORTTI'): void
     <style>
         :root { --tekra-sidebar-width: 273px; --tekra-navy: #071a3d; --tekra-blue: #1769e8; }
         body { background: #f5f8fc; color: #152747; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+        .tekra-markdown-toolbar { display:flex; gap:.25rem; margin-bottom:.35rem; }
+        .tekra-markdown-toolbar button { min-width:2.1rem; }
+        .tekra-markdown-help { color:#6c757d; font-size:.8rem; margin-left:.35rem; align-self:center; }
+        .tekra-rich-text h4 { margin:.7rem 0 .35rem; font-size:1.05em; }
+        .tekra-rich-text p { margin:0 0 .45rem; }
+        .tekra-rich-text p:last-child { margin-bottom:0; }
         .tekra-topbar { min-height: 100px; background: linear-gradient(110deg, #071a3d, #0b2149); box-shadow: 0 1px 0 rgba(255,255,255,.08); }
         .tekra-topbar .container-fluid { min-height: 100px; padding: 0 20px; gap: 16px; }
         .tekra-topbar .navbar-toggler { border: 1px solid #25436c; border-radius: 8px; padding: 10px 14px; }
@@ -167,6 +173,39 @@ HTML;
     }
 }
 
+/** Muuntaa sovelluksen rajatun tekstimuotoilun turvalliseksi HTML:ksi. */
+function markdownToHtml(string $text): string
+{
+    $lines = preg_split('/\r\n|\r|\n/', $text) ?: [''];
+    $html = '<div class="tekra-rich-text">';
+    $paragraph = [];
+    $flushParagraph = static function () use (&$html, &$paragraph): void {
+        if ($paragraph) {
+            $html .= '<p>' . implode('<br>', $paragraph) . '</p>';
+            $paragraph = [];
+        }
+    };
+    foreach ($lines as $line) {
+        if (preg_match('/^\s*##\s+(.+)$/u', $line, $matches)) {
+            $flushParagraph();
+            $html .= '<h4>' . markdownInlineToHtml($matches[1]) . '</h4>';
+        } elseif (trim($line) === '') {
+            $flushParagraph();
+        } else {
+            $paragraph[] = markdownInlineToHtml($line);
+        }
+    }
+    $flushParagraph();
+    return $html . '</div>';
+}
+
+function markdownInlineToHtml(string $text): string
+{
+    $safe = htmlspecialchars($text, ENT_QUOTES, 'UTF-8');
+    $safe = preg_replace('/\*\*([^*\n]+)\*\*/u', '<strong>$1</strong>', $safe) ?? $safe;
+    return preg_replace('/(?<!\*)\*([^*\n]+)\*(?!\*)/u', '<em>$1</em>', $safe) ?? $safe;
+}
+
 /**
  * Sulkee sivun HTML-rakenteen ja näyttää version alatunnisteessa.
  */
@@ -186,7 +225,15 @@ function closeLayoutShell(): void
 
     $html = ob_get_clean();
     echo str_replace('<?', '&lt;?', $html);
-    echo '<script>document.querySelectorAll("[data-menu-toggle]").forEach(function(button){button.addEventListener("click",function(){var menu=document.getElementById(button.getAttribute("aria-controls"));var desktop=window.matchMedia("(min-width: 992px)").matches;var open;if(desktop){var collapsed=menu.classList.toggle("is-collapsed");open=!collapsed;}else{open=menu.classList.toggle("is-open");}button.setAttribute("aria-expanded",open?"true":"false");});});</script>';
+    echo '<script>
+    document.querySelectorAll("[data-menu-toggle]").forEach(function(button){button.addEventListener("click",function(){var menu=document.getElementById(button.getAttribute("aria-controls"));var desktop=window.matchMedia("(min-width: 992px)").matches;var open;if(desktop){var collapsed=menu.classList.toggle("is-collapsed");open=!collapsed;}else{open=menu.classList.toggle("is-open");}button.setAttribute("aria-expanded",open?"true":"false");});});
+    document.querySelectorAll("textarea[data-markdown-editor]").forEach(function(textarea){
+        var toolbar=document.createElement("div"); toolbar.className="tekra-markdown-toolbar";
+        toolbar.innerHTML="<button type=\"button\" class=\"btn btn-sm btn-outline-secondary\" data-md-action=\"heading\">Otsikko</button><button type=\"button\" class=\"btn btn-sm btn-outline-secondary\" data-md-action=\"bold\"><strong>B</strong></button><button type=\"button\" class=\"btn btn-sm btn-outline-secondary\" data-md-action=\"italic\"><em>I</em></button><span class=\"tekra-markdown-help\">## väliotsikko · **lihavoitu** · *kursivoitu*</span>";
+        textarea.parentNode.insertBefore(toolbar, textarea);
+    });
+    document.addEventListener("click",function(event){var button=event.target.closest("[data-md-action]");if(!button)return;var textarea=button.closest(".tekra-markdown-toolbar").parentNode.querySelector("textarea[data-markdown-editor]");if(!textarea)return;var start=textarea.selectionStart,end=textarea.selectionEnd,value=textarea.value,selected=value.slice(start,end),action=button.dataset.mdAction;if(action==="heading"){var lineStart=value.lastIndexOf("\\n",start-1)+1;textarea.setRangeText("## ",lineStart,lineStart,"end");}else{var marker=action==="bold"?"**":"*";textarea.setRangeText(marker+selected+marker,start,end,"select");}textarea.focus();});
+    </script>';
 }
 
 /**

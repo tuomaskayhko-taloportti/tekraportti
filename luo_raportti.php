@@ -112,7 +112,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $sharedLaatija = $query->get_result()->fetch_assoc();
                 $query->close();
                 if (!$sharedLaatija) {
-                    throw new RuntimeException('Sähköpostiosoitetta ei löytynyt laatijoista: ' . $sharedEmail);
+                    throw new RuntimeException('Käyttäjää ei löytynyt tällä sähköpostiosoitteella: ' . $sharedEmail . '. Lisää laatija ensin ylläpidossa.');
                 }
                 $sharedLaatijat[] = ['id' => (int) $sharedLaatija['id'], 'email' => $sharedEmail];
             }
@@ -186,6 +186,23 @@ function formValue(array $form, string $key): string
 
 openLayoutShell('Luo raportti – TEKRAPORTTI');
 ?>
+<style>
+.file-drop-zone {
+    border: 2px dashed #adb5bd;
+    border-radius: .375rem;
+    padding: .75rem;
+    transition: border-color .15s ease, background-color .15s ease;
+}
+.file-drop-zone.is-dragover {
+    border-color: #0d6efd;
+    background-color: #e7f1ff;
+}
+.file-drop-zone-hint {
+    color: #6c757d;
+    font-size: .875rem;
+    margin-top: .35rem;
+}
+</style>
 
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
     <div>
@@ -247,7 +264,7 @@ openLayoutShell('Luo raportti – TEKRAPORTTI');
                 </div>
                 <div class="col-12">
                     <label for="tiivistelma" class="form-label">Tiivistelmä</label>
-                    <textarea class="form-control" id="tiivistelma" name="tiivistelma" rows="5" placeholder="Raportin lyhyt kuvaus"><?= formValue($form, 'tiivistelma') ?></textarea>
+                    <textarea class="form-control" id="tiivistelma" name="tiivistelma" rows="5" placeholder="Raportin lyhyt kuvaus" data-markdown-editor><?= formValue($form, 'tiivistelma') ?></textarea>
                 </div>
                 <div class="col-12 col-md-6">
                     <label for="jaettava_sahkoposti" class="form-label">Jaa raportti laatijoille</label>
@@ -256,7 +273,10 @@ openLayoutShell('Luo raportti – TEKRAPORTTI');
                 </div>
                 <div class="col-12">
                     <label for="kansikuva" class="form-label">Kansikuva</label>
-                    <input type="file" class="form-control" id="kansikuva" name="kansikuva" accept="image/jpeg,image/png,image/webp">
+                    <div class="file-drop-zone" data-file-drop>
+                        <input type="file" class="form-control" id="kansikuva" name="kansikuva" accept="image/jpeg,image/png,image/webp">
+                        <div class="file-drop-zone-hint">Voit myös raahata kuvan tähän.</div>
+                    </div>
                     <div class="form-text">Valinnainen JPG-, PNG- tai WebP-kuva, enintään 10 MB.</div>
                 </div>
             </div>
@@ -266,5 +286,35 @@ openLayoutShell('Luo raportti – TEKRAPORTTI');
         </div>
     </form>
 <?php endif; ?>
+
+<script>
+document.querySelectorAll('[data-file-drop]').forEach(function (dropZone) {
+    const input = dropZone.querySelector('input[type="file"]');
+    if (!input) return;
+
+    ['dragenter', 'dragover'].forEach(function (eventName) {
+        dropZone.addEventListener(eventName, function (event) {
+            event.preventDefault();
+            dropZone.classList.add('is-dragover');
+        });
+    });
+    ['dragleave', 'drop'].forEach(function (eventName) {
+        dropZone.addEventListener(eventName, function (event) {
+            event.preventDefault();
+            dropZone.classList.remove('is-dragover');
+        });
+    });
+    dropZone.addEventListener('drop', function (event) {
+        const droppedFiles = Array.from(event.dataTransfer.files || []);
+        if (!droppedFiles.length) return;
+
+        const transfer = new DataTransfer();
+        droppedFiles.slice(0, 1).forEach(function (file) {
+            transfer.items.add(file);
+        });
+        input.files = transfer.files;
+    });
+});
+</script>
 
 <?php closeLayoutShell(); ?>

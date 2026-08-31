@@ -122,7 +122,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $sharedLaatija = $query->get_result()->fetch_assoc();
                     $query->close();
                     if (!$sharedLaatija) {
-                        throw new RuntimeException('Sähköpostiosoitetta ei löytynyt laatijoista: ' . $sharedEmail);
+                        throw new RuntimeException('Käyttäjää ei löytynyt tällä sähköpostiosoitteella: ' . $sharedEmail . '. Lisää laatija ensin ylläpidossa.');
                     }
                     $sharedLaatijat[] = ['id' => (int) $sharedLaatija['id'], 'email' => $sharedEmail];
                 }
@@ -277,11 +277,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $query->bind_param('iii', $laatijatId, $tableId, $rowOrder); $query->execute(); $query->close();
                 $message = 'Taulukko lisättiin.';
                 $messageType = 'success';
-            } elseif ($action === 'update-table') {
+            } elseif (in_array($action, ['update-table', 'add-table-column', 'add-table-row', 'delete-table-column', 'delete-table-row'], true)) {
                 $tableId = (int) ($_POST['taulukko_id'] ?? 0);
                 $tableTitle = trim((string) ($_POST['taulukko_otsikko'] ?? ''));
                 $columnNames = $_POST['sarake_nimi'] ?? [];
                 $cellValues = $_POST['solu'] ?? [];
+                $newColumnName = trim((string) ($_POST['uusi_sarake_nimi'] ?? ''));
+                if ($action === 'add-table-column' && $newColumnName === '') {
+                    throw new RuntimeException('Anna sarakkeelle nimi.');
+                }
                 $query = $db->prepare('SELECT id FROM raporttitaulukot WHERE id = ? AND raportti_id = ? AND laatijat_id = ? LIMIT 1');
                 $query->bind_param('iii', $tableId, $raporttiId, $laatijatId); $query->execute();
                 $tableExists = (bool) $query->get_result()->fetch_assoc(); $query->close();
@@ -309,42 +313,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 }
                 $query->close();
-                $message = 'Taulukko tallennettiin.';
+                if ($action === 'add-table-column') {
+                    $query = $db->prepare('SELECT COALESCE(MAX(jarjestys), 0) + 1 AS seuraava FROM raporttitaulukko_sarakkeet WHERE taulukko_id = ? AND laatijat_id = ?');
+                    $query->bind_param('ii', $tableId, $laatijatId); $query->execute(); $order = (int) $query->get_result()->fetch_assoc()['seuraava']; $query->close();
+                    $query = $db->prepare('INSERT INTO raporttitaulukko_sarakkeet (laatijat_id, taulukko_id, nimi, jarjestys) VALUES (?, ?, ?, ?)');
+                    $query->bind_param('iisi', $laatijatId, $tableId, $newColumnName, $order); $query->execute(); $query->close();
+                    $message = 'Taulukko tallennettiin ja sarake lisättiin.';
+                } elseif ($action === 'add-table-row') {
+                    $query = $db->prepare('SELECT COALESCE(MAX(jarjestys), 0) + 1 AS seuraava FROM raporttitaulukko_rivit WHERE taulukko_id = ? AND laatijat_id = ?');
+                    $query->bind_param('ii', $tableId, $laatijatId); $query->execute(); $order = (int) $query->get_result()->fetch_assoc()['seuraava']; $query->close();
+                    $query = $db->prepare('INSERT INTO raporttitaulukko_rivit (laatijat_id, taulukko_id, jarjestys) VALUES (?, ?, ?)');
+                    $query->bind_param('iii', $laatijatId, $tableId, $order); $query->execute(); $query->close();
+                    $message = 'Taulukko tallennettiin ja rivi lisättiin.';
+                } elseif ($action === 'delete-table-column') {
+                    $columnId = (int) ($_POST['sarake_id'] ?? 0);
+                    $query = $db->prepare('DELETE FROM raporttitaulukko_sarakkeet WHERE id = ? AND taulukko_id = ? AND laatijat_id = ?');
+                    $query->bind_param('iii', $columnId, $tableId, $laatijatId); $query->execute(); $query->close();
+                    $message = 'Taulukko tallennettiin ja sarake poistettiin.';
+                } elseif ($action === 'delete-table-row') {
+                    $tableRowId = (int) ($_POST['taulukko_rivi_id'] ?? 0);
+                    $query = $db->prepare('DELETE FROM raporttitaulukko_rivit WHERE id = ? AND taulukko_id = ? AND laatijat_id = ?');
+                    $query->bind_param('iii', $tableRowId, $tableId, $laatijatId); $query->execute(); $query->close();
+                    $message = 'Taulukko tallennettiin ja rivi poistettiin.';
+                } else {
+                    $message = 'Taulukko tallennettiin.';
+                }
                 $messageType = 'success';
-            } elseif ($action === 'add-table-column') {
-                $tableId = (int) ($_POST['taulukko_id'] ?? 0);
-                $columnName = trim((string) ($_POST['sarake_nimi'] ?? ''));
-                if ($columnName === '') { throw new RuntimeException('Anna sarakkeelle nimi.'); }
-                $query = $db->prepare('SELECT id FROM raporttitaulukot WHERE id = ? AND raportti_id = ? AND laatijat_id = ? LIMIT 1');
-                $query->bind_param('iii', $tableId, $raporttiId, $laatijatId); $query->execute();
-                if (!(bool) $query->get_result()->fetch_assoc()) { throw new RuntimeException('Taulukkoa ei löytynyt.'); }
-                $query->close();
-                $query = $db->prepare('SELECT COALESCE(MAX(jarjestys), 0) + 1 AS seuraava FROM raporttitaulukko_sarakkeet WHERE taulukko_id = ? AND laatijat_id = ?');
-                $query->bind_param('ii', $tableId, $laatijatId); $query->execute(); $order = (int) $query->get_result()->fetch_assoc()['seuraava']; $query->close();
-                $query = $db->prepare('INSERT INTO raporttitaulukko_sarakkeet (laatijat_id, taulukko_id, nimi, jarjestys) VALUES (?, ?, ?, ?)');
-                $query->bind_param('iisi', $laatijatId, $tableId, $columnName, $order); $query->execute(); $query->close();
-                $message = 'Sarake lisättiin.'; $messageType = 'success';
-            } elseif ($action === 'add-table-row') {
-                $tableId = (int) ($_POST['taulukko_id'] ?? 0);
-                $query = $db->prepare('SELECT id FROM raporttitaulukot WHERE id = ? AND raportti_id = ? AND laatijat_id = ? LIMIT 1');
-                $query->bind_param('iii', $tableId, $raporttiId, $laatijatId); $query->execute();
-                if (!(bool) $query->get_result()->fetch_assoc()) { throw new RuntimeException('Taulukkoa ei löytynyt.'); }
-                $query->close();
-                $query = $db->prepare('SELECT COALESCE(MAX(jarjestys), 0) + 1 AS seuraava FROM raporttitaulukko_rivit WHERE taulukko_id = ? AND laatijat_id = ?');
-                $query->bind_param('ii', $tableId, $laatijatId); $query->execute(); $order = (int) $query->get_result()->fetch_assoc()['seuraava']; $query->close();
-                $query = $db->prepare('INSERT INTO raporttitaulukko_rivit (laatijat_id, taulukko_id, jarjestys) VALUES (?, ?, ?)');
-                $query->bind_param('iii', $laatijatId, $tableId, $order); $query->execute(); $query->close();
-                $message = 'Rivi lisättiin.'; $messageType = 'success';
-            } elseif ($action === 'delete-table-column') {
-                $columnId = (int) ($_POST['sarake_id'] ?? 0); $tableId = (int) ($_POST['taulukko_id'] ?? 0);
-                $query = $db->prepare('DELETE FROM raporttitaulukko_sarakkeet WHERE id = ? AND taulukko_id = ? AND laatijat_id = ?');
-                $query->bind_param('iii', $columnId, $tableId, $laatijatId); $query->execute(); $query->close();
-                $message = 'Sarake poistettiin.'; $messageType = 'success';
-            } elseif ($action === 'delete-table-row') {
-                $tableRowId = (int) ($_POST['taulukko_rivi_id'] ?? 0); $tableId = (int) ($_POST['taulukko_id'] ?? 0);
-                $query = $db->prepare('DELETE FROM raporttitaulukko_rivit WHERE id = ? AND taulukko_id = ? AND laatijat_id = ?');
-                $query->bind_param('iii', $tableRowId, $tableId, $laatijatId); $query->execute(); $query->close();
-                $message = 'Rivi poistettiin.'; $messageType = 'success';
             } elseif ($action === 'delete-table') {
                 $tableId = (int) ($_POST['taulukko_id'] ?? 0);
                 $query = $db->prepare('DELETE FROM raporttitaulukot WHERE id = ? AND raportti_id = ? AND laatijat_id = ?');
@@ -597,7 +591,7 @@ openLayoutShell('Muokkaa raporttia – TEKRAPORTTI');
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
     <div><h1 class="h3 mb-1">Muokkaa raporttia</h1><p class="text-body-secondary mb-0"><?= editValue($report['otsikko']) ?></p></div>
     <div class="report-edit-header">
-        <?php if ($tables): ?><form method="get" action="esikatsele_raportti.php" target="_blank" class="report-edit-preview-form"><input type="hidden" name="id" value="<?= $raporttiId ?>"><?php foreach ($tables as $table): ?><label class="visually-hidden" for="kaavio-<?= (int) $table['id'] ?>">Kaavio taulukolle <?= (int) $table['id'] ?></label><select class="form-select form-select-sm" id="kaavio-<?= (int) $table['id'] ?>" name="kaavio[<?= (int) $table['id'] ?>]" title="Taulukon kaavio"><option value="">Ei kaaviota</option><option value="pie">Piirakka</option><option value="bar">Pylväs</option><option value="line">Viiva</option></select><?php endforeach; ?><button class="btn btn-outline-primary" type="submit">Esikatsele PDF:nä</button></form><?php else: ?><a class="btn btn-outline-primary" target="_blank" href="esikatsele_raportti.php?id=<?= $raporttiId ?>">Esikatsele PDF:nä</a><?php endif; ?>
+        <?php if ($tables): ?><form method="get" action="esikatsele_raportti.php" target="_blank" class="report-edit-preview-form"><input type="hidden" name="id" value="<?= $raporttiId ?>"><?php foreach ($tables as $table): ?><label class="visually-hidden" for="kaavio-<?= (int) $table['id'] ?>">Kaavio taulukolle <?= (int) $table['id'] ?></label><select class="form-select form-select-sm" id="kaavio-<?= (int) $table['id'] ?>" name="kaavio[<?= (int) $table['id'] ?>]" title="Taulukon kaavio"><option value="">Ei kaaviota</option><option value="pie">Piirakka</option><option value="bar">Pylväs</option><option value="line">Viiva</option></select><details class="small"><summary>Sarakkeet</summary><input type="hidden" name="kaavio_sarakkeet[<?= (int) $table['id'] ?>][]" value="0"><?php foreach (array_slice($table['sarakkeet'], 1) as $column): ?><label class="d-block"><input type="checkbox" name="kaavio_sarakkeet[<?= (int) $table['id'] ?>][]" value="<?= (int) $column['id'] ?>" checked> <?= editValue($column['nimi']) ?></label><?php endforeach; ?></details><?php endforeach; ?><button class="btn btn-outline-primary" type="submit">Esikatsele PDF:nä</button></form><?php else: ?><a class="btn btn-outline-primary" target="_blank" href="esikatsele_raportti.php?id=<?= $raporttiId ?>">Esikatsele PDF:nä</a><?php endif; ?>
         <a class="btn btn-outline-secondary" href="raportit.php">Takaisin raportteihin</a>
     </div>
 </div>
@@ -612,12 +606,12 @@ openLayoutShell('Muokkaa raporttia – TEKRAPORTTI');
         <div class="col-md-6"><label class="form-label" for="raporttipvm">Raporttipäivämäärä</label><input type="date" class="form-control" id="raporttipvm" name="raporttipvm" value="<?= editValue($report['raporttipvm']) ?>" required></div>
         <div class="col-md-6"><label class="form-label" for="laatimispaikka">Laatimispaikka</label><input class="form-control" id="laatimispaikka" name="laatimispaikka" value="<?= editValue($report['laatimispaikka']) ?>" maxlength="200"></div>
         <div class="col-md-6"><label class="form-label" for="jaettava_sahkoposti">Jaa raportti laatijoille</label><textarea class="form-control" id="jaettava_sahkoposti" name="jaettava_sahkoposti" rows="3" maxlength="4000" placeholder="laatija1@example.fi&#10;laatija2@example.fi"><?= editValue(implode("\n", $sharedEmails)) ?></textarea><div class="form-text">Yksi sähköpostiosoite riville. Osoitteiden täytyy löytyä laatijoista.</div></div>
-        <div class="col-12"><label class="form-label" for="tiivistelma">Tiivistelmä</label><textarea class="form-control" id="tiivistelma" name="tiivistelma" rows="5"><?= editValue($report['tiivistelma']) ?></textarea></div>
+        <div class="col-12"><label class="form-label" for="tiivistelma">Tiivistelmä</label><textarea class="form-control" id="tiivistelma" name="tiivistelma" rows="5" data-markdown-editor><?= editValue($report['tiivistelma']) ?></textarea></div>
         <div class="col-12"><label class="form-label" for="kansikuva">Kansikuva</label><div class="file-drop-zone" data-file-drop><input type="file" class="form-control" id="kansikuva" name="kansikuva" accept="image/jpeg,image/png,image/webp"><div class="file-drop-zone-hint">Voit myös raahata kuvan tähän.</div></div><div class="form-text">Uusi kuva korvaa nykyisen kansikuvan. JPG, PNG tai WebP, enintään 10 MB.</div></div>
     </div></div><div class="card-footer bg-white border-0 px-4 pb-4"><button class="btn btn-primary">Tallenna perustiedot</button></div>
 </form>
 
-<div class="card border-0 shadow-sm mb-4"><div class="card-header bg-white"><h2 class="h5 mb-0">Tiivistelmä</h2></div><div class="card-body"><p class="mb-0"><?= nl2br(editValue($report['tiivistelma'] ?: 'Tiivistelmää ei ole vielä lisätty.')) ?></p></div></div>
+<div class="card border-0 shadow-sm mb-4"><div class="card-header bg-white"><h2 class="h5 mb-0">Tiivistelmä</h2></div><div class="card-body"><?= $report['tiivistelma'] ? markdownToHtml((string) $report['tiivistelma']) : '<p class="mb-0">Tiivistelmää ei ole vielä lisätty.</p>' ?></div></div>
 
 <div class="d-flex justify-content-between align-items-center mb-3"><h2 class="h4 mb-0">Raporttiosiot</h2></div>
 <?php foreach ($rows as $rowIndex => $row): ?>
@@ -626,7 +620,7 @@ openLayoutShell('Muokkaa raporttia – TEKRAPORTTI');
         <form method="post" action="muokkaa_raportti.php?id=<?= $raporttiId ?>">
             <input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="update-row"><input type="hidden" name="rivi_id" value="<?= (int) $row['id'] ?>"><input type="hidden" name="return_anchor" value="osio-<?= (int) $row['id'] ?>">
             <label class="form-label">Osion otsikko</label><input class="form-control mb-3" name="rivi_otsikko" value="<?= editValue($row['otsikko']) ?>" maxlength="255" required>
-            <label class="form-label">Tekstisisältö</label><textarea class="form-control mb-3" name="rivi_sisalto" rows="6"><?= editValue($row['sisalto']) ?></textarea>
+            <label class="form-label">Tekstisisältö</label><textarea class="form-control mb-3" name="rivi_sisalto" rows="6" data-markdown-editor><?= editValue($row['sisalto']) ?></textarea>
             <div class="form-check mb-3"><input class="form-check-input" type="checkbox" id="asiakastiedot-<?= (int) $row['id'] ?>" name="sisaltaa_asiakastiedot" <?= !empty($row['sisaltaa_asiakastiedot']) ? 'checked' : '' ?>><label class="form-check-label" for="asiakastiedot-<?= (int) $row['id'] ?>">Tulosta asiakkaan tiedot tämän osion alussa</label></div>
             <button class="btn btn-primary btn-sm">Tallenna osio</button>
         </form>
@@ -646,12 +640,11 @@ openLayoutShell('Muokkaa raporttia – TEKRAPORTTI');
                     <form method="post" action="muokkaa_raportti.php?id=<?= $raporttiId ?>" onsubmit="return confirm('Poistetaanko taulukko ja kaikki sen tiedot?');"><input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="delete-table"><input type="hidden" name="taulukko_id" value="<?= (int) $table['id'] ?>"><button class="btn btn-outline-danger btn-sm">Poista taulukko</button></form>
                 </div>
                 <form method="post" action="muokkaa_raportti.php?id=<?= $raporttiId ?>">
-                    <input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="update-table"><input type="hidden" name="taulukko_id" value="<?= (int) $table['id'] ?>">
+                    <input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="taulukko_id" value="<?= (int) $table['id'] ?>">
                     <input class="form-control form-control-sm mb-2" name="taulukko_otsikko" value="<?= editValue($table['otsikko']) ?>" placeholder="Taulukon otsikko">
-                    <div class="table-responsive"><table class="table table-bordered table-sm align-middle mb-2"><thead><tr><?php foreach ($table['sarakkeet'] as $column): ?><th><input class="form-control form-control-sm" name="sarake_nimi[<?= (int) $table['id'] ?>][<?= (int) $column['id'] ?>]" value="<?= editValue($column['nimi']) ?>"><div class="text-end mt-1"><button class="btn btn-link btn-sm text-danger p-0" type="submit" name="action" value="delete-table-column" onclick="this.form.sarake_id.value='<?= (int) $column['id'] ?>';">Poista</button></div></th><?php endforeach; ?></tr></thead><tbody><?php foreach ($table['rivit'] as $tableRow): ?><tr><?php foreach ($table['sarakkeet'] as $column): ?><td><textarea class="form-control form-control-sm" name="solu[<?= (int) $table['id'] ?>][<?= (int) $tableRow['id'] ?>][<?= (int) $column['id'] ?>]" rows="2"><?= editValue($table['solut'][(int) $tableRow['id']][(int) $column['id']] ?? '') ?></textarea></td><?php endforeach; ?><td class="border-0 p-1"><button class="btn btn-link btn-sm text-danger" type="submit" name="action" value="delete-table-row" onclick="this.form.taulukko_rivi_id.value='<?= (int) $tableRow['id'] ?>';">Poista rivi</button></td></tr><?php endforeach; ?></tbody></table></div>
-                    <input type="hidden" name="sarake_id" value=""><input type="hidden" name="taulukko_rivi_id" value=""><button class="btn btn-primary btn-sm">Tallenna taulukko</button>
+                    <div class="table-responsive"><table class="table table-bordered table-sm align-middle mb-2"><thead><tr><?php foreach ($table['sarakkeet'] as $column): ?><th><input class="form-control form-control-sm" name="sarake_nimi[<?= (int) $table['id'] ?>][<?= (int) $column['id'] ?>]" value="<?= editValue($column['nimi']) ?>"><div class="text-end mt-1"><button class="btn btn-link btn-sm text-danger p-0" type="submit" name="action" value="delete-table-column" onclick="this.form.sarake_id.value='<?= (int) $column['id'] ?>';">Poista</button></div></th><?php endforeach; ?></tr></thead><tbody><?php foreach ($table['rivit'] as $tableRow): ?><tr><?php foreach ($table['sarakkeet'] as $column): ?><td><textarea class="form-control form-control-sm" name="solu[<?= (int) $table['id'] ?>][<?= (int) $tableRow['id'] ?>][<?= (int) $column['id'] ?>]" rows="2" data-markdown-editor><?= editValue($table['solut'][(int) $tableRow['id']][(int) $column['id']] ?? '') ?></textarea></td><?php endforeach; ?><td class="border-0 p-1"><button class="btn btn-link btn-sm text-danger" type="submit" name="action" value="delete-table-row" onclick="this.form.taulukko_rivi_id.value='<?= (int) $tableRow['id'] ?>';">Poista rivi</button></td></tr><?php endforeach; ?></tbody></table></div>
+                    <input type="hidden" name="sarake_id" value=""><input type="hidden" name="taulukko_rivi_id" value=""><div class="d-flex flex-wrap gap-2 align-items-center"><button class="btn btn-primary btn-sm" type="submit" name="action" value="update-table">Tallenna taulukko</button><input class="form-control form-control-sm" style="max-width:220px" name="uusi_sarake_nimi" placeholder="Uuden sarakkeen nimi"><button class="btn btn-outline-secondary btn-sm" type="submit" name="action" value="add-table-column">Tallenna ja lisää sarake</button><button class="btn btn-outline-secondary btn-sm" type="submit" name="action" value="add-table-row">Tallenna ja lisää rivi</button></div>
                 </form>
-                <div class="d-flex flex-wrap gap-2 mt-2"><form method="post" action="muokkaa_raportti.php?id=<?= $raporttiId ?>" class="d-flex gap-2"><input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="add-table-column"><input type="hidden" name="taulukko_id" value="<?= (int) $table['id'] ?>"><input class="form-control form-control-sm" name="sarake_nimi" placeholder="Uuden sarakkeen nimi" required><button class="btn btn-outline-secondary btn-sm">+ Sarake</button></form><form method="post" action="muokkaa_raportti.php?id=<?= $raporttiId ?>"><input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="add-table-row"><input type="hidden" name="taulukko_id" value="<?= (int) $table['id'] ?>"><button class="btn btn-outline-secondary btn-sm">+ Rivi</button></form></div>
             </div>
         <?php endif; ?><?php endforeach; ?>
         <form method="post" action="muokkaa_raportti.php?id=<?= $raporttiId ?>" class="d-flex gap-2 mt-3"><input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="add-table"><input type="hidden" name="rivi_id" value="<?= (int) $row['id'] ?>"><input class="form-control form-control-sm" name="taulukko_otsikko" placeholder="Uuden taulukon otsikko"><button class="btn btn-outline-primary btn-sm">+ Lisää taulukko</button></form>
@@ -659,7 +652,7 @@ openLayoutShell('Muokkaa raporttia – TEKRAPORTTI');
 <?php endforeach; ?>
 
 <span id="uusi-osio"></span>
-<div class="card border-0 shadow-sm"><div class="card-header bg-white"><h2 class="h5 mb-0">Lisää uusi osio</h2></div><form method="post" action="muokkaa_raportti.php?id=<?= $raporttiId ?>"><input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="add-row"><div class="card-body p-4"><input class="form-control mb-3" name="rivi_otsikko" placeholder="Osion otsikko" maxlength="255" required><textarea class="form-control mb-3" name="rivi_sisalto" rows="6" placeholder="Tekstisisältö"></textarea><div class="form-check"><input class="form-check-input" type="checkbox" id="uusi-asiakastiedot" name="sisaltaa_asiakastiedot"><label class="form-check-label" for="uusi-asiakastiedot">Tulosta asiakkaan tiedot tämän osion alussa</label></div></div><div class="card-footer bg-white border-0 px-4 pb-4"><button class="btn btn-primary">+ Lisää osio</button></div></form></div>
+<div class="card border-0 shadow-sm"><div class="card-header bg-white"><h2 class="h5 mb-0">Lisää uusi osio</h2></div><form method="post" action="muokkaa_raportti.php?id=<?= $raporttiId ?>"><input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="add-row"><div class="card-body p-4"><input class="form-control mb-3" name="rivi_otsikko" placeholder="Osion otsikko" maxlength="255" required><textarea class="form-control mb-3" name="rivi_sisalto" rows="6" placeholder="Tekstisisältö" data-markdown-editor></textarea><div class="form-check"><input class="form-check-input" type="checkbox" id="uusi-asiakastiedot" name="sisaltaa_asiakastiedot"><label class="form-check-label" for="uusi-asiakastiedot">Tulosta asiakkaan tiedot tämän osion alussa</label></div></div><div class="card-footer bg-white border-0 px-4 pb-4"><button class="btn btn-primary">+ Lisää osio</button></div></form></div>
 
 <script>
 document.querySelectorAll('form[action^="muokkaa_raportti.php"]').forEach(function (form) {

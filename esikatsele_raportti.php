@@ -129,6 +129,24 @@ function pdfText(string $value): string
     return $converted === false ? '?' : $converted;
 }
 
+function pdfWriteMarkdown(FPDF $pdf, string $text, float $lineHeight = 6): void
+{
+    $parts = preg_split('/(\*\*[^*\r\n]+\*\*|\*[^*\r\n]+\*)/u', $text, -1, PREG_SPLIT_DELIM_CAPTURE) ?: [''];
+    foreach ($parts as $part) {
+        $style = '';
+        if (str_starts_with($part, '**') && str_ends_with($part, '**')) {
+            $style = 'B';
+            $part = substr($part, 2, -2);
+        } elseif (str_starts_with($part, '*') && str_ends_with($part, '*')) {
+            $style = 'I';
+            $part = substr($part, 1, -1);
+        }
+        $pdf->SetFont('Helvetica', $style, 11);
+        $pdf->Write($lineHeight, pdfText($part));
+    }
+    $pdf->SetFont('Helvetica', '', 11);
+}
+
 /**
  * Tulostaa tekstin ja muuttaa rivien alussa olevat luettelomerkit PDF-listaksi.
  * Viivamerkityt rivit saavat neliömerkin, tähdellä merkityt rivit suljetun
@@ -143,6 +161,13 @@ function pdfTextWithLists(FPDF $pdf, string $text): void
     $lines = preg_split('/\r\n|\r|\n/', $text) ?: [''];
 
     foreach ($lines as $line) {
+        if (preg_match('/^\s*##\s+(.+)$/u', $line, $heading)) {
+            $pdf->SetFont('Helvetica', 'B', 14);
+            $pdf->Write(7, pdfText($heading[1]));
+            $pdf->Ln(8);
+            $pdf->SetFont('Helvetica', '', 11);
+            continue;
+        }
         if (preg_match('/^\s*(\d+[.)]|[-*–—−]|o)(?:\s+|$)(.*)$/u', $line, $matches)) {
             $content = (string) $matches[2];
             $listWidth = $pdf->GetPageWidth() - 40 - ($listIndent * 2);
@@ -159,11 +184,13 @@ function pdfTextWithLists(FPDF $pdf, string $text): void
                 $pdf->Cell(5, 6, pdfText($matches[1]), 0, 0, 'C');
             }
             $pdf->SetX($contentStart);
-            $pdf->MultiCell($listWidth, 6, pdfText($content), 0, 'L');
+            pdfWriteMarkdown($pdf, $content);
+            $pdf->Ln(6);
             continue;
         }
 
-        $pdf->MultiCell(0, 6, pdfText($line), 0, 'L');
+        pdfWriteMarkdown($pdf, $line);
+        $pdf->Ln(6);
     }
 }
 
@@ -340,7 +367,7 @@ function chartTextCentered($image, int $size, float $centerX, int $y, string $te
     chartText($image, $size, max(0, $x), $y, $text, $color, $bold);
 }
 
-function createTableChart(array $table, string $chartType, array &$temporaryImages): ?string
+function createTableChart(array $table, string $chartType, array &$temporaryImages, array $selectedColumnIds = []): ?string
 {
     if (!in_array($chartType, ['pie', 'bar', 'line'], true) || count($table['sarakkeet']) < 2 || !$table['rivit']) {
         return null;
@@ -348,6 +375,9 @@ function createTableChart(array $table, string $chartType, array &$temporaryImag
 
     $series = [];
     foreach (array_slice($table['sarakkeet'], 1) as $column) {
+        if ($selectedColumnIds && !in_array((int) $column['id'], $selectedColumnIds, true)) {
+            continue;
+        }
         $values = [];
         foreach ($table['rivit'] as $tableRow) {
             $cell = (string) ($table['solut'][(int) $tableRow['id']][(int) $column['id']] ?? '');
@@ -367,6 +397,9 @@ function createTableChart(array $table, string $chartType, array &$temporaryImag
     $white = imagecolorallocate($image, 255, 255, 255);
     $dark = imagecolorallocate($image, 35, 45, 60);
     imagefill($image, 0, 0, $white);
+    $tableTitle = trim((string) ($table['otsikko'] ?? ''));
+    $diagramLabels = ['pie' => 'Piirakkadiagrammi', 'bar' => 'Pylväsdiagrammi', 'line' => 'Viivadiagrammi'];
+    $diagramTitle = $tableTitle !== '' ? ($diagramLabels[$chartType] . ': ' . $tableTitle) : '';
     $palette = [
         imagecolorallocate($image, 31, 111, 235),
         imagecolorallocate($image, 241, 139, 33),
@@ -397,6 +430,9 @@ function createTableChart(array $table, string $chartType, array &$temporaryImag
             imagefilledarc($image, $centerX, $centerY, $diameter, $diameter, $start, $start + $angle, $palette[$index % count($palette)], IMG_ARC_PIE);
             $start += $angle;
         }
+        if ($diagramTitle !== '') {
+            chartText($image, 24, 10, 15, $diagramTitle, $dark, true);
+        }
         $legendY = 100;
         chartText($image, 24, 730, 55, $series[0]['name'], $dark, true);
         foreach ($labels as $index => $label) {
@@ -425,9 +461,8 @@ function createTableChart(array $table, string $chartType, array &$temporaryImag
             imageline($image, $left, (int) $y, $right, (int) $y, $grid);
             chartText($image, 18, 10, (int) $y - 10, number_format($value, 1, ',', ' '), $dark);
         }
-        $tableTitle = trim((string) ($table['otsikko'] ?? ''));
-        if ($tableTitle !== '') {
-            chartText($image, $chartType === 'line' ? 20 : 24, 10, 15, $tableTitle, $dark, true);
+        if ($diagramTitle !== '') {
+            chartText($image, $chartType === 'line' ? 20 : 24, 10, 15, $diagramTitle, $dark, true);
         }
         $count = max(1, count($labels));
         if ($chartType === 'bar') {
@@ -773,6 +808,7 @@ $pdf->SetMargins(20, 22, 20);
 $pdf->SetAutoPageBreak(true, 26);
 $temporaryImages = [];
 $chartSelections = is_array($_GET['kaavio'] ?? null) ? $_GET['kaavio'] : [];
+$chartColumnSelections = is_array($_GET['kaavio_sarakkeet'] ?? null) ? $_GET['kaavio_sarakkeet'] : [];
 // Osiokuvien kiinteä mallikoko ensimmäisen mallikuvan perusteella.
 $sectionImageWidth = 82.5;
 $sectionImagePixelWidth = 390;
@@ -874,7 +910,8 @@ foreach ($rows as $index => $row) {
             $pdf->Ln(2);
             $pdf->SetFont('Helvetica', '', 10);
             foreach ($customerInfoLines as $customerInfoLine) {
-                $pdf->MultiCell(0, 5, pdfText($customerInfoLine), 0, 'L');
+                pdfWriteMarkdown($pdf, $customerInfoLine, 5);
+                $pdf->Ln(5);
             }
         }
     }
@@ -910,6 +947,9 @@ foreach ($rows as $index => $row) {
         $tableTitle = trim((string) ($table['otsikko'] ?? ''));
         $headerHeight = 8;
         $estimatedHeight = $headerHeight + 4;
+        if ($tableTitle !== '') {
+            $estimatedHeight += 4;
+        }
         foreach ($table['rivit'] as $tableRow) {
             $rowLines = 1;
             foreach ($columns as $columnIndex => $column) {
@@ -920,6 +960,7 @@ foreach ($rows as $index => $row) {
         }
         $pdf->ensureSpace($estimatedHeight);
         if ($tableTitle !== '') {
+            $pdf->Ln(4);
             $pdf->SetFont('Helvetica', 'B', 10);
             $pdf->Cell(0, 6, pdfText($tableTitle), 0, 1);
         }
@@ -958,7 +999,8 @@ foreach ($rows as $index => $row) {
         }
         $pdf->Ln(6);
         $chartType = (string) ($chartSelections[(int) $table['id']] ?? '');
-        $chartPath = createTableChart($table, $chartType, $temporaryImages);
+        $selectedColumnIds = array_map('intval', (array) ($chartColumnSelections[(int) $table['id']] ?? []));
+        $chartPath = createTableChart($table, $chartType, $temporaryImages, $selectedColumnIds);
         if ($chartPath !== null) {
             $chartWidth = $pdf->GetPageWidth() - 40;
             $chartHeight = $chartWidth * 650 / 1200;

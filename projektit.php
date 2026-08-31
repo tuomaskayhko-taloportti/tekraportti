@@ -86,12 +86,17 @@ try {
                 $message = 'Projektin nimi on liian pitkä.';
             } else {
                 $sharedEmails = parseReportShareEmails($form['jaettava_sahkoposti']);
+                $currentLaatija = getCurrentLaatija() ?: [];
+                $currentEmail = strtolower(trim((string) ($currentLaatija['sahkoposti'] ?? '')));
                 $sharedLaatijat = [];
                 foreach ($sharedEmails as $sharedEmail) {
+                    if ($sharedEmail === $currentEmail) {
+                        continue;
+                    }
                     $query = $db->prepare('SELECT id FROM laatijat WHERE sahkoposti = ? AND id <> ? LIMIT 1');
                     $query->bind_param('si', $sharedEmail, $laatijatId); $query->execute();
                     $sharedLaatija = $query->get_result()->fetch_assoc(); $query->close();
-                    if (!$sharedLaatija) { throw new RuntimeException('Sähköpostiosoitetta ei löytynyt laatijoista: ' . $sharedEmail); }
+                    if (!$sharedLaatija) { throw new RuntimeException('Käyttäjää ei löytynyt tällä sähköpostiosoitteella: ' . $sharedEmail . '. Lisää laatija ensin ylläpidossa.'); }
                     $sharedLaatijat[] = ['id' => (int) $sharedLaatija['id'], 'email' => $sharedEmail];
                 }
                 $values = array_values(array_map(static fn (string $value): ?string => $value !== '' ? $value : null, $form));
@@ -116,7 +121,7 @@ try {
                 $db->commit();
                 $newSharedEmails = array_diff($sharedEmails, $oldSharedEmails);
                 if ($newSharedEmails) {
-                    $sharer = getCurrentLaatija() ?: [];
+                    $sharer = $currentLaatija;
                     foreach ($newSharedEmails as $sharedEmail) {
                         sendReportShareNotification($sharedEmail, $form['nimi'], (string) ($sharer['nimi'] ?? ''), (string) ($sharer['yritys'] ?? ''), 'Projekti');
                     }
@@ -140,7 +145,7 @@ try {
     $projects = $query->get_result()->fetch_all(MYSQLI_ASSOC);
     $query->close();
 } catch (Throwable $error) {
-    $message = 'Projektien käsittely epäonnistui.';
+    $message = $error->getMessage();
     error_log('Projekti-sivun käsittely epäonnistui: ' . $error->getMessage());
 }
 
@@ -173,15 +178,15 @@ openLayoutShell('Projektit – TEKRAPORTTI');
             <div class="col-md-6"><label class="form-label" for="nimi">Projektin nimi <span class="text-danger">*</span></label><input class="form-control" id="nimi" name="nimi" value="<?= projectValue($form, 'nimi') ?>" maxlength="200" required></div>
             <div class="col-md-3"><label class="form-label" for="alkupvm">Alkupäivä</label><input type="date" class="form-control" id="alkupvm" name="alkupvm" value="<?= projectValue($form, 'alkupvm') ?>"></div>
             <div class="col-md-3"><label class="form-label" for="loppupvm">Loppupäivä</label><input type="date" class="form-control" id="loppupvm" name="loppupvm" value="<?= projectValue($form, 'loppupvm') ?>"></div>
-            <div class="col-12"><label class="form-label" for="kuvaus">Kuvaus</label><textarea class="form-control" id="kuvaus" name="kuvaus" rows="4"><?= projectValue($form, 'kuvaus') ?></textarea></div>
+            <div class="col-12"><label class="form-label" for="kuvaus">Kuvaus</label><textarea class="form-control" id="kuvaus" name="kuvaus" rows="4" data-markdown-editor><?= projectValue($form, 'kuvaus') ?></textarea></div>
             <div class="col-12"><label class="form-label" for="jaettava_sahkoposti">Jaa projekti laatijoille</label><textarea class="form-control" id="jaettava_sahkoposti" name="jaettava_sahkoposti" rows="3" maxlength="4000" placeholder="laatija1@example.fi&#10;laatija2@example.fi"><?= projectValue($form, 'jaettava_sahkoposti') !== '' ? projectValue($form, 'jaettava_sahkoposti') : projectValue(['jaettava_sahkoposti' => implode("\n", $sharedEmails)], 'jaettava_sahkoposti') ?></textarea><div class="form-text">Yksi sähköpostiosoite riville. Osoitteiden täytyy löytyä laatijoista.</div></div>
         </div></div><div class="card-footer bg-white border-0 px-4 pb-4"><button class="btn btn-primary"><?= $editId > 0 ? 'Tallenna muutokset' : 'Lisää projekti' ?></button><?php if ($editId > 0): ?> <a class="btn btn-outline-secondary" href="projektit.php">Peruuta</a><?php endif; ?></div>
     </form>
 </div>
 <div class="card border-0 shadow-sm"><div class="table-responsive"><table class="table table-hover align-middle mb-0"><thead class="table-light"><tr><th>Projekti</th><th>Kuvaus</th><th>Ajanjakso</th><th>Raportteja</th><th class="text-end">Toiminnot</th></tr></thead><tbody>
 <?php if (!$projects): ?><tr><td colspan="5" class="text-center text-body-secondary py-4">Ei tallennettuja projekteja.</td></tr><?php else: foreach ($projects as $project): ?><tr>
-    <td><?= projectValue($project, 'nimi') ?></td><td><?= nl2br(projectValue($project, 'kuvaus')) ?></td>
+    <td><?= projectValue($project, 'nimi') ?></td><td><?= markdownToHtml((string) ($project['kuvaus'] ?? '')) ?></td>
     <td><?= projectDate($project['alkupvm']) ?><?= $project['alkupvm'] && $project['loppupvm'] ? ' – ' : '' ?><?= projectDate($project['loppupvm']) ?></td>
-    <td><?= (int) $project['raporttien_maara'] ?></td><td class="text-end text-nowrap"><a class="btn btn-sm btn-outline-primary" href="projektit.php?muokkaa=<?= (int) $project['id'] ?>#projektlomake">Muokkaa</a> <?php if ((int) $project['laatijat_id'] === $laatijatId): ?><form method="post" action="projektit.php" class="d-inline" onsubmit="return confirm('Poistetaanko projekti?');"><input type="hidden" name="csrf_token" value="<?= projectValue(['value' => $csrfToken], 'value') ?>"><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="<?= (int) $project['id'] ?>"><button class="btn btn-sm btn-outline-danger">Poista</button></form><?php endif; ?></td>
+    <td><?= (int) $project['raporttien_maara'] ?></td><td class="text-end text-nowrap"><a class="btn btn-sm btn-outline-primary" href="<?= htmlspecialchars('projektit.php?muokkaa=' . (int) $project['id'] . '#projektlomake', ENT_QUOTES, 'UTF-8') ?>">Muokkaa</a> <?php if ((int) $project['laatijat_id'] === $laatijatId): ?><form method="post" action="projektit.php" class="d-inline" onsubmit="return confirm('Poistetaanko projekti?');"><input type="hidden" name="csrf_token" value="<?= projectValue(['value' => $csrfToken], 'value') ?>"><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="<?= (int) $project['id'] ?>"><button class="btn btn-sm btn-outline-danger">Poista</button></form><?php endif; ?></td>
 </tr><?php endforeach; endif; ?></tbody></table></div></div>
 <?php closeLayoutShell(); ?>

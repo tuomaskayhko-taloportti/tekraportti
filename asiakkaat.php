@@ -273,13 +273,13 @@ openLayoutShell('Asiakkaat – TEKRAPORTTI');
                         <?php foreach ($form['lisatiedot'] as $detail): ?>
                             <div class="row g-2 mb-2 asiakas-lisatieto-rivi">
                                 <div class="col-md-4"><input type="text" class="form-control" name="lisatieto_nimi[]" value="<?= customerValue($detail, 'nimi') ?>" maxlength="200" placeholder="Nimi, esim. Rakennuksia"></div>
-                                <div class="col-md-7"><input type="text" class="form-control" name="lisatieto_arvo[]" value="<?= customerValue($detail, 'arvo') ?>" maxlength="1000" placeholder="Arvo, esim. 1"></div>
+                                <div class="col-md-7"><textarea class="form-control" name="lisatieto_arvo[]" rows="1" maxlength="1000" placeholder="Arvo, esim. 1" data-markdown-editor><?= customerValue($detail, 'arvo') ?></textarea></div>
                                 <div class="col-md-1"><button type="button" class="btn btn-outline-danger w-100" data-poista-lisatieto>−</button></div>
                             </div>
                         <?php endforeach; ?>
                         <div class="row g-2 mb-2 asiakas-lisatieto-rivi">
                             <div class="col-md-4"><input type="text" class="form-control" name="lisatieto_nimi[]" maxlength="200" placeholder="Nimi, esim. Rakennuksia"></div>
-                            <div class="col-md-7"><input type="text" class="form-control" name="lisatieto_arvo[]" maxlength="1000" placeholder="Arvo, esim. 1"></div>
+                            <div class="col-md-7"><textarea class="form-control" name="lisatieto_arvo[]" rows="1" maxlength="1000" placeholder="Arvo, esim. 1" data-markdown-editor></textarea></div>
                             <div class="col-md-1"><button type="button" class="btn btn-outline-danger w-100" data-poista-lisatieto>−</button></div>
                         </div>
                     </div>
@@ -356,14 +356,14 @@ openLayoutShell('Asiakkaat – TEKRAPORTTI');
 document.getElementById('lisaa-lisatieto')?.addEventListener('click', function () {
     const container = document.getElementById('asiakas-lisatiedot');
     const row = container.querySelector('.asiakas-lisatieto-rivi').cloneNode(true);
-    row.querySelectorAll('input').forEach(input => input.value = '');
+    row.querySelectorAll('input, textarea').forEach(input => input.value = '');
     container.appendChild(row);
 });
 document.getElementById('asiakas-lisatiedot')?.addEventListener('click', function (event) {
     if (!event.target.matches('[data-poista-lisatieto]')) return;
     const rows = this.querySelectorAll('.asiakas-lisatieto-rivi');
     if (rows.length > 1) event.target.closest('.asiakas-lisatieto-rivi').remove();
-    else event.target.closest('.asiakas-lisatieto-rivi').querySelectorAll('input').forEach(input => input.value = '');
+    else event.target.closest('.asiakas-lisatieto-rivi').querySelectorAll('input, textarea').forEach(input => input.value = '');
 });
 </script>
 
