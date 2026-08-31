@@ -24,9 +24,11 @@ $form = [
 try {
     $db = getDatabaseConnection();
     $query = $db->prepare(
-        'SELECT id, nimi, yritys FROM asiakkaat WHERE laatijat_id = ? ORDER BY nimi, yritys'
+        'SELECT a.id, a.nimi, a.yritys FROM asiakkaat a WHERE a.laatijat_id = ? OR EXISTS (
+            SELECT 1 FROM asiakasjaot j WHERE j.asiakas_id = a.id AND j.laatijat_id = ?
+        ) ORDER BY a.nimi, a.yritys'
     );
-    $query->bind_param('i', $laatijatId);
+    $query->bind_param('ii', $laatijatId, $laatijatId);
     $query->execute();
     $result = $query->get_result();
     while ($asiakas = $result->fetch_assoc()) {
@@ -78,9 +80,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $projectId = $form['projekti_id'] > 0 ? $form['projekti_id'] : null;
 
             $query = $db->prepare(
-                'SELECT id FROM asiakkaat WHERE id = ? AND laatijat_id = ? LIMIT 1'
+                'SELECT a.id FROM asiakkaat a WHERE a.id = ? AND (a.laatijat_id = ? OR EXISTS (
+                    SELECT 1 FROM asiakasjaot j WHERE j.asiakas_id = a.id AND j.laatijat_id = ?
+                )) LIMIT 1'
             );
-            $query->bind_param('ii', $form['asiakas_id'], $laatijatId);
+            $query->bind_param('iii', $form['asiakas_id'], $laatijatId, $laatijatId);
             $query->execute();
             $customerExists = (bool) $query->get_result()->fetch_assoc();
             $query->close();

@@ -96,6 +96,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($customerId < 1 || $title === '' || !$dateObject || $dateObject->format('Y-m-d') !== $date) {
                     throw new RuntimeException('Täytä asiakas, otsikko ja voimassa oleva päivämäärä.');
                 }
+                $query = $db->prepare('SELECT a.id FROM asiakkaat a WHERE a.id = ? AND (a.laatijat_id = ? OR EXISTS (
+                    SELECT 1 FROM asiakasjaot j WHERE j.asiakas_id = a.id AND j.laatijat_id = ?
+                )) LIMIT 1');
+                $query->bind_param('iii', $customerId, $currentLaatijaId, $currentLaatijaId);
+                $query->execute();
+                $customerExists = (bool) $query->get_result()->fetch_assoc();
+                $query->close();
+                if (!$customerExists) {
+                    throw new RuntimeException('Valittu asiakas ei ole käytettävissä.');
+                }
                 $projectValue = $projectId > 0 ? $projectId : null;
                 $placeValue = $place !== '' ? $place : null;
                 $summaryValue = $summary !== '' ? $summary : null;
@@ -514,8 +524,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $messageType === 'success') {
 
 try {
     $db = getDatabaseConnection();
-    $query = $db->prepare('SELECT id, nimi, yritys FROM asiakkaat WHERE laatijat_id = ? ORDER BY nimi, yritys');
-    $query->bind_param('i', $laatijatId); $query->execute(); $result = $query->get_result();
+    $query = $db->prepare('SELECT a.id, a.nimi, a.yritys FROM asiakkaat a WHERE a.laatijat_id = ? OR EXISTS (
+        SELECT 1 FROM asiakasjaot j WHERE j.asiakas_id = a.id AND j.laatijat_id = ?
+    ) ORDER BY a.nimi, a.yritys');
+    $query->bind_param('ii', $currentLaatijaId, $currentLaatijaId); $query->execute(); $result = $query->get_result();
     while ($item = $result->fetch_assoc()) { $customers[] = $item; } $query->close();
     $query = $db->prepare('SELECT p.id, p.nimi FROM projektit p WHERE p.laatijat_id = ? OR EXISTS (
         SELECT 1 FROM projektijaot j WHERE j.projekti_id = p.id AND j.laatijat_id = ?
@@ -653,9 +665,11 @@ openLayoutShell('Muokkaa raporttia – TEKRAPORTTI');
 </div>
 <?php if ($message !== ''): ?><div class="alert alert-<?= editValue($messageType) ?>" role="alert"><?= editValue($message) ?></div><?php endif; ?>
 
-<form method="post" enctype="multipart/form-data" action="muokkaa_raportti.php?id=<?= $raporttiId ?>" class="card border-0 shadow-sm mb-4" id="perustiedot">
+<details class="card border-0 shadow-sm mb-4" id="perustiedot">
+    <summary class="card-header bg-white"><h2 class="h5 mb-0">Raportin perustiedot</h2></summary>
+<form method="post" enctype="multipart/form-data" action="muokkaa_raportti.php?id=<?= $raporttiId ?>">
     <input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="update-report"><input type="hidden" name="return_anchor" value="perustiedot">
-    <div class="card-header bg-white"><h2 class="h5 mb-0">Raportin perustiedot</h2></div><div class="card-body p-4"><div class="row g-3">
+    <div class="card-body p-4"><div class="row g-3">
         <div class="col-md-6"><label class="form-label" for="asiakas_id">Asiakas</label><select class="form-select" id="asiakas_id" name="asiakas_id" required><?php foreach ($customers as $item): ?><option value="<?= (int) $item['id'] ?>" <?= (int) $report['asiakas_id'] === (int) $item['id'] ? 'selected' : '' ?>><?= editValue($item['yritys'] ? $item['nimi'] . ' – ' . $item['yritys'] : $item['nimi']) ?></option><?php endforeach; ?></select></div>
         <div class="col-md-6"><label class="form-label" for="projekti_id">Projekti</label><select class="form-select" id="projekti_id" name="projekti_id"><option value="">Ei projektia</option><?php foreach ($projects as $item): ?><option value="<?= (int) $item['id'] ?>" <?= (int) $report['projekti_id'] === (int) $item['id'] ? 'selected' : '' ?>><?= editValue($item['nimi']) ?></option><?php endforeach; ?></select></div>
         <div class="col-12"><label class="form-label" for="otsikko">Otsikko</label><input class="form-control" id="otsikko" name="otsikko" value="<?= editValue($report['otsikko']) ?>" maxlength="255" required></div>
@@ -666,6 +680,7 @@ openLayoutShell('Muokkaa raporttia – TEKRAPORTTI');
         <div class="col-12"><label class="form-label" for="kansikuva">Kansikuva</label><div class="file-drop-zone" data-file-drop><input type="file" class="form-control" id="kansikuva" name="kansikuva" accept="image/jpeg,image/png,image/webp"><div class="file-drop-zone-hint">Voit myös raahata kuvan tähän.</div></div><div class="form-text">Uusi kuva korvaa nykyisen kansikuvan. JPG, PNG tai WebP, enintään 10 MB.</div></div>
     </div></div><div class="card-footer bg-white border-0 px-4 pb-4"><button class="btn btn-primary">Tallenna perustiedot</button></div>
 </form>
+</details>
 
 <div class="card border-0 shadow-sm mb-4"><div class="card-header bg-white"><h2 class="h5 mb-0">Tiivistelmä</h2></div><div class="card-body"><?= $report['tiivistelma'] ? markdownToHtml((string) $report['tiivistelma']) : '<p class="mb-0">Tiivistelmää ei ole vielä lisätty.</p>' ?></div></div>
 

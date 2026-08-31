@@ -35,6 +35,7 @@ function openLayoutShell(string $pageTitle = 'TEKRAPORTTI'): void
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{$safePageTitle}</title>
+    <link rel="icon" type="image/png" href="Logo pyöreä.png">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css"
           rel="stylesheet"
           integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB"
@@ -48,18 +49,18 @@ function openLayoutShell(string $pageTitle = 'TEKRAPORTTI'): void
         .tekra-rich-text h4 { margin:.7rem 0 .35rem; font-size:1.05em; }
         .tekra-rich-text p { margin:0 0 .45rem; }
         .tekra-rich-text p:last-child { margin-bottom:0; }
-        .tekra-topbar { min-height: 100px; background: linear-gradient(110deg, #071a3d, #0b2149); box-shadow: 0 1px 0 rgba(255,255,255,.08); }
+        .tekra-topbar { min-height: 100px; background: linear-gradient(110deg, #f7fafc, #e5edf6); box-shadow: 0 1px 0 #d7e1ec; }
         .tekra-topbar .container-fluid { min-height: 100px; padding: 0 20px; gap: 16px; }
-        .tekra-topbar .navbar-toggler { border: 1px solid #25436c; border-radius: 8px; padding: 10px 14px; }
-        .tekra-brand { letter-spacing: .01em; font-size: 1.55rem; font-weight: 700; }
-        .tekra-brand small { color: #b8c5da; font-size: .68rem; letter-spacing: .14em; margin-left: 10px; }
+        .tekra-topbar .navbar-toggler { border: 1px solid #b7c7d9; border-radius: 8px; padding: 10px 14px; }
+        .tekra-brand { display: inline-flex; align-items: center; }
+        .tekra-brand img { display: block; width: 220px; height: auto; max-height: 62px; object-fit: contain; }
         .tekra-search { width: min(775px, 48vw); margin-left: 34px; }
-        .tekra-search .form-control { height: 62px; color: #e8eef8; background: rgba(255,255,255,.09); border: 1px solid rgba(255,255,255,.12); border-radius: 9px; padding-left: 62px; }
-        .tekra-search .form-control::placeholder { color: #bac7db; }
-        .tekra-search-icon { position: absolute; left: 21px; top: 17px; color: #c5d1e2; font-size: 1.5rem; }
-        .tekra-search-shortcut { position: absolute; right: 14px; top: 17px; border: 1px solid #547092; border-radius: 6px; color: #d6dfed; padding: 3px 8px; font-size: .8rem; }
-        .tekra-user-menu { color: #f3f6fb; display: flex; align-items: center; gap: 10px; font-weight: 600; }
-        .tekra-user-menu:hover, .tekra-user-menu:focus { color: #fff; }
+        .tekra-search .form-control { height: 62px; color: #152747; background: rgba(255,255,255,.8); border: 1px solid #c5d3e2; border-radius: 9px; padding-left: 62px; }
+        .tekra-search .form-control::placeholder { color: #63748a; }
+        .tekra-search-icon { position: absolute; left: 21px; top: 17px; color: #526a86; font-size: 1.5rem; }
+        .tekra-search-shortcut { position: absolute; right: 14px; top: 17px; border: 1px solid #aabbd0; border-radius: 6px; color: #526a86; padding: 3px 8px; font-size: .8rem; }
+        .tekra-user-menu { color: #152747; display: flex; align-items: center; gap: 10px; font-weight: 600; }
+        .tekra-user-menu:hover, .tekra-user-menu:focus { color: #071a3d; }
         .tekra-avatar { width: 46px; height: 46px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; background: #f1f4f8; color: #55708f; font-weight: 600; }
         .tekra-sidebar { width: var(--tekra-sidebar-width); background: #fff !important; border-right-color: #e2e8f1 !important; }
         .tekra-sidebar .nav-link { display: block !important; width: auto; color: #52627a; text-decoration: none !important; border-radius: 8px; margin: .35rem .7rem; padding: 14px 18px; font-size: 1.05rem; }
@@ -87,6 +88,7 @@ function openLayoutShell(string $pageTitle = 'TEKRAPORTTI'): void
             .tekra-search { display: none; }
             .tekra-topbar .container-fluid { min-height: 72px; }
             .tekra-topbar { min-height: 72px; }
+            .tekra-brand img { width: 180px; max-height: 48px; }
             .tekra-main > main { padding: 28px 16px !important; }
             .tekra-sidebar { display: none !important; position: absolute; z-index: 1050; top: 72px; left: 0; height: calc(100vh - 72px); box-shadow: 4px 0 14px rgba(26, 52, 86, .12); }
             .tekra-sidebar.is-open { display: block !important; }
@@ -94,13 +96,15 @@ function openLayoutShell(string $pageTitle = 'TEKRAPORTTI'): void
     </style>
 </head>
 <body>
-    <nav class="navbar navbar-dark tekra-topbar" aria-label="Päänavigaatio">
+    <nav class="navbar navbar-light tekra-topbar" aria-label="Päänavigaatio">
         <div class="container-fluid">
             <button class="navbar-toggler" type="button" data-menu-toggle
                     aria-controls="paavalikko" aria-expanded="false" aria-label="Avaa sivupalkki">
                 <span class="navbar-toggler-icon"></span>
             </button>
-            <a class="navbar-brand tekra-brand ms-2 me-4" href="#">TEKRAPORTTI <small>RAPORTOINTI</small></a>
+            <a class="navbar-brand tekra-brand ms-2 me-4" href="raportit.php" aria-label="Raportit">
+                <img src="Logo.png" alt="TEKRAPORTTI">
+            </a>
             <form class="tekra-search position-relative" method="get" action="raportit.php">
                 <span class="tekra-search-icon" aria-hidden="true">⌕</span>
                 <input class="form-control" type="search" name="haku" value="{$safeSearch}" placeholder="Hae raportteja, asiakkaita tai yrityksiä..." aria-label="Hae raportteja, asiakkaita tai yrityksiä">
@@ -229,10 +233,11 @@ function closeLayoutShell(): void
     document.querySelectorAll("[data-menu-toggle]").forEach(function(button){button.addEventListener("click",function(){var menu=document.getElementById(button.getAttribute("aria-controls"));var desktop=window.matchMedia("(min-width: 992px)").matches;var open;if(desktop){var collapsed=menu.classList.toggle("is-collapsed");open=!collapsed;}else{open=menu.classList.toggle("is-open");}button.setAttribute("aria-expanded",open?"true":"false");});});
     document.querySelectorAll("textarea[data-markdown-editor]").forEach(function(textarea){
         var toolbar=document.createElement("div"); toolbar.className="tekra-markdown-toolbar";
-        toolbar.innerHTML="<button type=\"button\" class=\"btn btn-sm btn-outline-secondary\" data-md-action=\"heading\">Otsikko</button><button type=\"button\" class=\"btn btn-sm btn-outline-secondary\" data-md-action=\"bold\"><strong>B</strong></button><button type=\"button\" class=\"btn btn-sm btn-outline-secondary\" data-md-action=\"italic\"><em>I</em></button><span class=\"tekra-markdown-help\">## väliotsikko · **lihavoitu** · *kursivoitu*</span>";
+        var headingButton=textarea.closest("table")?"":"<button type=\"button\" class=\"btn btn-sm btn-outline-secondary\" data-md-action=\"heading\">Otsikko</button>";
+        toolbar.innerHTML=headingButton+"<button type=\"button\" class=\"btn btn-sm btn-outline-secondary\" data-md-action=\"bold\"><strong>B</strong></button><button type=\"button\" class=\"btn btn-sm btn-outline-secondary\" data-md-action=\"italic\"><em>I</em></button><span class=\"tekra-markdown-help\">## väliotsikko · **lihavoitu** · *kursivoitu*</span>";
         textarea.parentNode.insertBefore(toolbar, textarea);
     });
-    document.addEventListener("click",function(event){var button=event.target.closest("[data-md-action]");if(!button)return;var textarea=button.closest(".tekra-markdown-toolbar").parentNode.querySelector("textarea[data-markdown-editor]");if(!textarea)return;var start=textarea.selectionStart,end=textarea.selectionEnd,value=textarea.value,selected=value.slice(start,end),action=button.dataset.mdAction;if(action==="heading"){var lineStart=value.lastIndexOf("\\n",start-1)+1;textarea.setRangeText("## ",lineStart,lineStart,"end");}else{var marker=action==="bold"?"**":"*";textarea.setRangeText(marker+selected+marker,start,end,"select");}textarea.focus();});
+        document.addEventListener("click",function(event){var button=event.target.closest("[data-md-action]");if(!button)return;var textarea=button.closest(".tekra-markdown-toolbar").parentNode.querySelector("textarea[data-markdown-editor]");if(!textarea)return;var start=textarea.selectionStart,end=textarea.selectionEnd,value=textarea.value,selected=value.slice(start,end),action=button.dataset.mdAction;if(action==="heading"){var lineStart=value.lastIndexOf("\\n",start-1)+1;textarea.setRangeText("## ",lineStart,lineStart,"end");}else{var marker=action==="bold"?"**":"*";textarea.setRangeText(marker+selected+marker,start,end,"select");}textarea.focus();});
     </script>';
 }
 

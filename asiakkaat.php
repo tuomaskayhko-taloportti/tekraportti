@@ -10,11 +10,13 @@ if (!isset($_SESSION['laatijat_id'])) {
 }
 
 $laatijatId = (int) $_SESSION['laatijat_id'];
+$currentLaatijaId = $laatijatId;
 $csrfToken = getApplicationCsrfToken();
 $editId = max(0, (int) ($_GET['muokkaa'] ?? $_POST['id'] ?? 0));
 $currentPage = max(1, (int) ($_GET['sivu'] ?? 1));
 $perPage = 25;
 $asiakkaat = [];
+$sharedEmails = [];
 $totalCustomers = 0;
 $message = '';
 $messageType = 'danger';
@@ -27,23 +29,36 @@ $form = [
     'osoite' => '',
     'postinro' => '',
     'postitmp' => '',
+    'jaettava_sahkoposti' => '',
     'lisatiedot' => [],
 ];
 
 try {
     $db = getDatabaseConnection();
 
-    if ($editId > 0 && $_SERVER['REQUEST_METHOD'] !== 'POST') {
+    if ($editId > 0) {
         $query = $db->prepare(
-            'SELECT nimi, yritys, ytunnus, sahkoposti, puhelin, osoite, postinro, postitmp
-             FROM asiakkaat WHERE id = ? AND laatijat_id = ? LIMIT 1'
+            'SELECT nimi, yritys, ytunnus, sahkoposti, puhelin, osoite, postinro, postitmp, laatijat_id
+             FROM asiakkaat c WHERE c.id = ? AND (c.laatijat_id = ? OR EXISTS (
+                 SELECT 1 FROM asiakasjaot j WHERE j.asiakas_id = c.id AND j.laatijat_id = ?
+             )) LIMIT 1'
         );
-        $query->bind_param('ii', $editId, $laatijatId);
+        $query->bind_param('iii', $editId, $currentLaatijaId, $currentLaatijaId);
         $query->execute();
         $existing = $query->get_result()->fetch_assoc();
         $query->close();
         if ($existing) {
+            $laatijatId = (int) $existing['laatijat_id'];
+            unset($existing['laatijat_id']);
             $form = array_merge($form, $existing);
+            $shareQuery = $db->prepare('SELECT l.sahkoposti FROM asiakasjaot j INNER JOIN laatijat l ON l.id = j.laatijat_id WHERE j.asiakas_id = ? ORDER BY j.id');
+            $shareQuery->bind_param('i', $editId);
+            $shareQuery->execute();
+            $sharedEmails = [];
+            $shareResult = $shareQuery->get_result();
+            while ($share = $shareResult->fetch_assoc()) { $sharedEmails[] = (string) $share['sahkoposti']; }
+            $shareQuery->close();
+            $form['jaettava_sahkoposti'] = implode("\n", $sharedEmails);
             $query = $db->prepare('SELECT nimi, arvo FROM asiakas_lisatiedot WHERE asiakas_id = ? AND laatijat_id = ? ORDER BY jarjestys, id');
             $query->bind_param('ii', $editId, $laatijatId);
             $query->execute();
@@ -77,6 +92,7 @@ try {
                 $messageType = $deleted ? 'success' : 'danger';
             }
         } elseif ($action === 'save') {
+            $oldSharedEmails = array_map('strtolower', $sharedEmails);
             foreach (array_keys($form) as $field) {
                 if ($field === 'lisatiedot') {
                     continue;
@@ -102,15 +118,34 @@ try {
                 || mb_strlen($form['ytunnus']) > 20 || mb_strlen($form['sahkoposti']) > 254
                 || mb_strlen($form['puhelin']) > 50 || mb_strlen($form['osoite']) > 255
                 || mb_strlen($form['postinro']) > 20 || mb_strlen($form['postitmp']) > 100
+                || mb_strlen($form['jaettava_sahkoposti']) > 4000
                 || count($form['lisatiedot']) > 100) {
                 $message = 'Yksi kentistä ylittää sallitun pituuden.';
             } elseif (array_filter($form['lisatiedot'], static fn (array $item): bool => mb_strlen($item['nimi']) > 200 || mb_strlen($item['arvo']) > 1000)) {
                 $message = 'Lisätiedon nimi tai arvo ylittää sallitun pituuden.';
             } else {
-                $values = [];
-                foreach ($form as $value) {
-                    $values[] = $value !== '' ? $value : null;
+                $sharedEmails = parseReportShareEmails($form['jaettava_sahkoposti']);
+                $currentLaatija = getCurrentLaatija() ?: [];
+                $currentEmail = strtolower(trim((string) ($currentLaatija['sahkoposti'] ?? '')));
+                $sharedLaatijat = [];
+                foreach ($sharedEmails as $sharedEmail) {
+                    if ($sharedEmail === $currentEmail) {
+                        continue;
+                    }
+                    $query = $db->prepare('SELECT id FROM laatijat WHERE sahkoposti = ? AND id <> ? LIMIT 1');
+                    $query->bind_param('si', $sharedEmail, $laatijatId);
+                    $query->execute();
+                    $sharedLaatija = $query->get_result()->fetch_assoc();
+                    $query->close();
+                    if (!$sharedLaatija) {
+                        throw new RuntimeException('Käyttäjää ei löytynyt tällä sähköpostiosoitteella: ' . $sharedEmail . '. Lisää laatija ensin ylläpidossa.');
+                    }
+                    $sharedLaatijat[] = ['id' => (int) $sharedLaatija['id'], 'email' => $sharedEmail];
                 }
+                $values = array_map(static fn (string $value): ?string => $value !== '' ? $value : null, [
+                    $form['nimi'], $form['yritys'], $form['ytunnus'], $form['sahkoposti'],
+                    $form['puhelin'], $form['osoite'], $form['postinro'], $form['postitmp'],
+                ]);
 
                 try {
                     $db->begin_transaction();
@@ -155,7 +190,19 @@ try {
                         }
                         $query->close();
                     }
+                    $query = $db->prepare('DELETE FROM asiakasjaot WHERE asiakas_id = ?');
+                    $query->bind_param('i', $customerId); $query->execute(); $query->close();
+                    foreach ($sharedLaatijat as $sharedLaatija) {
+                        $sharedLaatijaId = $sharedLaatija['id'];
+                        $query = $db->prepare('INSERT INTO asiakasjaot (asiakas_id, laatijat_id) VALUES (?, ?)');
+                        $query->bind_param('ii', $customerId, $sharedLaatijaId); $query->execute(); $query->close();
+                    }
                     $db->commit();
+                    $newSharedEmails = array_diff($sharedEmails, $oldSharedEmails);
+                    $sharer = getCurrentLaatija() ?: [];
+                    foreach ($newSharedEmails as $sharedEmail) {
+                        sendReportShareNotification($sharedEmail, $form['nimi'], (string) ($sharer['nimi'] ?? ''), (string) ($sharer['yritys'] ?? ''), 'Asiakas');
+                    }
                     $message = $editId > 0 ? 'Asiakkaan tiedot päivitettiin.' : 'Asiakas lisättiin.';
                     $messageType = 'success';
                     $editId = 0;
@@ -171,9 +218,11 @@ try {
     }
 
     $countQuery = $db->prepare(
-        'SELECT COUNT(*) AS maara FROM asiakkaat WHERE laatijat_id = ?'
+        'SELECT COUNT(*) AS maara FROM asiakkaat c WHERE c.laatijat_id = ? OR EXISTS (
+            SELECT 1 FROM asiakasjaot j WHERE j.asiakas_id = c.id AND j.laatijat_id = ?
+        )'
     );
-    $countQuery->bind_param('i', $laatijatId);
+    $countQuery->bind_param('ii', $currentLaatijaId, $currentLaatijaId);
     $countQuery->execute();
     $totalCustomers = (int) $countQuery->get_result()->fetch_assoc()['maara'];
     $countQuery->close();
@@ -182,11 +231,13 @@ try {
     $currentPage = min($currentPage, $totalPages);
     $offset = ($currentPage - 1) * $perPage;
     $query = $db->prepare(
-        'SELECT id, nimi, yritys, sahkoposti, puhelin, postitmp
-         FROM asiakkaat WHERE laatijat_id = ?
+        'SELECT c.id, c.laatijat_id, c.nimi, c.yritys, c.sahkoposti, c.puhelin, c.postitmp
+         FROM asiakkaat c WHERE c.laatijat_id = ? OR EXISTS (
+             SELECT 1 FROM asiakasjaot j WHERE j.asiakas_id = c.id AND j.laatijat_id = ?
+         )
          ORDER BY nimi ASC, id ASC LIMIT ? OFFSET ?'
     );
-    $query->bind_param('iii', $laatijatId, $perPage, $offset);
+    $query->bind_param('iiii', $currentLaatijaId, $currentLaatijaId, $perPage, $offset);
     $query->execute();
     $result = $query->get_result();
     while ($asiakas = $result->fetch_assoc()) {
@@ -286,6 +337,11 @@ openLayoutShell('Asiakkaat – TEKRAPORTTI');
                     <button type="button" class="btn btn-outline-secondary btn-sm" id="lisaa-lisatieto">+ Lisää lisätieto</button>
                     <div class="form-text">Lisätiedot tulostetaan raportille muodossa Nimi: Arvo.</div>
                 </div>
+                <div class="col-12">
+                    <label class="form-label" for="jaettava_sahkoposti">Jaa asiakas laatijoille</label>
+                    <textarea class="form-control" id="jaettava_sahkoposti" name="jaettava_sahkoposti" rows="3" maxlength="4000" placeholder="laatija1@example.fi&#10;laatija2@example.fi"><?= customerValue($form, 'jaettava_sahkoposti') ?></textarea>
+                    <div class="form-text">Yksi sähköpostiosoite riville. Osoitteiden täytyy löytyä laatijoista.</div>
+                </div>
             </div>
         </div>
         <div class="card-footer bg-white border-0 px-4 pb-4">
@@ -321,12 +377,12 @@ openLayoutShell('Asiakkaat – TEKRAPORTTI');
                             <td><?= htmlspecialchars((string) ($asiakas['puhelin'] ?? ''), ENT_QUOTES, 'UTF-8') ?></td>
                             <td class="text-end text-nowrap">
                                 <a class="btn btn-sm btn-outline-primary" href="asiakkaat.php?muokkaa=<?= (int) $asiakas['id'] ?>#asiakaslomake">Muokkaa</a>
-                                <form method="post" action="asiakkaat.php" class="d-inline" onsubmit="return confirm('Poistetaanko asiakas?');">
+                                <?php if ((int) $asiakas['laatijat_id'] === $currentLaatijaId): ?><form method="post" action="asiakkaat.php" class="d-inline" onsubmit="return confirm('Poistetaanko asiakas?');">
                                     <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8') ?>">
                                     <input type="hidden" name="action" value="delete">
                                     <input type="hidden" name="id" value="<?= (int) $asiakas['id'] ?>">
                                     <button type="submit" class="btn btn-sm btn-outline-danger">Poista</button>
-                                </form>
+                                </form><?php endif; ?>
                             </td>
                         </tr>
                     <?php endforeach; ?>

@@ -51,8 +51,10 @@ try {
     $query->close();
 
     $customerDetails = [];
-    $query = $db->prepare('SELECT nimi, arvo FROM asiakas_lisatiedot WHERE asiakas_id = ? AND laatijat_id = ? ORDER BY jarjestys, id');
-    $query->bind_param('ii', $report['asiakas_id'], $laatijatId);
+    $query = $db->prepare('SELECT d.nimi, d.arvo FROM asiakas_lisatiedot d
+        INNER JOIN asiakkaat a ON a.id = d.asiakas_id AND a.laatijat_id = d.laatijat_id
+        WHERE d.asiakas_id = ? ORDER BY d.jarjestys, d.id');
+    $query->bind_param('i', $report['asiakas_id']);
     $query->execute();
     $customerDetails = $query->get_result()->fetch_all(MYSQLI_ASSOC);
     $query->close();
@@ -210,7 +212,19 @@ function pdfTableRowsWithSummaries(array $table): array
 
 function pdfWriteMarkdown(FPDF $pdf, string $text, float $lineHeight = 6): void
 {
+    $parts = pdfMarkdownRuns($text);
+    foreach ($parts as $part) {
+        $pdf->SetFont('Helvetica', $part['style'], 11);
+        $pdf->Write($lineHeight, pdfText($part['text']));
+    }
+    $pdf->SetFont('Helvetica', '', 11);
+}
+
+/** Pilkkoo markdown-tekstin PDF:ää varten tekstiksi ja fonttityyleiksi. */
+function pdfMarkdownRuns(string $text): array
+{
     $parts = preg_split('/(\*\*[^*\r\n]+\*\*|\*[^*\r\n]+\*)/u', $text, -1, PREG_SPLIT_DELIM_CAPTURE) ?: [''];
+    $runs = [];
     foreach ($parts as $part) {
         $style = '';
         if (str_starts_with($part, '**') && str_ends_with($part, '**')) {
@@ -220,10 +234,9 @@ function pdfWriteMarkdown(FPDF $pdf, string $text, float $lineHeight = 6): void
             $style = 'I';
             $part = substr($part, 1, -1);
         }
-        $pdf->SetFont('Helvetica', $style, 11);
-        $pdf->Write($lineHeight, pdfText($part));
+        $runs[] = ['text' => $part, 'style' => $style];
     }
-    $pdf->SetFont('Helvetica', '', 11);
+    return $runs;
 }
 
 /**
@@ -334,21 +347,72 @@ function pdfTableLineCount(FPDF $pdf, string $text, float $width): int
 {
     $lines = 0;
     foreach (preg_split('/\r\n|\r|\n/', $text) ?: [''] as $paragraph) {
-        $words = preg_split('/\s+/', trim($paragraph)) ?: [''];
         $lineWidth = 0.0;
         $paragraphLines = 1;
-        foreach ($words as $word) {
-            $wordWidth = $pdf->GetStringWidth(pdfText($word . ' '));
-            if ($lineWidth > 0 && $lineWidth + $wordWidth > max(1, $width - 2)) {
-                $paragraphLines++;
-                $lineWidth = $wordWidth;
-            } else {
-                $lineWidth += $wordWidth;
+        foreach (pdfMarkdownRuns($paragraph) as $run) {
+            $pdf->SetFont('Helvetica', $run['style'], 9);
+            $words = preg_split('/(\s+)/u', $run['text'], -1, PREG_SPLIT_DELIM_CAPTURE) ?: [''];
+            foreach ($words as $word) {
+                if ($word === '') {
+                    continue;
+                }
+                $wordWidth = $pdf->GetStringWidth(pdfText($word));
+                if (preg_match('/^\s+$/u', $word)) {
+                    if ($lineWidth > 0) {
+                        $lineWidth += $wordWidth;
+                    }
+                    continue;
+                }
+                if ($lineWidth > 0 && $lineWidth + $wordWidth > max(1, $width - 2)) {
+                    $paragraphLines++;
+                    $lineWidth = $wordWidth;
+                } else {
+                    $lineWidth += $wordWidth;
+                }
             }
         }
         $lines += $paragraphLines;
     }
+    $pdf->SetFont('Helvetica', '', 9);
     return max(1, $lines);
+}
+
+/** Tulostaa taulukon solun markdown-muotoilulla ja sovittaa tekstin solun leveyteen. */
+function pdfWriteMarkdownCell(FPDF $pdf, string $text, float $width, float $lineHeight = 5): void
+{
+    $availableWidth = max(1, $width);
+    $startX = $pdf->GetX();
+    $lineWidth = 0.0;
+    foreach (preg_split('/\r\n|\r|\n/', $text) ?: [''] as $line) {
+        foreach (pdfMarkdownRuns($line) as $run) {
+            $pdf->SetFont('Helvetica', $run['style'], 9);
+            $tokens = preg_split('/(\s+)/u', $run['text'], -1, PREG_SPLIT_DELIM_CAPTURE) ?: [''];
+            foreach ($tokens as $token) {
+                if ($token === '') {
+                    continue;
+                }
+                $tokenWidth = $pdf->GetStringWidth(pdfText($token));
+                if (preg_match('/^\s+$/u', $token) && $lineWidth === 0.0) {
+                    continue;
+                }
+                if ($lineWidth > 0 && $lineWidth + $tokenWidth > $availableWidth) {
+                    $pdf->Ln($lineHeight);
+                    $pdf->SetX($startX);
+                    $lineWidth = 0.0;
+                    if (preg_match('/^\s+$/u', $token)) {
+                        continue;
+                    }
+                }
+                $pdf->SetFont('Helvetica', $run['style'], 9);
+                $pdf->Cell($tokenWidth, $lineHeight, pdfText($token), 0, 0, 'L');
+                $lineWidth += $tokenWidth;
+            }
+        }
+        $pdf->Ln($lineHeight);
+        $pdf->SetX($startX);
+        $lineWidth = 0.0;
+    }
+    $pdf->SetFont('Helvetica', '', 9);
 }
 
 function chartNumber(string $value): ?float
@@ -1074,7 +1138,7 @@ foreach ($rows as $index => $row) {
                 $pdf->SetXY($x, $tableY);
                 $pdf->Cell($columnWidths[$columnIndex], $rowHeight, '', 1);
                 $pdf->SetXY($x + 1, $tableY + 1);
-                $pdf->MultiCell($columnWidths[$columnIndex] - 2, 5, pdfText($cellText), 0, 'L');
+                pdfWriteMarkdownCell($pdf, $cellText, $columnWidths[$columnIndex] - 2);
                 $x += $columnWidths[$columnIndex];
             }
             $pdf->SetXY(20, $tableY + $rowHeight);
