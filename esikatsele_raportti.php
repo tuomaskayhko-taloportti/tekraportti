@@ -73,10 +73,11 @@ try {
     $query->bind_param('ii', $raporttiId, $laatijatId);
     $query->execute();
     $tableResult = $query->get_result();
-    while ($item = $tableResult->fetch_assoc()) {
-        $item['sarakkeet'] = [];
-        $item['rivit'] = [];
-        $item['solut'] = [];
+        while ($item = $tableResult->fetch_assoc()) {
+            $item['sarakkeet'] = [];
+            $item['rivit'] = [];
+            $item['solut'] = [];
+            $item['yhteenvetorivit'] = [];
         $tables[(int) $item['id']] = $item;
     }
     $query->close();
@@ -91,6 +92,20 @@ try {
             }
         }
         $query->close();
+        $query = $db->prepare('SELECT id, taulukko_id, tyyppi, jalkeen_rivi_id, jarjestys FROM raporttitaulukko_yhteenvetorivit WHERE laatijat_id = ? ORDER BY taulukko_id, jarjestys, id');
+        $query->bind_param('i', $laatijatId);
+        $query->execute();
+        $result = $query->get_result();
+        $summaryRows = [];
+        while ($item = $result->fetch_assoc()) { $item['sarakkeet'] = []; $summaryRows[(int) $item['id']] = $item; }
+        $query->close();
+        if ($summaryRows) {
+            $query = $db->prepare('SELECT yhteenvetorivi_id, sarake_id FROM raporttitaulukko_yhteenvetorivi_sarakkeet WHERE laatijat_id = ?');
+            $query->bind_param('i', $laatijatId); $query->execute(); $result = $query->get_result();
+            while ($item = $result->fetch_assoc()) { if (isset($summaryRows[(int) $item['yhteenvetorivi_id']])) { $summaryRows[(int) $item['yhteenvetorivi_id']]['sarakkeet'][] = (int) $item['sarake_id']; } }
+            $query->close();
+        }
+        foreach ($summaryRows as $summary) { if (isset($tables[(int) $summary['taulukko_id']])) { $tables[(int) $summary['taulukko_id']]['yhteenvetorivit'][] = $summary; } }
 
         $query = $db->prepare('SELECT id, taulukko_id, jarjestys FROM raporttitaulukko_rivit WHERE laatijat_id = ? ORDER BY taulukko_id, jarjestys, id');
         $query->bind_param('i', $laatijatId);
@@ -127,6 +142,70 @@ function pdfText(string $value): string
 {
     $converted = iconv('UTF-8', 'Windows-1252//TRANSLIT', $value);
     return $converted === false ? '?' : $converted;
+}
+
+function pdfTableNumber(string $value): ?array
+{
+    $value = trim(str_replace("\xc2\xa0", ' ', $value));
+    if ($value === '') { return null; }
+    $currency = str_contains($value, '$') ? '$' : (str_contains($value, '€') ? '€' : '');
+    $value = str_replace(['$', '€'], '', $value);
+    $value = preg_replace('/\s+/', '', $value);
+    if (str_contains($value, ',') && str_contains($value, '.')) {
+        $value = str_replace('.', '', $value);
+        $value = str_replace(',', '.', $value);
+    } elseif (str_contains($value, ',')) {
+        $value = str_replace(',', '.', $value);
+    }
+    return preg_match('/^-?\d+(?:\.\d+)?$/', $value) ? ['value' => (float) $value, 'currency' => $currency] : null;
+}
+
+function pdfTableNumberText(float $value, string $currency = ''): string
+{
+    $text = number_format($value, 2, ',', '');
+    $text = rtrim(rtrim($text, '0'), ',');
+    return $currency === '$' ? '$' . $text : ($currency === '€' ? $text . ' €' : $text);
+}
+
+function pdfTableRowsWithSummaries(array $table): array
+{
+    $result = [];
+    $summaries = $table['yhteenvetorivit'] ?? [];
+    $summariesByAfter = [];
+    foreach ($summaries as $summary) { $summariesByAfter[(int) ($summary['jalkeen_rivi_id'] ?? 0)][] = $summary; }
+    foreach ($table['rivit'] as $tableRow) {
+        $result[] = ['row' => $tableRow, 'summary' => false];
+        foreach ($summariesByAfter[(int) $tableRow['id']] ?? [] as $summary) {
+            $result[] = ['row' => ['id' => -((int) $summary['id']), 'summary' => $summary], 'summary' => true];
+        }
+    }
+    foreach ($summariesByAfter[0] ?? [] as $summary) {
+        $result[] = ['row' => ['id' => -((int) $summary['id']), 'summary' => $summary], 'summary' => true];
+    }
+    $running = [];
+    foreach ($result as &$entry) {
+        if (!$entry['summary']) {
+            foreach ($table['sarakkeet'] as $column) {
+                $number = pdfTableNumber((string) ($table['solut'][(int) $entry['row']['id']][(int) $column['id']] ?? ''));
+                if ($number !== null) {
+                    $columnId = (int) $column['id'];
+                    $running[$columnId]['value'] = ($running[$columnId]['value'] ?? 0) + $number['value'];
+                    if ($number['currency'] !== '') { $running[$columnId]['currency'] = $number['currency']; }
+                }
+            }
+            continue;
+        }
+        $summary = $entry['row']['summary'];
+        $cells = [];
+        foreach ($table['sarakkeet'] as $columnIndex => $column) {
+            $columnId = (int) $column['id'];
+            $cells[$columnId] = in_array($columnId, $summary['sarakkeet'], true) ? pdfTableNumberText((float) ($running[$columnId]['value'] ?? 0), (string) ($running[$columnId]['currency'] ?? '')) : ($columnIndex === 0 ? ((string) $summary['tyyppi'] === 'valisummaa' ? 'Välisummaa' : 'Yhteensä') : '');
+        }
+        $entry['cells'] = $cells;
+        if ((string) $summary['tyyppi'] === 'valisummaa') { $running = []; }
+    }
+    unset($entry);
+    return $result;
 }
 
 function pdfWriteMarkdown(FPDF $pdf, string $text, float $lineHeight = 6): void
@@ -945,15 +1024,17 @@ foreach ($rows as $index => $row) {
         }
 
         $tableTitle = trim((string) ($table['otsikko'] ?? ''));
+        $displayRows = pdfTableRowsWithSummaries($table);
         $headerHeight = 8;
         $estimatedHeight = $headerHeight + 4;
         if ($tableTitle !== '') {
             $estimatedHeight += 4;
         }
-        foreach ($table['rivit'] as $tableRow) {
+        foreach ($displayRows as $displayRow) {
+            $tableRow = $displayRow['row'];
             $rowLines = 1;
             foreach ($columns as $columnIndex => $column) {
-                $cellText = (string) ($table['solut'][(int) $tableRow['id']][(int) $column['id']] ?? '');
+                $cellText = $displayRow['summary'] ? (string) ($displayRow['cells'][(int) $column['id']] ?? '') : (string) ($table['solut'][(int) $tableRow['id']][(int) $column['id']] ?? '');
                 $rowLines = max($rowLines, pdfTableLineCount($pdf, $cellText, $columnWidths[$columnIndex]));
             }
             $estimatedHeight += $rowLines * 5 + 2;
@@ -976,19 +1057,20 @@ foreach ($rows as $index => $row) {
         $tableY = $headerY + $headerHeight;
         $pdf->SetXY(20, $tableY);
         $pdf->SetFillColor(255, 255, 255);
-        foreach ($table['rivit'] as $tableRow) {
+        foreach ($displayRows as $displayRow) {
+            $tableRow = $displayRow['row'];
             $rowLines = 1;
             foreach ($columns as $columnIndex => $column) {
-                $cellText = (string) ($table['solut'][(int) $tableRow['id']][(int) $column['id']] ?? '');
+                $cellText = $displayRow['summary'] ? (string) ($displayRow['cells'][(int) $column['id']] ?? '') : (string) ($table['solut'][(int) $tableRow['id']][(int) $column['id']] ?? '');
                 $rowLines = max($rowLines, pdfTableLineCount($pdf, $cellText, $columnWidths[$columnIndex]));
             }
             $rowHeight = $rowLines * 5 + 2;
             $pdf->ensureSpace($rowHeight);
             $tableY = $pdf->GetY();
             $x = 20;
-            $pdf->SetFont('Helvetica', '', 9);
+            $pdf->SetFont('Helvetica', $displayRow['summary'] ? 'B' : '', 9);
             foreach ($columns as $columnIndex => $column) {
-                $cellText = (string) ($table['solut'][(int) $tableRow['id']][(int) $column['id']] ?? '');
+                $cellText = $displayRow['summary'] ? (string) ($displayRow['cells'][(int) $column['id']] ?? '') : (string) ($table['solut'][(int) $tableRow['id']][(int) $column['id']] ?? '');
                 $pdf->SetXY($x, $tableY);
                 $pdf->Cell($columnWidths[$columnIndex], $rowHeight, '', 1);
                 $pdf->SetXY($x + 1, $tableY + 1);
