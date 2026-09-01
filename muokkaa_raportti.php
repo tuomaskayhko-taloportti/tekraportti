@@ -11,9 +11,11 @@ if (!isset($_SESSION['laatijat_id'])) {
 $laatijatId = (int) $_SESSION['laatijat_id'];
 $currentLaatijaId = $laatijatId;
 $raporttiId = (int) ($_GET['id'] ?? $_POST['raportti_id'] ?? 0);
+$editMediaId = (int) ($_GET['edit_media'] ?? 0);
 $csrfToken = getApplicationCsrfToken();
 $message = '';
 $messageType = 'danger';
+$newMediaId = 0;
 $report = null;
 $customers = [];
 $projects = [];
@@ -467,6 +469,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $query = $db->prepare('INSERT INTO raporttimedia (laatijat_id, raportti_id, raporttirivi_id, tyyppi, url, kuvateksti, jarjestys) VALUES (?, ?, ?, ?, ?, ?, ?)');
                     $query->bind_param('iiisssi', $laatijatId, $raporttiId, $rowId, $type, $mediaUrl, $caption, $order);
                     $query->execute();
+                    $newMediaId = $type === 'kuva' ? (int) $db->insert_id : 0;
                     $query->close();
                     $order++;
                 }
@@ -497,6 +500,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $query->close();
                 $message = 'Kuvateksti tallennettiin.';
                 $messageType = 'success';
+            } elseif ($action === 'update-media-annotations') {
+                $mediaId = (int) ($_POST['media_id'] ?? 0);
+                $annotationsJson = normalizeImageAnnotations((string) ($_POST['merkinnat_json'] ?? '[]'));
+                $query = $db->prepare('UPDATE raporttimedia SET merkinnat_json = ? WHERE id = ? AND raportti_id = ? AND laatijat_id = ? AND tyyppi = \'kuva\'');
+                $query->bind_param('siii', $annotationsJson, $mediaId, $raporttiId, $laatijatId);
+                $query->execute();
+                $query->close();
+                $message = 'Kuvan merkinnät tallennettiin.';
+                $messageType = 'success';
             }
         } catch (Throwable $error) {
             $message = $error->getMessage();
@@ -512,13 +524,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $messageType === 'success') {
         $returnAnchor = match ($action ?? '') {
             'update-report' => 'perustiedot',
             'add-row' => 'uusi-osio',
-            'update-row', 'delete-row', 'add-media', 'add-table' => 'osio-' . (int) ($_POST['rivi_id'] ?? 0),
+            'update-row', 'delete-row', 'add-media', 'add-table', 'update-media-annotations' => 'osio-' . (int) ($_POST['rivi_id'] ?? 0),
             'update-table', 'add-table-column', 'add-table-row',
             'delete-table-column', 'delete-table-row', 'add-table-summary', 'delete-table-summary', 'delete-table' => 'taulukko-' . (int) ($_POST['taulukko_id'] ?? 0),
             default => '',
         };
     }
-    header('Location: muokkaa_raportti.php?id=' . $raporttiId . '&saved=1' . ($returnAnchor !== '' ? '#' . $returnAnchor : ''));
+    $editMediaQuery = $action === 'add-media' && $newMediaId > 0 ? '&edit_media=' . $newMediaId : '';
+    header('Location: muokkaa_raportti.php?id=' . $raporttiId . '&saved=1' . $editMediaQuery . ($returnAnchor !== '' ? '#' . $returnAnchor : ''));
     exit;
 }
 
@@ -537,7 +550,7 @@ try {
     $query = $db->prepare('SELECT id, otsikko, sisalto, sisaltaa_asiakastiedot, jarjestys FROM raporttirivit WHERE raportti_id = ? AND laatijat_id = ? ORDER BY jarjestys, id');
     $query->bind_param('ii', $raporttiId, $laatijatId); $query->execute(); $result = $query->get_result();
     while ($item = $result->fetch_assoc()) { $rows[] = $item; } $query->close();
-    $query = $db->prepare('SELECT id, raporttirivi_id, tyyppi, url, kuvateksti FROM raporttimedia WHERE raportti_id = ? AND laatijat_id = ? ORDER BY raporttirivi_id, jarjestys, id');
+    $query = $db->prepare('SELECT id, raporttirivi_id, tyyppi, url, kuvateksti, merkinnat_json FROM raporttimedia WHERE raportti_id = ? AND laatijat_id = ? ORDER BY raporttirivi_id, jarjestys, id');
     $query->bind_param('ii', $raporttiId, $laatijatId); $query->execute(); $result = $query->get_result();
     while ($item = $result->fetch_assoc()) { $media[] = $item; } $query->close();
     $query = $db->prepare('SELECT id, raporttirivi_id, otsikko, jarjestys FROM raporttitaulukot WHERE raportti_id = ? AND laatijat_id = ? ORDER BY raporttirivi_id, jarjestys, id');
@@ -591,6 +604,58 @@ openLayoutShell('Muokkaa raporttia – TEKRAPORTTI');
     font-size: .875rem;
     margin-top: .35rem;
 }
+.image-annotation-preview {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    flex-wrap: wrap;
+}
+.image-annotation-preview img {
+    width: 180px;
+    max-height: 110px;
+    object-fit: contain;
+    border: 1px solid #dee2e6;
+    border-radius: .25rem;
+}
+.image-annotation-dialog {
+    width: min(96vw, 1100px);
+    max-width: none;
+    border: 0;
+    border-radius: .5rem;
+    padding: 0;
+}
+.image-annotation-dialog::backdrop {
+    background: rgba(0, 0, 0, .65);
+}
+.image-annotation-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .35rem;
+    align-items: center;
+    padding: .75rem;
+    border-bottom: 1px solid #dee2e6;
+}
+.image-annotation-canvas-wrap {
+    max-height: 72vh;
+    overflow: auto;
+    padding: .75rem;
+    background: #f1f3f5;
+    text-align: center;
+}
+#image-annotation-canvas {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    margin: auto;
+    background: #fff;
+    cursor: crosshair;
+    touch-action: none;
+}
+.image-annotation-dialog [data-annotation-tool].active {
+    color: #fff;
+    background: #0d6efd;
+    border-color: #0d6efd;
+}
 .report-edit-header {
     display: flex;
     align-items: center;
@@ -606,6 +671,26 @@ openLayoutShell('Muokkaa raporttia – TEKRAPORTTI');
 .report-edit-preview-form .form-select {
     width: 110px;
     min-width: 110px;
+}
+.report-chart-options {
+    position: relative;
+}
+.report-chart-options > summary {
+    cursor: pointer;
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.report-chart-options .report-chart-columns {
+    margin-top: .35rem;
+}
+.report-chart-menu > summary {
+    cursor: pointer;
+    white-space: nowrap;
+}
+.report-chart-menu .report-chart-options {
+    margin-top: .35rem;
 }
 .report-edit-header > a {
     white-space: nowrap;
@@ -659,7 +744,7 @@ openLayoutShell('Muokkaa raporttia – TEKRAPORTTI');
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
     <div><h1 class="h3 mb-1">Muokkaa raporttia</h1><p class="text-body-secondary mb-0"><?= editValue($report['otsikko']) ?></p></div>
     <div class="report-edit-header">
-        <?php if ($tables): ?><form method="get" action="esikatsele_raportti.php" target="_blank" class="report-edit-preview-form"><input type="hidden" name="id" value="<?= $raporttiId ?>"><?php foreach ($tables as $table): ?><label class="visually-hidden" for="kaavio-<?= (int) $table['id'] ?>">Kaavio taulukolle <?= (int) $table['id'] ?></label><select class="form-select form-select-sm" id="kaavio-<?= (int) $table['id'] ?>" name="kaavio[<?= (int) $table['id'] ?>]" title="Taulukon kaavio"><option value="">Ei kaaviota</option><option value="pie">Piirakka</option><option value="bar">Pylväs</option><option value="line">Viiva</option></select><details class="small"><summary>Sarakkeet</summary><input type="hidden" name="kaavio_sarakkeet[<?= (int) $table['id'] ?>][]" value="0"><?php foreach (array_slice($table['sarakkeet'], 1) as $column): ?><label class="d-block"><input type="checkbox" name="kaavio_sarakkeet[<?= (int) $table['id'] ?>][]" value="<?= (int) $column['id'] ?>" checked> <?= editValue($column['nimi']) ?></label><?php endforeach; ?></details><?php endforeach; ?><button class="btn btn-outline-primary" type="submit">Esikatsele PDF:nä</button></form><?php else: ?><a class="btn btn-outline-primary" target="_blank" href="esikatsele_raportti.php?id=<?= $raporttiId ?>">Esikatsele PDF:nä</a><?php endif; ?>
+        <?php if ($tables): ?><form method="get" action="esikatsele_raportti.php" target="_blank" class="report-edit-preview-form"><input type="hidden" name="id" value="<?= $raporttiId ?>"><details class="report-chart-menu"><summary>Diagrammit</summary><?php foreach ($tables as $table): ?><details class="report-chart-options"><summary><?= editValue($table['otsikko'] ?: 'Taulukko ' . $table['id']) ?></summary><label class="visually-hidden" for="kaavio-<?= (int) $table['id'] ?>">Kaavio taulukolle <?= (int) $table['id'] ?></label><select class="form-select form-select-sm" id="kaavio-<?= (int) $table['id'] ?>" name="kaavio[<?= (int) $table['id'] ?>]" title="Taulukon kaavio"><option value="">Ei kaaviota</option><option value="pie">Piirakka</option><option value="bar">Pylväs</option><option value="line">Viiva</option></select><details class="small report-chart-columns"><summary>Sarakkeet</summary><input type="hidden" name="kaavio_sarakkeet[<?= (int) $table['id'] ?>][]" value="0"><?php foreach (array_slice($table['sarakkeet'], 1) as $column): ?><label class="d-block"><input type="checkbox" name="kaavio_sarakkeet[<?= (int) $table['id'] ?>][]" value="<?= (int) $column['id'] ?>" checked> <?= editValue($column['nimi']) ?></label><?php endforeach; ?></details></details><?php endforeach; ?></details><button class="btn btn-outline-primary" type="submit">Esikatsele PDF:nä</button></form><?php else: ?><a class="btn btn-outline-primary" target="_blank" href="esikatsele_raportti.php?id=<?= $raporttiId ?>">Esikatsele PDF:nä</a><?php endif; ?>
         <a class="btn btn-outline-secondary" href="raportit.php">Takaisin raportteihin</a>
     </div>
 </div>
@@ -697,6 +782,7 @@ openLayoutShell('Muokkaa raporttia – TEKRAPORTTI');
         </form>
         <form method="post" action="muokkaa_raportti.php?id=<?= $raporttiId ?>" class="mt-2" onsubmit="return confirm('Poistetaanko osio?');"><input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="delete-row"><input type="hidden" name="rivi_id" value="<?= (int) $row['id'] ?>"><input type="hidden" name="return_anchor" value="osio-<?= (int) $row['id'] ?>"><button class="btn btn-outline-danger btn-sm">Poista osio</button></form>
         <?php foreach ($media as $item): ?><?php if ((int) $item['raporttirivi_id'] === (int) $row['id']): ?><div class="border-top mt-3 pt-2 small"><strong><?= editValue($item['tyyppi']) ?></strong>: <?= editValue($item['url']) ?>
+            <?php if ($item['tyyppi'] === 'kuva'): ?><div class="image-annotation-preview mt-2"><img src="<?= editValue($item['url']) ?>" alt="" loading="lazy"><button type="button" class="btn btn-outline-secondary btn-sm" data-annotation-open data-media-id="<?= (int) $item['id'] ?>" data-image-url="<?= editValue($item['url']) ?>" data-annotations="<?= editValue(json_encode(decodeImageAnnotations($item['merkinnat_json'] ?? null), JSON_UNESCAPED_UNICODE)) ?>">Muokkaa merkintöjä</button></div><?php endif; ?>
             <form method="post" action="muokkaa_raportti.php?id=<?= $raporttiId ?>" class="row g-2 mt-1 align-items-center">
                 <input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="update-media"><input type="hidden" name="media_id" value="<?= (int) $item['id'] ?>"><input type="hidden" name="return_anchor" value="osio-<?= (int) $row['id'] ?>">
                 <div class="col-md-8"><input class="form-control form-control-sm" name="kuvateksti" value="<?= editValue($item['kuvateksti']) ?>" placeholder="Kuvateksti"></div>
@@ -726,6 +812,31 @@ openLayoutShell('Muokkaa raporttia – TEKRAPORTTI');
 
 <span id="uusi-osio"></span>
 <div class="card border-0 shadow-sm"><div class="card-header bg-white"><h2 class="h5 mb-0">Lisää uusi osio</h2></div><form method="post" action="muokkaa_raportti.php?id=<?= $raporttiId ?>"><input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="add-row"><div class="card-body p-4"><input class="form-control mb-3" name="rivi_otsikko" placeholder="Osion otsikko" maxlength="255" required><textarea class="form-control mb-3" name="rivi_sisalto" rows="6" placeholder="Tekstisisältö" data-markdown-editor></textarea><div class="form-check"><input class="form-check-input" type="checkbox" id="uusi-asiakastiedot" name="sisaltaa_asiakastiedot"><label class="form-check-label" for="uusi-asiakastiedot">Tulosta asiakkaan tiedot tämän osion alussa</label></div></div><div class="card-footer bg-white border-0 px-4 pb-4"><button class="btn btn-primary">+ Lisää osio</button></div></form></div>
+
+<dialog class="image-annotation-dialog" id="image-annotation-dialog" aria-labelledby="image-annotation-title">
+    <form method="post" action="muokkaa_raportti.php?id=<?= $raporttiId ?>" id="image-annotation-form">
+        <input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>">
+        <input type="hidden" name="action" value="update-media-annotations">
+        <input type="hidden" name="media_id" id="image-annotation-media-id" value="">
+        <input type="hidden" name="merkinnat_json" id="image-annotation-json" value="[]">
+        <input type="hidden" name="return_anchor" id="image-annotation-return-anchor" value="">
+        <div class="image-annotation-toolbar">
+            <strong id="image-annotation-title" class="me-2">Kuvan merkinnät</strong>
+            <button type="button" class="btn btn-outline-secondary btn-sm active" data-annotation-tool="select">Valitse</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm" data-annotation-tool="arrow">Nuoli</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm" data-annotation-tool="rectangle">Suorakulmio</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm" data-annotation-tool="circle">Ympyrä</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm" data-annotation-tool="freehand">Vapaa piirto</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm" data-annotation-tool="text">Teksti</button>
+            <label>Tekstin koko <select id="image-annotation-font-size"><option value="16">Pieni</option><option value="24" selected>Normaali</option><option value="36">Suuri</option><option value="52">Erittäin suuri</option></select></label>
+            <label class="ms-2">Väri <input type="color" id="image-annotation-color" value="#dc3545"></label>
+            <button type="button" class="btn btn-outline-danger btn-sm ms-auto" id="image-annotation-delete" disabled>Poista valittu</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="image-annotation-close">Sulje</button>
+            <button type="submit" class="btn btn-primary btn-sm">Tallenna merkinnät</button>
+        </div>
+        <div class="image-annotation-canvas-wrap"><canvas id="image-annotation-canvas"></canvas></div>
+    </form>
+</dialog>
 
 <script>
 document.querySelectorAll('form[action^="muokkaa_raportti.php"]').forEach(function (form) {
@@ -768,5 +879,226 @@ document.querySelectorAll('[data-file-drop]').forEach(function (dropZone) {
         input.files = transfer.files;
     });
 });
+
+(function () {
+    const dialog = document.getElementById('image-annotation-dialog');
+    const canvas = document.getElementById('image-annotation-canvas');
+    const context = canvas ? canvas.getContext('2d') : null;
+    const form = document.getElementById('image-annotation-form');
+    const fontSizeSelect = document.getElementById('image-annotation-font-size');
+    if (!dialog || !canvas || !context || !form) return;
+
+    const image = new Image();
+    let annotations = [];
+    let selectedIndex = -1;
+    let activeTool = 'select';
+    let drawing = null;
+    let dragging = null;
+
+    function pointFromEvent(event) {
+        const bounds = canvas.getBoundingClientRect();
+        return {
+            x: Math.max(0, Math.min(1, (event.clientX - bounds.left) / bounds.width)),
+            y: Math.max(0, Math.min(1, (event.clientY - bounds.top) / bounds.height))
+        };
+    }
+
+    function canvasPoint(point) {
+        return { x: point.x * canvas.width, y: point.y * canvas.height };
+    }
+
+    function drawAnnotation(annotation, index) {
+        const start = canvasPoint({x: Number(annotation.x1) || 0, y: Number(annotation.y1) || 0});
+        const end = canvasPoint({x: Number(annotation.x2) || 0, y: Number(annotation.y2) || 0});
+        context.strokeStyle = annotation.color || '#dc3545';
+        context.fillStyle = annotation.color || '#dc3545';
+        context.lineWidth = index === selectedIndex ? 6 : 4;
+        context.setLineDash(index === selectedIndex ? [8, 5] : []);
+        if (annotation.type === 'rectangle') {
+            context.strokeRect(start.x, start.y, end.x - start.x, end.y - start.y);
+        } else if (annotation.type === 'circle') {
+            context.beginPath();
+            context.ellipse((start.x + end.x) / 2, (start.y + end.y) / 2, Math.abs(end.x - start.x) / 2, Math.abs(end.y - start.y) / 2, 0, 0, Math.PI * 2);
+            context.stroke();
+        } else if (annotation.type === 'arrow') {
+            context.beginPath();
+            context.moveTo(start.x, start.y);
+            context.lineTo(end.x, end.y);
+            context.stroke();
+            const angle = Math.atan2(end.y - start.y, end.x - start.x);
+            const size = 18;
+            context.beginPath();
+            context.moveTo(end.x, end.y);
+            context.lineTo(end.x - size * Math.cos(angle - .5), end.y - size * Math.sin(angle - .5));
+            context.moveTo(end.x, end.y);
+            context.lineTo(end.x - size * Math.cos(angle + .5), end.y - size * Math.sin(angle + .5));
+            context.stroke();
+        } else if (annotation.type === 'freehand') {
+            const points = Array.isArray(annotation.points) ? annotation.points : [];
+            if (points.length) {
+                context.beginPath();
+                points.forEach(function (point, pointIndex) {
+                    const current = canvasPoint({x: Number(point[0]) || 0, y: Number(point[1]) || 0});
+                    if (pointIndex === 0) context.moveTo(current.x, current.y);
+                    else context.lineTo(current.x, current.y);
+                });
+                context.stroke();
+            }
+        } else if (annotation.type === 'text') {
+            context.setLineDash([]);
+            const fontSize = Math.max(8, (Number(annotation.fontSize) || .025) * canvas.width);
+            context.font = 'bold ' + fontSize + 'px sans-serif';
+            context.fillText(annotation.text || '', start.x, start.y);
+        }
+        context.setLineDash([]);
+    }
+
+    function render() {
+        if (!image.complete || !image.naturalWidth) return;
+        context.clearRect(0, 0, canvas.width, canvas.height);
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+        annotations.forEach(drawAnnotation);
+        if (drawing) drawAnnotation(drawing, -1);
+        document.getElementById('image-annotation-delete').disabled = selectedIndex < 0;
+    }
+
+    function distanceToSegment(point, start, end) {
+        const dx = end.x - start.x;
+        const dy = end.y - start.y;
+        const lengthSquared = dx * dx + dy * dy;
+        const ratio = lengthSquared ? Math.max(0, Math.min(1, ((point.x - start.x) * dx + (point.y - start.y) * dy) / lengthSquared)) : 0;
+        const x = start.x + ratio * dx;
+        const y = start.y + ratio * dy;
+        return Math.hypot(point.x - x, point.y - y);
+    }
+
+    function hitTest(point) {
+        for (let index = annotations.length - 1; index >= 0; index--) {
+            const annotation = annotations[index];
+            const x1 = Math.min(Number(annotation.x1) || 0, Number(annotation.x2) || 0);
+            const x2 = Math.max(Number(annotation.x1) || 0, Number(annotation.x2) || 0);
+            const y1 = Math.min(Number(annotation.y1) || 0, Number(annotation.y2) || 0);
+            const y2 = Math.max(Number(annotation.y1) || 0, Number(annotation.y2) || 0);
+            if (annotation.type === 'freehand') {
+                const points = Array.isArray(annotation.points) ? annotation.points : [];
+                for (let pointIndex = 1; pointIndex < points.length; pointIndex++) {
+                    if (distanceToSegment(point, {x: points[pointIndex - 1][0], y: points[pointIndex - 1][1]}, {x: points[pointIndex][0], y: points[pointIndex][1]}) < .03) return index;
+                }
+            } else if (annotation.type === 'text' ? Math.hypot(point.x - x1, point.y - y1) < .08 : point.x >= x1 - .03 && point.x <= x2 + .03 && point.y >= y1 - .03 && point.y <= y2 + .03) {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    function moveAnnotation(annotation, dx, dy) {
+        annotation.x1 = Math.max(0, Math.min(1, Number(annotation.x1) + dx));
+        annotation.y1 = Math.max(0, Math.min(1, Number(annotation.y1) + dy));
+        annotation.x2 = Math.max(0, Math.min(1, Number(annotation.x2) + dx));
+        annotation.y2 = Math.max(0, Math.min(1, Number(annotation.y2) + dy));
+        if (annotation.type === 'freehand') {
+            annotation.points = (annotation.points || []).map(function (point) {
+                return [Math.max(0, Math.min(1, Number(point[0]) + dx)), Math.max(0, Math.min(1, Number(point[1]) + dy))];
+            });
+        }
+    }
+
+    document.querySelectorAll('[data-annotation-tool]').forEach(function (button) {
+        button.addEventListener('click', function () {
+            activeTool = button.dataset.annotationTool;
+            document.querySelectorAll('[data-annotation-tool]').forEach(function (item) { item.classList.toggle('active', item === button); });
+        });
+    });
+
+    document.querySelectorAll('[data-annotation-open]').forEach(function (button) {
+        button.addEventListener('click', function () {
+            try { annotations = JSON.parse(button.dataset.annotations || '[]'); } catch (error) { annotations = []; }
+            selectedIndex = -1;
+            document.getElementById('image-annotation-media-id').value = button.dataset.mediaId;
+            document.getElementById('image-annotation-return-anchor').value = (button.closest('[id^="osio-"]') || {}).id || '';
+            image.onload = function () {
+                const scale = Math.min(1, 1400 / image.naturalWidth);
+                canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+                canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+                render();
+            };
+            image.src = button.dataset.imageUrl;
+            dialog.showModal();
+        });
+    });
+
+    canvas.addEventListener('pointerdown', function (event) {
+        event.preventDefault();
+        canvas.setPointerCapture(event.pointerId);
+        const point = pointFromEvent(event);
+        const color = document.getElementById('image-annotation-color').value;
+        if (activeTool === 'select') {
+            selectedIndex = hitTest(point);
+            dragging = selectedIndex >= 0 ? {index: selectedIndex, point: point, original: JSON.parse(JSON.stringify(annotations[selectedIndex]))} : null;
+            render();
+        } else if (activeTool === 'text') {
+            const text = window.prompt('Teksti kuvaan:');
+            if (text) {
+                const size = Number(document.getElementById('image-annotation-font-size').value) || 24;
+                annotations.push({type: 'text', x1: point.x, y1: point.y, x2: point.x, y2: point.y, text: text.slice(0, 500), fontSize: size / canvas.width, color: color});
+                selectedIndex = annotations.length - 1;
+                render();
+            }
+        } else if (activeTool === 'freehand') {
+            drawing = {type: 'freehand', x1: point.x, y1: point.y, x2: point.x, y2: point.y, points: [[point.x, point.y]], color: color};
+        } else {
+            drawing = {type: activeTool, x1: point.x, y1: point.y, x2: point.x, y2: point.y, color: color};
+        }
+    });
+
+    canvas.addEventListener('pointermove', function (event) {
+        const point = pointFromEvent(event);
+        if (dragging) {
+            annotations[dragging.index] = JSON.parse(JSON.stringify(dragging.original));
+            moveAnnotation(annotations[dragging.index], point.x - dragging.point.x, point.y - dragging.point.y);
+            render();
+        } else if (drawing) {
+            drawing.x2 = point.x;
+            drawing.y2 = point.y;
+            if (drawing.type === 'freehand') drawing.points.push([point.x, point.y]);
+            render();
+        }
+    });
+
+    canvas.addEventListener('pointerup', function () {
+        if (drawing) {
+            if (drawing.type !== 'freehand' || drawing.points.length > 1) annotations.push(drawing);
+            selectedIndex = annotations.length - 1;
+            drawing = null;
+            render();
+        }
+        dragging = null;
+    });
+
+    document.getElementById('image-annotation-delete').addEventListener('click', function () {
+        if (selectedIndex < 0) return;
+        annotations.splice(selectedIndex, 1);
+        selectedIndex = -1;
+        render();
+    });
+    fontSizeSelect.addEventListener('change', function () {
+        if (selectedIndex < 0 || annotations[selectedIndex].type !== 'text') return;
+        annotations[selectedIndex].fontSize = (Number(fontSizeSelect.value) || 24) / canvas.width;
+        render();
+    });
+    document.getElementById('image-annotation-close').addEventListener('click', function () { dialog.close(); });
+    document.addEventListener('keydown', function (event) {
+        if (event.key === 'Delete' && dialog.open && selectedIndex >= 0) {
+            annotations.splice(selectedIndex, 1);
+            selectedIndex = -1;
+            render();
+        }
+    });
+    form.addEventListener('submit', function () {
+        document.getElementById('image-annotation-json').value = JSON.stringify(annotations);
+    });
+    const initialButton = document.querySelector('[data-annotation-open][data-media-id="<?= $editMediaId ?>"]');
+    if (initialButton) initialButton.click();
+})();
 </script>
 <?php closeLayoutShell(); ?>

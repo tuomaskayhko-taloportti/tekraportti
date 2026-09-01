@@ -402,6 +402,66 @@ function deleteStoredFile(string $url): void
     }
 }
 
+/** Tarkistaa ja normalisoi kuvan merkintäobjektit ennen tietokantaan tallentamista. */
+function normalizeImageAnnotations(string $json): string
+{
+    $decoded = json_decode($json, true);
+    if (!is_array($decoded)) {
+        throw new RuntimeException('Kuvan merkinnät ovat virheellisiä.');
+    }
+
+    $normalized = [];
+    foreach (array_slice($decoded, 0, 200) as $annotation) {
+        if (!is_array($annotation) || !in_array((string) ($annotation['type'] ?? ''), ['arrow', 'rectangle', 'circle', 'freehand', 'text'], true)) {
+            continue;
+        }
+        $item = [
+            'type' => (string) $annotation['type'],
+            'x1' => max(0, min(1, (float) ($annotation['x1'] ?? 0))),
+            'y1' => max(0, min(1, (float) ($annotation['y1'] ?? 0))),
+            'x2' => max(0, min(1, (float) ($annotation['x2'] ?? 0))),
+            'y2' => max(0, min(1, (float) ($annotation['y2'] ?? 0))),
+            'color' => preg_match('/^#[0-9a-f]{6}$/i', (string) ($annotation['color'] ?? ''))
+                ? (string) $annotation['color']
+                : '#dc3545',
+        ];
+        if ($item['type'] === 'freehand') {
+            $item['points'] = [];
+            foreach (array_slice((array) ($annotation['points'] ?? []), 0, 2000) as $point) {
+                if (is_array($point)) {
+                    $item['points'][] = [
+                        max(0, min(1, (float) ($point['x'] ?? $point[0] ?? 0))),
+                        max(0, min(1, (float) ($point['y'] ?? $point[1] ?? 0))),
+                    ];
+                }
+            }
+        }
+        if ($item['type'] === 'text') {
+            $item['fontSize'] = max(0.005, min(0.2, (float) ($annotation['fontSize'] ?? 0.025)));
+            $item['text'] = function_exists('mb_substr')
+                ? mb_substr((string) ($annotation['text'] ?? ''), 0, 500)
+                : substr((string) ($annotation['text'] ?? ''), 0, 500);
+            if ($item['text'] === '') {
+                continue;
+            }
+        }
+        $normalized[] = $item;
+    }
+    return json_encode($normalized, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+}
+
+function decodeImageAnnotations(?string $json): array
+{
+    if (!$json) {
+        return [];
+    }
+    try {
+        return json_decode(normalizeImageAnnotations($json), true, 512, JSON_THROW_ON_ERROR) ?: [];
+    } catch (Throwable $error) {
+        return [];
+    }
+}
+
 /**
  * Ilmoittaa laatijalle, että raportti on jaettu hänen kanssaan.
  */

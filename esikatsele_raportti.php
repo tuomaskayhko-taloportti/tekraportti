@@ -60,7 +60,7 @@ try {
     $query->close();
 
     $mediaByRow = [];
-    $query = $db->prepare('SELECT raporttirivi_id, tyyppi, url, kuvateksti FROM raporttimedia WHERE raportti_id = ? AND laatijat_id = ? ORDER BY jarjestys, id');
+    $query = $db->prepare('SELECT raporttirivi_id, tyyppi, url, kuvateksti, merkinnat_json FROM raporttimedia WHERE raportti_id = ? AND laatijat_id = ? ORDER BY jarjestys, id');
     $query->bind_param('ii', $raporttiId, $laatijatId);
     $query->execute();
     $mediaResult = $query->get_result();
@@ -245,17 +245,19 @@ function pdfMarkdownRuns(string $text): array
  * ympyrän, o-merkillä merkityt rivit avoimen ympyrän ja numeroidut rivit
  * säilyttävät alkuperäisen numeronsa.
  */
-function pdfTextWithLists(FPDF $pdf, string $text): void
+function pdfTextWithLists(FPDF $pdf, string $text, int $sectionNumber): void
 {
     $listIndent = 7;
     $listStart = 20 + $listIndent;
     $contentStart = $listStart + $listIndent;
     $lines = preg_split('/\r\n|\r|\n/', $text) ?: [''];
+    $headingNumber = 0;
 
     foreach ($lines as $line) {
         if (preg_match('/^\s*##\s+(.+)$/u', $line, $heading)) {
+            $headingNumber++;
             $pdf->SetFont('Helvetica', 'B', 14);
-            $pdf->Write(7, pdfText($heading[1]));
+            $pdf->Write(7, pdfText($sectionNumber . '.' . $headingNumber . ' ' . $heading[1]));
             $pdf->Ln(8);
             $pdf->SetFont('Helvetica', '', 11);
             continue;
@@ -284,6 +286,19 @@ function pdfTextWithLists(FPDF $pdf, string $text): void
         pdfWriteMarkdown($pdf, $line);
         $pdf->Ln(6);
     }
+}
+
+/** Palauttaa raporttiosion tekstissä olevat ##-väliotsikot sisällysluetteloa varten. */
+function reportSubheadings(string $text): array
+{
+    $headings = [];
+    $lines = preg_split('/\r\n|\r|\n/', $text) ?: [];
+    foreach ($lines as $line) {
+        if (preg_match('/^\s*##\s+(.+)$/u', $line, $matches)) {
+            $headings[] = trim($matches[1]);
+        }
+    }
+    return $headings;
 }
 
 function pdfDate(string $value): string
@@ -343,76 +358,107 @@ function pdfCustomerInfoLines(array $report, array $customerDetails): array
     return $lines;
 }
 
-function pdfTableLineCount(FPDF $pdf, string $text, float $width): int
+function pdfTableLineCount(FPDF $pdf, string $text, float $width, string $baseStyle = ''): int
 {
+    $availableWidth = max(1, $width - 2);
     $lines = 0;
     foreach (preg_split('/\r\n|\r|\n/', $text) ?: [''] as $paragraph) {
         $lineWidth = 0.0;
         $paragraphLines = 1;
         foreach (pdfMarkdownRuns($paragraph) as $run) {
-            $pdf->SetFont('Helvetica', $run['style'], 9);
+            $pdf->SetFont('Helvetica', $baseStyle . $run['style'], 9);
             $words = preg_split('/(\s+)/u', $run['text'], -1, PREG_SPLIT_DELIM_CAPTURE) ?: [''];
             foreach ($words as $word) {
                 if ($word === '') {
                     continue;
                 }
-                $wordWidth = $pdf->GetStringWidth(pdfText($word));
                 if (preg_match('/^\s+$/u', $word)) {
                     if ($lineWidth > 0) {
-                        $lineWidth += $wordWidth;
+                        $lineWidth += $pdf->GetStringWidth(pdfText($word));
                     }
                     continue;
                 }
-                if ($lineWidth > 0 && $lineWidth + $wordWidth > max(1, $width - 2)) {
-                    $paragraphLines++;
-                    $lineWidth = $wordWidth;
-                } else {
-                    $lineWidth += $wordWidth;
+                foreach (pdfTextChunks($pdf, $word, $availableWidth) as $chunk) {
+                    $chunkWidth = $pdf->GetStringWidth(pdfText($chunk));
+                    if ($lineWidth > 0 && $lineWidth + $chunkWidth > $availableWidth) {
+                        $paragraphLines++;
+                        $lineWidth = $chunkWidth;
+                    } else {
+                        $lineWidth += $chunkWidth;
+                    }
                 }
             }
         }
         $lines += $paragraphLines;
     }
-    $pdf->SetFont('Helvetica', '', 9);
+    $pdf->SetFont('Helvetica', $baseStyle, 9);
     return max(1, $lines);
 }
 
+/** Pilkkoo liian pitkän, välilyönnittömän tekstijakson taulukon solun leveyteen. */
+function pdfTextChunks(FPDF $pdf, string $text, float $width): array
+{
+    $chunks = [];
+    $chunk = '';
+    $chunkWidth = 0.0;
+    $availableWidth = max(1, $width);
+    foreach (preg_split('//u', $text, -1, PREG_SPLIT_NO_EMPTY) ?: [] as $character) {
+        $characterWidth = $pdf->GetStringWidth(pdfText($character));
+        if ($chunk !== '' && $chunkWidth + $characterWidth > $availableWidth) {
+            $chunks[] = $chunk;
+            $chunk = '';
+            $chunkWidth = 0.0;
+        }
+        $chunk .= $character;
+        $chunkWidth += $characterWidth;
+    }
+    if ($chunk !== '') {
+        $chunks[] = $chunk;
+    }
+    return $chunks ?: [''];
+}
+
 /** Tulostaa taulukon solun markdown-muotoilulla ja sovittaa tekstin solun leveyteen. */
-function pdfWriteMarkdownCell(FPDF $pdf, string $text, float $width, float $lineHeight = 5): void
+function pdfWriteMarkdownCell(FPDF $pdf, string $text, float $width, float $lineHeight = 5, string $baseStyle = ''): void
 {
     $availableWidth = max(1, $width);
     $startX = $pdf->GetX();
     $lineWidth = 0.0;
     foreach (preg_split('/\r\n|\r|\n/', $text) ?: [''] as $line) {
         foreach (pdfMarkdownRuns($line) as $run) {
-            $pdf->SetFont('Helvetica', $run['style'], 9);
+            $pdf->SetFont('Helvetica', $baseStyle . $run['style'], 9);
             $tokens = preg_split('/(\s+)/u', $run['text'], -1, PREG_SPLIT_DELIM_CAPTURE) ?: [''];
             foreach ($tokens as $token) {
                 if ($token === '') {
                     continue;
                 }
-                $tokenWidth = $pdf->GetStringWidth(pdfText($token));
                 if (preg_match('/^\s+$/u', $token) && $lineWidth === 0.0) {
                     continue;
                 }
-                if ($lineWidth > 0 && $lineWidth + $tokenWidth > $availableWidth) {
-                    $pdf->Ln($lineHeight);
-                    $pdf->SetX($startX);
-                    $lineWidth = 0.0;
-                    if (preg_match('/^\s+$/u', $token)) {
-                        continue;
+                $chunks = preg_match('/^\s+$/u', $token)
+                    ? [$token]
+                    : pdfTextChunks($pdf, $token, $availableWidth);
+                foreach ($chunks as $chunk) {
+                    $tokenWidth = $pdf->GetStringWidth(pdfText($chunk));
+                    if ($lineWidth > 0 && $lineWidth + $tokenWidth > $availableWidth) {
+                        $pdf->Ln($lineHeight);
+                        $pdf->SetX($startX);
+                        $lineWidth = 0.0;
+                        if (preg_match('/^\s+$/u', $chunk)) {
+                            continue;
+                        }
                     }
+                    $pdf->SetFont('Helvetica', $baseStyle . $run['style'], 9);
+                    $pdf->Cell($tokenWidth, $lineHeight, pdfText($chunk), 0, 0, 'L');
+                    $lineWidth += $tokenWidth;
                 }
-                $pdf->SetFont('Helvetica', $run['style'], 9);
-                $pdf->Cell($tokenWidth, $lineHeight, pdfText($token), 0, 0, 'L');
-                $lineWidth += $tokenWidth;
             }
         }
         $pdf->Ln($lineHeight);
         $pdf->SetX($startX);
         $lineWidth = 0.0;
     }
-    $pdf->SetFont('Helvetica', '', 9);
+    $pdf->SetFont('Helvetica', $baseStyle, 9);
 }
 
 function chartNumber(string $value): ?float
@@ -682,10 +728,69 @@ function localImagePath(string $url): ?string
 function isPdfImagePath(?string $path): bool
 {
     return $path !== null
-        && in_array(strtolower(pathinfo($path, PATHINFO_EXTENSION)), ['jpg', 'jpeg', 'png', 'gif'], true);
+        && in_array(strtolower(pathinfo($path, PATHINFO_EXTENSION)), ['jpg', 'jpeg', 'png', 'gif', 'webp'], true);
 }
 
-function cropPdfImage(string $path, float $targetAspect, array &$temporaryImages): ?string
+function pdfAnnotationColor($image, string $value)
+{
+    if (!preg_match('/^#([0-9a-f]{6})$/i', $value, $matches)) {
+        return imagecolorallocate($image, 220, 53, 69);
+    }
+    return imagecolorallocate(
+        $image,
+        hexdec(substr($matches[1], 0, 2)),
+        hexdec(substr($matches[1], 2, 2)),
+        hexdec(substr($matches[1], 4, 2))
+    );
+}
+
+function drawPdfImageAnnotations($image, array $annotations, int $sourceWidth, int $sourceHeight, int $cropX, int $cropY, int $cropWidth, int $cropHeight, int $outputWidth, int $outputHeight): void
+{
+    $toOutput = static function (float $x, float $y) use ($sourceWidth, $sourceHeight, $cropX, $cropY, $cropWidth, $cropHeight, $outputWidth, $outputHeight): array {
+        $sourceX = max(0, min(1, $x)) * $sourceWidth;
+        $sourceY = max(0, min(1, $y)) * $sourceHeight;
+        return [
+            (int) round(($sourceX - $cropX) * $outputWidth / $cropWidth),
+            (int) round(($sourceY - $cropY) * $outputHeight / $cropHeight),
+        ];
+    };
+    imagesetthickness($image, 5);
+    foreach ($annotations as $annotation) {
+        $color = pdfAnnotationColor($image, (string) ($annotation['color'] ?? '#dc3545'));
+        $start = $toOutput((float) ($annotation['x1'] ?? 0), (float) ($annotation['y1'] ?? 0));
+        $end = $toOutput((float) ($annotation['x2'] ?? 0), (float) ($annotation['y2'] ?? 0));
+        $type = (string) ($annotation['type'] ?? '');
+        if ($type === 'rectangle') {
+            imagerectangle($image, $start[0], $start[1], $end[0], $end[1], $color);
+        } elseif ($type === 'circle') {
+            imageellipse($image, (int) round(($start[0] + $end[0]) / 2), (int) round(($start[1] + $end[1]) / 2), abs($end[0] - $start[0]), abs($end[1] - $start[1]), $color);
+        } elseif ($type === 'arrow') {
+            imageline($image, $start[0], $start[1], $end[0], $end[1], $color);
+            $angle = atan2($end[1] - $start[1], $end[0] - $start[0]);
+            $headLength = 22;
+            imageline($image, $end[0], $end[1], (int) round($end[0] - $headLength * cos($angle - 0.5)), (int) round($end[1] - $headLength * sin($angle - 0.5)), $color);
+            imageline($image, $end[0], $end[1], (int) round($end[0] - $headLength * cos($angle + 0.5)), (int) round($end[1] - $headLength * sin($angle + 0.5)), $color);
+        } elseif ($type === 'freehand') {
+            $previous = null;
+            foreach ((array) ($annotation['points'] ?? []) as $point) {
+                if (!is_array($point) || count($point) < 2) {
+                    continue;
+                }
+                $current = $toOutput((float) $point[0], (float) $point[1]);
+                if ($previous !== null) {
+                    imageline($image, $previous[0], $previous[1], $current[0], $current[1], $color);
+                }
+                $previous = $current;
+            }
+        } elseif ($type === 'text') {
+            $fontSize = max(8, min(240, (int) round((float) ($annotation['fontSize'] ?? 0.025) * $outputWidth)));
+            chartText($image, $fontSize, $start[0], $start[1], (string) ($annotation['text'] ?? ''), $color);
+        }
+    }
+    imagesetthickness($image, 1);
+}
+
+function cropPdfImage(string $path, float $targetAspect, array &$temporaryImages, array $annotations = []): ?string
 {
     $imageSize = @getimagesize($path);
     if (!$imageSize || $imageSize[0] < 1 || $imageSize[1] < 1 || $targetAspect <= 0) {
@@ -696,6 +801,7 @@ function cropPdfImage(string $path, float $targetAspect, array &$temporaryImages
         IMAGETYPE_JPEG => @imagecreatefromjpeg($path),
         IMAGETYPE_PNG => @imagecreatefrompng($path),
         IMAGETYPE_GIF => @imagecreatefromgif($path),
+        IMAGETYPE_WEBP => function_exists('imagecreatefromwebp') ? @imagecreatefromwebp($path) : false,
         default => false,
     };
     if (!$source) {
@@ -723,6 +829,7 @@ function cropPdfImage(string $path, float $targetAspect, array &$temporaryImages
     $white = imagecolorallocate($output, 255, 255, 255);
     imagefill($output, 0, 0, $white);
     imagecopyresampled($output, $source, 0, 0, $cropX, $cropY, $outputWidth, $outputHeight, $cropWidth, $cropHeight);
+    drawPdfImageAnnotations($output, $annotations, $sourceWidth, $sourceHeight, $cropX, $cropY, $cropWidth, $cropHeight, $outputWidth, $outputHeight);
 
     $temporaryPath = tempnam(sys_get_temp_dir(), 'tekraportti-image-');
     $jpegPath = $temporaryPath !== false ? $temporaryPath . '.jpg' : false;
@@ -1019,18 +1126,36 @@ $pdf->AddPage();
 $pdf->SetFont('Helvetica', 'B', 18);
 $pdf->Cell(0, 12, pdfText('Sisällysluettelo'), 0, 1);
 $pdf->Ln(8);
-$pdf->SetFont('Helvetica', '', 12);
+$tocEntries = [];
 foreach ($rows as $index => $row) {
-    $title = ($index + 1) . '. ' . $row['otsikko'];
-    $pageNumber = (string) ($index + 2);
+    $sectionNumber = $index + 1;
+    $tocEntries[] = [
+        'title' => $sectionNumber . '. ' . $row['otsikko'],
+        'page' => (string) ($index + 2),
+        'indent' => false,
+    ];
+    foreach (reportSubheadings((string) $row['sisalto']) as $headingIndex => $heading) {
+        $tocEntries[] = [
+            'title' => $sectionNumber . '.' . ($headingIndex + 1) . ' ' . $heading,
+            'page' => (string) ($index + 2),
+            'indent' => true,
+        ];
+    }
+}
+foreach ($tocEntries as $entry) {
+    $pdf->SetFont('Helvetica', $entry['indent'] ? '' : 'B', $entry['indent'] ? 11 : 12);
+    $title = (string) $entry['title'];
+    $pageNumber = (string) $entry['page'];
     $titleText = pdfText($title);
     $pageNumberText = pdfText($pageNumber);
     $contentWidth = $pdf->GetPageWidth() - 40;
+    $indent = $entry['indent'] ? 8 : 0;
+    $pdf->SetX(20 + $indent);
     $titleWidth = $pdf->GetStringWidth($titleText);
     $pageNumberWidth = $pdf->GetStringWidth($pageNumberText);
     $spaceWidth = $pdf->GetStringWidth(' ');
     $pageNumberGap = 3;
-    $dotsWidth = max(0, $contentWidth - $titleWidth - $pageNumberWidth - $spaceWidth - $pageNumberGap);
+    $dotsWidth = max(0, $contentWidth - $indent - $titleWidth - $pageNumberWidth - $spaceWidth - $pageNumberGap);
     $dotWidth = $pdf->GetStringWidth('.');
     $dots = $dotWidth > 0 ? str_repeat('.', (int) floor($dotsWidth / $dotWidth)) : '';
     $pdf->Cell($titleWidth + $spaceWidth, 8, $titleText . ' ', 0, 0, 'L');
@@ -1038,7 +1163,7 @@ foreach ($rows as $index => $row) {
     $pdf->Cell($pageNumberGap, 8, '', 0, 0, 'L');
     $pdf->Cell($pageNumberWidth, 8, $pageNumberText, 0, 1, 'R');
 }
-if (!$rows) {
+if (!$tocEntries) {
     $pdf->Cell(0, 8, pdfText('Ei vielä lisättyjä osioita.'), 0, 1);
 }
 
@@ -1062,7 +1187,7 @@ foreach ($rows as $index => $row) {
     $pdf->SetFont('Helvetica', '', 11);
     $content = trim((string) $row['sisalto']);
     if ($content !== '') {
-        pdfTextWithLists($pdf, $content);
+        pdfTextWithLists($pdf, $content, $index + 1);
     }
 
     // Osioon liitetyt taulukot.
@@ -1089,7 +1214,14 @@ foreach ($rows as $index => $row) {
 
         $tableTitle = trim((string) ($table['otsikko'] ?? ''));
         $displayRows = pdfTableRowsWithSummaries($table);
-        $headerHeight = 8;
+        $headerLines = 1;
+        foreach ($columns as $columnIndex => $column) {
+            $headerLines = max(
+                $headerLines,
+                pdfTableLineCount($pdf, (string) $column['nimi'], $columnWidths[$columnIndex] - 2, 'B')
+            );
+        }
+        $headerHeight = $headerLines * 5 + 2;
         $estimatedHeight = $headerHeight + 4;
         if ($tableTitle !== '') {
             $estimatedHeight += 4;
@@ -1115,7 +1247,9 @@ foreach ($rows as $index => $row) {
         $x = 20;
         foreach ($columns as $columnIndex => $column) {
             $pdf->SetXY($x, $headerY);
-            $pdf->Cell($columnWidths[$columnIndex], $headerHeight, pdfText((string) $column['nimi']), 1, 0, 'L', true);
+            $pdf->Cell($columnWidths[$columnIndex], $headerHeight, '', 1, 0, 'L', true);
+            $pdf->SetXY($x + 1, $headerY + 1);
+            pdfWriteMarkdownCell($pdf, (string) $column['nimi'], $columnWidths[$columnIndex] - 2, 5, 'B');
             $x += $columnWidths[$columnIndex];
         }
         $tableY = $headerY + $headerHeight;
@@ -1184,7 +1318,12 @@ foreach ($rows as $index => $row) {
             }
             $imageHeight = $sectionImageHeight;
             foreach ($imagePaths as $imageItemIndex => $currentImagePath) {
-                $croppedPath = cropPdfImage($currentImagePath, $sectionImageAspect, $temporaryImages);
+                $croppedPath = cropPdfImage(
+                    $currentImagePath,
+                    $sectionImageAspect,
+                    $temporaryImages,
+                    decodeImageAnnotations((string) ($imageItems[$imageItemIndex]['merkinnat_json'] ?? ''))
+                );
                 if ($croppedPath === null) {
                     continue;
                 }

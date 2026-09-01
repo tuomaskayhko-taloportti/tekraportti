@@ -251,6 +251,26 @@ openLayoutShell('Raportit – TEKRAPORTTI');
     width: 110px;
     min-width: 110px;
 }
+.report-chart-options {
+    position: relative;
+}
+.report-chart-options > summary {
+    cursor: pointer;
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.report-chart-options .report-chart-columns {
+    margin-top: .35rem;
+}
+.report-chart-menu > summary {
+    cursor: pointer;
+    white-space: nowrap;
+}
+.report-chart-menu .report-chart-options {
+    margin-top: .35rem;
+}
 @media (max-width: 900px) {
     .report-actions {
         flex-wrap: wrap;
@@ -314,7 +334,7 @@ openLayoutShell('Raportit – TEKRAPORTTI');
                             <td><?= htmlspecialchars(formatReportDate($report['raporttipvm']), ENT_QUOTES, 'UTF-8') ?></td>
                             <td>
                                 <div class="report-actions">
-                                    <?php if (!empty($tablesByReport[(int) $report['id']])): ?><form method="get" action="esikatsele_raportti.php" target="_blank" class="report-preview-form"><input type="hidden" name="id" value="<?= (int) $report['id'] ?>"><?php foreach ($tablesByReport[(int) $report['id']] as $table): ?><label class="visually-hidden" for="raportti-<?= (int) $report['id'] ?>-kaavio-<?= (int) $table['id'] ?>">Kaavio taulukolle <?= htmlspecialchars((string) ($table['otsikko'] ?: $table['id']), ENT_QUOTES, 'UTF-8') ?></label><select class="form-select form-select-sm" id="raportti-<?= (int) $report['id'] ?>-kaavio-<?= (int) $table['id'] ?>" name="kaavio[<?= (int) $table['id'] ?>]" title="Valitse taulukon kaavio"><option value="">Ei kaaviota</option><option value="pie">Piirakka</option><option value="bar">Pylväs</option><option value="line">Viiva</option></select><details class="small"><summary>Sarakkeet</summary><?php foreach (array_slice($table['sarakkeet'], 1) as $column): ?><label class="d-block"><input type="checkbox" name="kaavio_sarakkeet[<?= (int) $table['id'] ?>][]" value="<?= (int) $column['id'] ?>" checked> <?= htmlspecialchars((string) $column['nimi'], ENT_QUOTES, 'UTF-8') ?></label><?php endforeach; ?></details><?php endforeach; ?><button class="btn btn-outline-secondary btn-sm" type="submit" title="Avaa PDF-esikatselu" aria-label="Avaa PDF-esikatselu"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 0h5.5L14 4.5V14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2m5 1.5V5h3.5zM4.5 9.5a.5.5 0 0 0 0 1h7a.5.5 0 0 0 0-1zM4 12a.5.5 0 0 0 0 1h5a.5.5 0 0 0 0-1z"/></svg><span class="d-none d-md-inline ms-1">Näytä</span></button></form><?php else: ?><a class="btn btn-outline-secondary btn-sm" href="esikatsele_raportti.php?id=<?= (int) $report['id'] ?>" target="_blank" title="Avaa PDF-esikatselu" aria-label="Avaa PDF-esikatselu">
+                                    <?php if (!empty($tablesByReport[(int) $report['id']])): ?><form method="get" action="esikatsele_raportti.php" target="_blank" class="report-preview-form"><input type="hidden" name="id" value="<?= (int) $report['id'] ?>"><details class="report-chart-menu"><summary>Diagrammit</summary><?php foreach ($tablesByReport[(int) $report['id']] as $table): ?><details class="report-chart-options"><summary><?= htmlspecialchars((string) ($table['otsikko'] ?: 'Taulukko ' . $table['id']), ENT_QUOTES, 'UTF-8') ?></summary><label class="visually-hidden" for="raportti-<?= (int) $report['id'] ?>-kaavio-<?= (int) $table['id'] ?>">Kaavio taulukolle <?= htmlspecialchars((string) ($table['otsikko'] ?: $table['id']), ENT_QUOTES, 'UTF-8') ?></label><select class="form-select form-select-sm" id="raportti-<?= (int) $report['id'] ?>-kaavio-<?= (int) $table['id'] ?>" name="kaavio[<?= (int) $table['id'] ?>]" title="Valitse taulukon kaavio"><option value="">Ei kaaviota</option><option value="pie">Piirakka</option><option value="bar">Pylväs</option><option value="line">Viiva</option></select><details class="small report-chart-columns"><summary>Sarakkeet</summary><?php foreach (array_slice($table['sarakkeet'], 1) as $column): ?><label class="d-block"><input type="checkbox" name="kaavio_sarakkeet[<?= (int) $table['id'] ?>][]" value="<?= (int) $column['id'] ?>" checked> <?= htmlspecialchars((string) $column['nimi'], ENT_QUOTES, 'UTF-8') ?></label><?php endforeach; ?></details></details><?php endforeach; ?></details><button class="btn btn-outline-secondary btn-sm" type="submit" title="Avaa PDF-esikatselu" aria-label="Avaa PDF-esikatselu"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 0h5.5L14 4.5V14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2m5 1.5V5h3.5zM4.5 9.5a.5.5 0 0 0 0 1h7a.5.5 0 0 0 0-1zM4 12a.5.5 0 0 0 0 1h5a.5.5 0 0 0 0-1z"/></svg><span class="d-none d-md-inline ms-1">Näytä</span></button></form><?php else: ?><a class="btn btn-outline-secondary btn-sm" href="esikatsele_raportti.php?id=<?= (int) $report['id'] ?>" target="_blank" title="Avaa PDF-esikatselu" aria-label="Avaa PDF-esikatselu">
                                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 0h5.5L14 4.5V14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2m5 1.5V5h3.5zM4.5 9.5a.5.5 0 0 0 0 1h7a.5.5 0 0 0 0-1zM4 12a.5.5 0 0 0 0 1h5a.5.5 0 0 0 0-1z"/></svg><span class="d-none d-md-inline ms-1">Näytä</span>
                                     </a><?php endif; ?>
                                     <a class="btn btn-outline-primary btn-sm" href="muokkaa_raportti.php?id=<?= (int) $report['id'] ?>" title="Muokkaa raporttia" aria-label="Muokkaa raporttia">
