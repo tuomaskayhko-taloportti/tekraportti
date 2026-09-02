@@ -25,7 +25,7 @@ try {
                 l.yritys AS laatija_yritys, l.ytunnus AS laatija_ytunnus,
                 l.sahkoposti AS laatija_sahkoposti, l.puhelin AS laatija_puhelin,
                 l.osoite AS laatija_osoite, l.postinro AS laatija_postinro,
-                l.postitmp AS laatija_postitmp
+                l.postitmp AS laatija_postitmp, l.logo_url AS laatija_logo_url
          FROM raportit r
          INNER JOIN asiakkaat a ON a.id = r.asiakas_id
          INNER JOIN laatijat l ON l.id = r.laatijat_id
@@ -987,7 +987,16 @@ class TekraPdf extends FPDF
         $this->SetY(7);
         $this->SetFont('Helvetica', '', 8);
         $this->SetTextColor(0, 0, 0);
-        $this->Cell(125, 5, pdfText((string) $GLOBALS['report']['otsikko']), 0, 0, 'L');
+        $logoPath = $GLOBALS['reportLogoPath'] ?? null;
+        $logoSize = is_string($logoPath) && isPdfImagePath($logoPath) ? @getimagesize($logoPath) : false;
+        if ($logoSize && $logoSize[0] > 0 && $logoSize[1] > 0) {
+            $maxWidth = 38;
+            $maxHeight = 8;
+            $scale = min($maxWidth / $logoSize[0], $maxHeight / $logoSize[1]);
+            $this->Image($logoPath, $this->lMargin, 5, $logoSize[0] * $scale, $logoSize[1] * $scale);
+        } else {
+            $this->Cell(125, 5, pdfText((string) $GLOBALS['report']['otsikko']), 0, 0, 'L');
+        }
         $this->Cell(0, 5, pdfText($printDate), 0, 1, 'R');
         $this->SetDrawColor(110, 110, 110);
         $this->SetLineWidth(0.2);
@@ -1056,6 +1065,7 @@ $pdf->SetTitle(pdfText($report['otsikko']));
 $pdf->SetAuthor(pdfText($report['laatija_nimi']));
 $pdf->SetMargins(20, 22, 20);
 $pdf->SetAutoPageBreak(true, 26);
+$GLOBALS['reportLogoPath'] = localImagePath((string) ($report['laatija_logo_url'] ?? ''));
 $temporaryImages = [];
 $chartSelections = is_array($_GET['kaavio'] ?? null) ? $_GET['kaavio'] : [];
 $chartColumnSelections = is_array($_GET['kaavio_sarakkeet'] ?? null) ? $_GET['kaavio_sarakkeet'] : [];

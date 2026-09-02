@@ -15,6 +15,8 @@ function openLayoutShell(string $pageTitle = 'TEKRAPORTTI'): void
     $safePageTitle = htmlspecialchars($pageTitle, ENT_QUOTES, 'UTF-8');
     $laatija = getCurrentLaatija();
     $csrfToken = getApplicationCsrfToken();
+    $headerLogo = trim((string) ($laatija['logo_url'] ?? ''));
+    $safeHeaderLogo = htmlspecialchars($headerLogo !== '' ? $headerLogo : 'Logo.png', ENT_QUOTES, 'UTF-8');
     $safeCsrfToken = htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8');
     $safeLaatijaNimi = htmlspecialchars((string) ($laatija['nimi'] ?? ''), ENT_QUOTES, 'UTF-8');
     $safeSearch = htmlspecialchars((string) ($_GET['haku'] ?? ''), ENT_QUOTES, 'UTF-8');
@@ -53,7 +55,7 @@ function openLayoutShell(string $pageTitle = 'TEKRAPORTTI'): void
         .tekra-topbar .container-fluid { min-height: 100px; padding: 0 20px; gap: 16px; }
         .tekra-topbar .navbar-toggler { border: 1px solid #b7c7d9; border-radius: 8px; padding: 10px 14px; }
         .tekra-brand { display: inline-flex; align-items: center; }
-        .tekra-brand img { display: block; width: 220px; height: auto; max-height: 62px; object-fit: contain; }
+        .tekra-brand img { display: block; width: auto; max-width: 220px; height: auto; max-height: 62px; object-fit: contain; }
         .tekra-search { width: min(775px, 48vw); margin-left: 34px; }
         .tekra-search .form-control { height: 62px; color: #152747; background: rgba(255,255,255,.8); border: 1px solid #c5d3e2; border-radius: 9px; padding-left: 62px; }
         .tekra-search .form-control::placeholder { color: #63748a; }
@@ -88,7 +90,7 @@ function openLayoutShell(string $pageTitle = 'TEKRAPORTTI'): void
             .tekra-search { display: none; }
             .tekra-topbar .container-fluid { min-height: 72px; }
             .tekra-topbar { min-height: 72px; }
-            .tekra-brand img { width: 180px; max-height: 48px; }
+            .tekra-brand img { width: auto; max-width: 180px; max-height: 48px; }
             .tekra-main > main { padding: 28px 16px !important; }
             .tekra-sidebar { display: none !important; position: absolute; z-index: 1050; top: 72px; left: 0; height: calc(100vh - 72px); box-shadow: 4px 0 14px rgba(26, 52, 86, .12); }
             .tekra-sidebar.is-open { display: block !important; }
@@ -103,7 +105,7 @@ function openLayoutShell(string $pageTitle = 'TEKRAPORTTI'): void
                 <span class="navbar-toggler-icon"></span>
             </button>
             <a class="navbar-brand tekra-brand ms-2 me-4" href="raportit.php" aria-label="Raportit">
-                <img src="Logo.png" alt="TEKRAPORTTI">
+                <img src="{$safeHeaderLogo}" alt="TEKRAPORTTI">
             </a>
             <form class="tekra-search position-relative" method="get" action="raportit.php">
                 <span class="tekra-search-icon" aria-hidden="true">⌕</span>
@@ -333,7 +335,7 @@ function getCurrentLaatija(): ?array
 
     try {
         $query = getDatabaseConnection()->prepare(
-            'SELECT id, nimi, sahkoposti, puhelin, yritys, ytunnus, osoite, postinro, postitmp
+            'SELECT id, nimi, sahkoposti, puhelin, yritys, ytunnus, osoite, postinro, postitmp, logo_url
              FROM laatijat WHERE id = ? LIMIT 1'
         );
         $laatijatId = (int) $_SESSION['laatijat_id'];
@@ -352,7 +354,7 @@ function getCurrentLaatija(): ?array
 /**
  * Tallentaa ladatun kuvan tai videon Tiedostot-hakemistoon ja palauttaa URL-polun.
  */
-function storeUploadedFile(array $file, string $folder): string
+function storeUploadedFile(array $file, string $folder, ?array $allowedExtensions = null): string
 {
     if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
         throw new RuntimeException('Tiedoston lataus epäonnistui.');
@@ -363,7 +365,7 @@ function storeUploadedFile(array $file, string $folder): string
     }
 
     $mime = (new finfo(FILEINFO_MIME_TYPE))->file($file['tmp_name']);
-    $extensions = [
+    $extensions = $allowedExtensions ?? [
         'image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp',
         'video/mp4' => 'mp4', 'video/webm' => 'webm', 'video/ogg' => 'ogv',
     ];

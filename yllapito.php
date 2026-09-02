@@ -21,11 +21,12 @@ $form = [
     'nimi' => '', 'titteli' => '', 'sahkoposti' => '', 'puhelin' => '',
     'yritys' => '', 'ytunnus' => '', 'osoite' => '', 'postinro' => '', 'postitmp' => '',
 ];
+$logoUrl = '';
 
 try {
     $db = getDatabaseConnection();
     if ($editId > 0) {
-        $query = $db->prepare('SELECT nimi, titteli, sahkoposti, puhelin, yritys, ytunnus, osoite, postinro, postitmp FROM laatijat WHERE id = ? LIMIT 1');
+        $query = $db->prepare('SELECT nimi, titteli, sahkoposti, puhelin, yritys, ytunnus, osoite, postinro, postitmp, logo_url FROM laatijat WHERE id = ? LIMIT 1');
         $query->bind_param('i', $editId);
         $query->execute();
         $existing = $query->get_result()->fetch_assoc();
@@ -36,6 +37,9 @@ try {
             $messageType = 'danger';
         } elseif ($_SERVER['REQUEST_METHOD'] !== 'POST') {
             $form = array_merge($form, $existing);
+            $logoUrl = trim((string) ($existing['logo_url'] ?? ''));
+        } else {
+            $logoUrl = trim((string) ($existing['logo_url'] ?? ''));
         }
     }
 
@@ -161,16 +165,28 @@ try {
                 throw new RuntimeException('Kenttä ' . $field . ' on liian pitkä.');
             }
         }
+        $oldLogoUrl = $logoUrl;
+        if (isset($_FILES['logo']) && ($_FILES['logo']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
+            $logoUrl = storeUploadedFile($_FILES['logo'], 'logot', [
+                'image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp',
+            ]);
+        } elseif (isset($_POST['poista_logo'])) {
+            $logoUrl = '';
+        }
         $values = array_values(array_map(static fn (string $value): ?string => $value !== '' ? $value : null, $form));
+        $logoValue = $logoUrl !== '' ? $logoUrl : null;
         if ($editId > 0) {
-            $query = $db->prepare('UPDATE laatijat SET nimi = ?, titteli = ?, sahkoposti = ?, puhelin = ?, yritys = ?, ytunnus = ?, osoite = ?, postinro = ?, postitmp = ? WHERE id = ?');
-            $query->bind_param('sssssssssi', $values[0], $values[1], $values[2], $values[3], $values[4], $values[5], $values[6], $values[7], $values[8], $editId);
+            $query = $db->prepare('UPDATE laatijat SET nimi = ?, titteli = ?, sahkoposti = ?, puhelin = ?, yritys = ?, ytunnus = ?, osoite = ?, postinro = ?, postitmp = ?, logo_url = ? WHERE id = ?');
+            $query->bind_param('ssssssssssi', $values[0], $values[1], $values[2], $values[3], $values[4], $values[5], $values[6], $values[7], $values[8], $logoValue, $editId);
         } else {
-            $query = $db->prepare('INSERT INTO laatijat (nimi, titteli, sahkoposti, puhelin, yritys, ytunnus, osoite, postinro, postitmp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
-            $query->bind_param('sssssssss', $values[0], $values[1], $values[2], $values[3], $values[4], $values[5], $values[6], $values[7], $values[8]);
+            $query = $db->prepare('INSERT INTO laatijat (nimi, titteli, sahkoposti, puhelin, yritys, ytunnus, osoite, postinro, postitmp, logo_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+            $query->bind_param('ssssssssss', $values[0], $values[1], $values[2], $values[3], $values[4], $values[5], $values[6], $values[7], $values[8], $logoValue);
         }
         $query->execute();
         $query->close();
+        if ($oldLogoUrl !== '' && $oldLogoUrl !== $logoUrl) {
+            deleteStoredFile($oldLogoUrl);
+        }
         header('Location: yllapito.php?saved=1');
         exit;
     }
@@ -206,7 +222,7 @@ openLayoutShell('Ylläpito – TEKRAPORTTI');
 <?php if ($message !== ''): ?><div class="alert alert-<?= adminValue(['value' => $messageType], 'value') ?>" role="alert"><?= adminValue(['value' => $message], 'value') ?></div><?php endif; ?>
 <div class="card border-0 shadow-sm mb-4" id="laatijalomake">
     <div class="card-header bg-white"><h2 class="h5 mb-0"><?= $editId > 0 ? 'Muokkaa omia tietoja' : 'Lisää laatija' ?></h2></div>
-    <form method="post" action="yllapito.php<?= $editId > 0 ? '?muokkaa=' . $editId : '' ?>">
+    <form method="post" enctype="multipart/form-data" action="yllapito.php<?= $editId > 0 ? '?muokkaa=' . $editId : '' ?>">
         <input type="hidden" name="csrf_token" value="<?= adminValue(['value' => $csrfToken], 'value') ?>"><input type="hidden" name="action" value="save"><input type="hidden" name="id" value="<?= $editId ?>">
         <div class="card-body p-4"><div class="row g-3">
             <div class="col-md-6"><label class="form-label" for="nimi">Nimi *</label><input class="form-control" id="nimi" name="nimi" value="<?= adminValue($form, 'nimi') ?>" maxlength="200" required></div>
@@ -218,6 +234,7 @@ openLayoutShell('Ylläpito – TEKRAPORTTI');
             <div class="col-12"><label class="form-label" for="osoite">Osoite</label><input class="form-control" id="osoite" name="osoite" value="<?= adminValue($form, 'osoite') ?>" maxlength="255"></div>
             <div class="col-md-4"><label class="form-label" for="postinro">Postinumero</label><input class="form-control" id="postinro" name="postinro" value="<?= adminValue($form, 'postinro') ?>" maxlength="20"></div>
             <div class="col-md-8"><label class="form-label" for="postitmp">Postitoimipaikka</label><input class="form-control" id="postitmp" name="postitmp" value="<?= adminValue($form, 'postitmp') ?>" maxlength="100"></div>
+            <div class="col-12"><label class="form-label" for="logo">Ylätunnisteen logo</label><input type="file" class="form-control" id="logo" name="logo" accept="image/jpeg,image/png,image/webp"><div class="form-text">JPG, PNG tai WebP, enintään 10 MB. Uusi logo korvaa nykyisen.</div><?php if ($logoUrl !== ''): ?><div class="d-flex align-items-center gap-3 mt-3"><img src="<?= adminValue(['value' => $logoUrl], 'value') ?>" alt="Nykyinen logo" style="max-width:220px;max-height:62px;object-fit:contain"><div class="form-check"><input class="form-check-input" type="checkbox" id="poista_logo" name="poista_logo"><label class="form-check-label" for="poista_logo">Poista nykyinen logo</label></div></div><?php endif; ?></div>
         </div></div><div class="card-footer bg-white border-0 px-4 pb-4"><button class="btn btn-primary">Tallenna</button><?php if ($editId > 0): ?> <a class="btn btn-outline-secondary" href="yllapito.php">Peruuta</a><?php endif; ?></div>
     </form>
 </div>
