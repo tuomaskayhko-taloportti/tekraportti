@@ -164,8 +164,7 @@ function pdfTableNumber(string $value): ?array
 
 function pdfTableNumberText(float $value, string $currency = ''): string
 {
-    $text = number_format($value, 2, ',', '');
-    $text = rtrim(rtrim($text, '0'), ',');
+    $text = number_format($value, 2, ',', ' ');
     return $currency === '$' ? '$' . $text : ($currency === '€' ? $text . ' €' : $text);
 }
 
@@ -604,9 +603,20 @@ function createTableChart(array $table, string $chartType, array &$temporaryImag
     }
 
     if ($chartType === 'pie') {
-        $values = array_map(static fn ($value): float => max(0, (float) ($value ?? 0)), $series[0]['values']);
+        // Piirakan sektorit ovat valittujen kustannussarakkeiden yhteissummia.
+        // Näin esimerkiksi yhden päivärivin raportissa piirakka ei muodostu
+        // vain ensimmäisestä (usein nollan sisältävästä) sarakkeesta.
+        $pieLabels = [];
+        $values = [];
+        foreach ($series as $item) {
+            $value = array_sum(array_map(static fn ($itemValue): float => max(0, (float) ($itemValue ?? 0)), $item['values']));
+            if ($value > 0) {
+                $pieLabels[] = $item['name'];
+                $values[] = $value;
+            }
+        }
         $total = array_sum($values);
-        if ($total <= 0) {
+        if ($total <= 0 || !$values) {
             imagedestroy($image);
             return null;
         }
@@ -623,8 +633,7 @@ function createTableChart(array $table, string $chartType, array &$temporaryImag
             chartText($image, 24, 10, 15, $diagramTitle, $dark, true);
         }
         $legendY = 100;
-        chartText($image, 24, 730, 55, $series[0]['name'], $dark, true);
-        foreach ($labels as $index => $label) {
+        foreach ($pieLabels as $index => $label) {
             imagefilledrectangle($image, 730, $legendY, 750, $legendY + 20, $palette[$index % count($palette)]);
             chartText($image, 20, 765, $legendY - 1, $label, $dark);
             $legendY += 32;
