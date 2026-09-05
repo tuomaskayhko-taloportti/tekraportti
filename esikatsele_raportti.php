@@ -2,6 +2,7 @@
 
 require_once __DIR__ . '/funktiot.php';
 require_once __DIR__ . '/vendor/fpdf/fpdf.php';
+require_once __DIR__ . '/vendor/fpdi/src/autoload.php';
 
 startApplicationSession();
 if (!isset($_SESSION['laatijat_id'])) {
@@ -10,6 +11,7 @@ if (!isset($_SESSION['laatijat_id'])) {
 }
 
 $laatijatId = (int) $_SESSION['laatijat_id'];
+$attachments = [];
 $currentLaatijaId = $laatijatId;
 $raporttiId = (int) ($_GET['id'] ?? 0);
 
@@ -43,6 +45,9 @@ try {
         throw new RuntimeException('Raporttia ei löytynyt.');
     }
     $laatijatId = (int) $report['laatijat_id'];
+    $query = $db->prepare('SELECT tiedosto FROM raporttiliitteet WHERE raportti_id = ? AND laatijat_id = ? ORDER BY jarjestys, id');
+    $query->bind_param('ii', $raporttiId, $laatijatId); $query->execute();
+    $attachments = $query->get_result()->fetch_all(MYSQLI_ASSOC); $query->close();
 
     $query = $db->prepare('SELECT id, otsikko, sisalto, sisaltaa_asiakastiedot, jarjestys FROM raporttirivit WHERE raportti_id = ? AND laatijat_id = ? ORDER BY jarjestys, id');
     $query->bind_param('ii', $raporttiId, $laatijatId);
@@ -71,7 +76,7 @@ try {
 
     $tablesByRow = [];
     $tables = [];
-    $query = $db->prepare('SELECT id, raporttirivi_id, otsikko, jarjestys FROM raporttitaulukot WHERE raportti_id = ? AND laatijat_id = ? ORDER BY raporttirivi_id, jarjestys, id');
+    $query = $db->prepare('SELECT id, raporttirivi_id, otsikko, reunat, leveys_tila, jarjestys FROM raporttitaulukot WHERE raportti_id = ? AND laatijat_id = ? ORDER BY raporttirivi_id, jarjestys, id');
     $query->bind_param('ii', $raporttiId, $laatijatId);
     $query->execute();
     $tableResult = $query->get_result();
@@ -84,7 +89,7 @@ try {
     }
     $query->close();
     if ($tables) {
-        $query = $db->prepare('SELECT id, taulukko_id, nimi, jarjestys FROM raporttitaulukko_sarakkeet WHERE laatijat_id = ? ORDER BY taulukko_id, jarjestys, id');
+        $query = $db->prepare('SELECT id, taulukko_id, nimi, taustavari, fonttivari, jarjestys FROM raporttitaulukko_sarakkeet WHERE laatijat_id = ? ORDER BY taulukko_id, jarjestys, id');
         $query->bind_param('i', $laatijatId);
         $query->execute();
         $result = $query->get_result();
@@ -168,6 +173,26 @@ function pdfTableNumberText(float $value, string $currency = ''): string
     return $currency === '$' ? '$' . $text : ($currency === '€' ? $text . ' €' : $text);
 }
 
+function pdfTableNumberRun(string $value): ?array
+{
+    $value = trim($value);
+    $style = '';
+    if (preg_match('/^(\*\*|\*)(.*)\1$/us', $value, $match)) {
+        $style = $match[1] === '**' ? 'B' : 'I';
+        $value = trim($match[2]);
+    }
+    $number = pdfTableNumber($value);
+    return $number === null ? null : ['value' => $number['value'], 'currency' => $number['currency'], 'style' => $style, 'text' => $value];
+}
+
+function pdfHexColor(string $value, array $fallback = [255, 255, 255]): array
+{
+    if (!preg_match('/^#([0-9a-f]{6})$/i', trim($value), $match)) {
+        return $fallback;
+    }
+    return [hexdec(substr($match[1], 0, 2)), hexdec(substr($match[1], 2, 2)), hexdec(substr($match[1], 4, 2))];
+}
+
 function pdfTableRowsWithSummaries(array $table): array
 {
     $result = [];
@@ -187,7 +212,7 @@ function pdfTableRowsWithSummaries(array $table): array
     foreach ($result as &$entry) {
         if (!$entry['summary']) {
             foreach ($table['sarakkeet'] as $column) {
-                $number = pdfTableNumber((string) ($table['solut'][(int) $entry['row']['id']][(int) $column['id']] ?? ''));
+                $number = pdfTableNumberRun((string) ($table['solut'][(int) $entry['row']['id']][(int) $column['id']] ?? ''));
                 if ($number !== null) {
                     $columnId = (int) $column['id'];
                     $running[$columnId]['value'] = ($running[$columnId]['value'] ?? 0) + $number['value'];
@@ -418,7 +443,7 @@ function pdfTextChunks(FPDF $pdf, string $text, float $width): array
 }
 
 /** Tulostaa taulukon solun markdown-muotoilulla ja sovittaa tekstin solun leveyteen. */
-function pdfWriteMarkdownCell(FPDF $pdf, string $text, float $width, float $lineHeight = 5, string $baseStyle = ''): void
+function pdfWriteMarkdownCell(FPDF $pdf, string $text, float $width, float $lineHeight = 5, string $baseStyle = '', string $alignment = 'L'): void
 {
     $availableWidth = max(1, $width);
     $startX = $pdf->GetX();
@@ -448,7 +473,7 @@ function pdfWriteMarkdownCell(FPDF $pdf, string $text, float $width, float $line
                         }
                     }
                     $pdf->SetFont('Helvetica', $baseStyle . $run['style'], 9);
-                    $pdf->Cell($tokenWidth, $lineHeight, pdfText($chunk), 0, 0, 'L');
+                    $pdf->Cell($tokenWidth, $lineHeight, pdfText($chunk), 0, 0, $alignment);
                     $lineWidth += $tokenWidth;
                 }
             }
@@ -479,7 +504,7 @@ function chartNumber(string $value): ?float
     return is_numeric($number) ? (float) $number : null;
 }
 
-function chartFontPath(bool $bold = false): ?string
+function chartFontPath(bool $bold = false, bool $italic = false): ?string
 {
     static $paths = [
         'regular' => [
@@ -492,13 +517,41 @@ function chartFontPath(bool $bold = false): ?string
             '/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf',
             '/Library/Fonts/Arial Bold.ttf',
         ],
+        'italic' => [
+            '/usr/share/fonts/truetype/dejavu/DejaVuSans-Oblique.ttf',
+            '/usr/share/fonts/truetype/liberation2/LiberationSans-Italic.ttf',
+            '/Library/Fonts/Arial Italic.ttf',
+        ],
     ];
-    foreach ($paths[$bold ? 'bold' : 'regular'] as $path) {
+    foreach ($paths[$italic ? 'italic' : ($bold ? 'bold' : 'regular')] as $path) {
         if (is_readable($path)) {
             return $path;
         }
     }
     return null;
+}
+
+function chartTextStyledCentered($image, int $size, float $centerX, int $y, string $text, int $color, string $style = ''): void
+{
+    $bold = $style === 'B';
+    $italic = $style === 'I';
+    $font = chartFontPath($bold, $italic);
+    $textWidth = chartTextWidth($size, $text, $bold);
+    $x = max(0, (int) round($centerX - $textWidth / 2));
+    if ($font !== null && function_exists('imagettftext')) {
+        imagettftext($image, $size, 0, $x, $y + $size, $color, $font, $text);
+        return;
+    }
+    imagestring($image, 5, $x, $y, pdfText($text), $color);
+}
+
+function chartMarkdownLabelParts(string $label): array
+{
+    $label = trim($label);
+    if (preg_match('/^(\\*\\*|\\*)(.*)\\1$/us', $label, $match)) {
+        return ['text' => trim($match[2]), 'style' => $match[1] === '**' ? 'B' : 'I'];
+    }
+    return ['text' => $label, 'style' => ''];
 }
 
 function chartText($image, int $size, int $x, int $y, string $text, int $color, bool $bold = false, int $angle = 0): void
@@ -555,6 +608,42 @@ function chartTextCentered($image, int $size, float $centerX, int $y, string $te
     chartText($image, $size, max(0, $x), $y, $text, $color, $bold);
 }
 
+function chartValueLabelPosition(array &$placedLabels, float $centerX, int $preferredY, string $text, int $size = 15): int
+{
+    $textWidth = chartTextWidth($size, $text, true);
+    $y = max(35, $preferredY);
+    do {
+        $overlaps = false;
+        foreach ($placedLabels as $placed) {
+            $horizontalOverlap = abs($centerX - $placed['centerX']) < (($textWidth + $placed['width']) / 2 + 4);
+            $verticalOverlap = abs($y - $placed['y']) < ($size + 5);
+            if ($horizontalOverlap && $verticalOverlap) {
+                $y -= $size + 5;
+                $overlaps = true;
+                break;
+            }
+        }
+    } while ($overlaps && $y >= 35);
+    $placedLabels[] = ['centerX' => $centerX, 'y' => $y, 'width' => $textWidth];
+    return $y;
+}
+
+function chartValueLabel(float $value, string $currency = ''): string
+{
+    $absolute = abs($value);
+    if ($absolute >= 1000000) {
+        $number = number_format($value / 1000000, 1, ',', ' ');
+        return $number . ' M' . $currency;
+    }
+    if ($absolute >= 1000) {
+        $number = number_format($value / 1000, 1, ',', ' ');
+        return $number . ' t' . $currency;
+    }
+    $number = number_format($value, 2, ',', ' ');
+    $number = rtrim(rtrim($number, '0'), ',');
+    return $number . ($currency !== '' ? ' ' . $currency : '');
+}
+
 function createTableChart(array $table, string $chartType, array &$temporaryImages, array $selectedColumnIds = []): ?string
 {
     if (!in_array($chartType, ['pie', 'bar', 'line'], true) || count($table['sarakkeet']) < 2 || !$table['rivit']) {
@@ -567,12 +656,15 @@ function createTableChart(array $table, string $chartType, array &$temporaryImag
             continue;
         }
         $values = [];
+        $currency = '';
         foreach ($table['rivit'] as $tableRow) {
             $cell = (string) ($table['solut'][(int) $tableRow['id']][(int) $column['id']] ?? '');
+            if (str_contains($cell, '€')) { $currency = '€'; }
+            if (str_contains($cell, '$')) { $currency = '$'; }
             $values[] = chartNumber($cell);
         }
         if (count(array_filter($values, static fn ($value): bool => $value !== null)) > 0) {
-            $series[] = ['name' => (string) $column['nimi'], 'values' => $values];
+            $series[] = ['name' => (string) $column['nimi'], 'values' => $values, 'currency' => $currency];
         }
     }
     if (!$series) {
@@ -588,6 +680,14 @@ function createTableChart(array $table, string $chartType, array &$temporaryImag
     $tableTitle = trim((string) ($table['otsikko'] ?? ''));
     $diagramLabels = ['pie' => 'Piirakkadiagrammi', 'bar' => 'Pylväsdiagrammi', 'line' => 'Viivadiagrammi'];
     $diagramTitle = $tableTitle !== '' ? ($diagramLabels[$chartType] . ': ' . $tableTitle) : '';
+    $currencies = array_values(array_filter(array_unique(array_map(
+        static fn (array $item): string => (string) ($item['currency'] ?? ''),
+        $series
+    ))));
+    if ($currencies) {
+        $currencySuffix = '(' . implode(' / ', $currencies) . ')';
+        $diagramTitle = $diagramTitle !== '' ? $diagramTitle . ' ' . $currencySuffix : $diagramLabels[$chartType] . ' ' . $currencySuffix;
+    }
     $palette = [
         imagecolorallocate($image, 31, 111, 235),
         imagecolorallocate($image, 241, 139, 33),
@@ -603,15 +703,18 @@ function createTableChart(array $table, string $chartType, array &$temporaryImag
     }
 
     if ($chartType === 'pie') {
-        // Piirakan sektorit ovat valittujen kustannussarakkeiden yhteissummia.
-        // Näin esimerkiksi yhden päivärivin raportissa piirakka ei muodostu
-        // vain ensimmäisestä (usein nollan sisältävästä) sarakkeesta.
+        // Piirakan sektorit ovat rivejä. Nimittäjä/selite tulee aina taulukon
+        // ensimmäisestä sarakkeesta ja valittujen numerossarakkeiden arvot
+        // summataan rivikohtaisesti.
         $pieLabels = [];
         $values = [];
-        foreach ($series as $item) {
-            $value = array_sum(array_map(static fn ($itemValue): float => max(0, (float) ($itemValue ?? 0)), $item['values']));
+        foreach ($table['rivit'] as $rowIndex => $tableRow) {
+            $value = 0.0;
+            foreach ($series as $item) {
+                $value += max(0, (float) ($item['values'][$rowIndex] ?? 0));
+            }
             if ($value > 0) {
-                $pieLabels[] = $item['name'];
+                $pieLabels[] = $labels[$rowIndex] ?? (string) ($rowIndex + 1);
                 $values[] = $value;
             }
         }
@@ -663,9 +766,12 @@ function createTableChart(array $table, string $chartType, array &$temporaryImag
             chartText($image, $chartType === 'line' ? 20 : 24, 10, 15, $diagramTitle, $dark, true);
         }
         $count = max(1, count($labels));
+        $placedValueLabels = [];
         if ($chartType === 'bar') {
             $groupWidth = ($right - $left) / $count;
-            $barWidth = min(48, max(8, $groupWidth / max(1, count($series) + 1)));
+            // Käytä ryhmän vapaata tilaa, mutta jätä pylväiden väliin selkeä
+            // marginaali ja pidä usean sarjan pylväät erillään toisistaan.
+            $barWidth = max(8, min(90, ($groupWidth * .72) / max(1, count($series))));
             foreach ($labels as $index => $label) {
                 $groupX = $left + $groupWidth * $index + $groupWidth / 2;
                 foreach ($series as $seriesIndex => $item) {
@@ -673,9 +779,13 @@ function createTableChart(array $table, string $chartType, array &$temporaryImag
                     $x = $groupX + ($seriesIndex - (count($series) - 1) / 2) * $barWidth;
                     $barTop = $bottom - ($bottom - $top) * $value / $maxValue;
                     imagefilledrectangle($image, (int) ($x - $barWidth / 2), (int) $barTop, (int) ($x + $barWidth / 2), $bottom, $palette[$seriesIndex % count($palette)]);
+                    $valueLabel = chartValueLabel($value);
+                    $valueLabelY = chartValueLabelPosition($placedValueLabels, $x, (int) $barTop - 22, $valueLabel);
+                    chartTextCentered($image, 15, $x, $valueLabelY, $valueLabel, $dark, true);
                 }
-                foreach (chartLabelLines($label) as $lineIndex => $labelLine) {
-                    chartTextCentered($image, 16, $groupX, $bottom + 12 + $lineIndex * 20, $labelLine, $dark);
+                $labelParts = chartMarkdownLabelParts($label);
+                foreach (chartLabelLines($labelParts['text']) as $lineIndex => $labelLine) {
+                    chartTextStyledCentered($image, 16, $groupX, $bottom + 12 + $lineIndex * 20, $labelLine, $dark, $labelParts['style']);
                 }
             }
         } else {
@@ -690,11 +800,15 @@ function createTableChart(array $table, string $chartType, array &$temporaryImag
                         imageline($image, (int) $previousX, (int) $previousY, (int) $x, (int) $y, $palette[$seriesIndex % count($palette)]);
                     }
                     imagefilledellipse($image, (int) $x, (int) $y, 12, 12, $palette[$seriesIndex % count($palette)]);
+                    $valueLabel = chartValueLabel($value);
+                    $valueLabelY = chartValueLabelPosition($placedValueLabels, $x, (int) $y - 22, $valueLabel);
+                    chartTextCentered($image, 15, $x, $valueLabelY, $valueLabel, $dark, true);
                     $previousX = $x;
                     $previousY = $y;
                     if ($seriesIndex === 0) {
-                        foreach (chartLabelLines($label) as $lineIndex => $labelLine) {
-                            chartTextCentered($image, 16, $x, $bottom + 12 + $lineIndex * 20, $labelLine, $dark);
+                        $labelParts = chartMarkdownLabelParts($label);
+                        foreach (chartLabelLines($labelParts['text']) as $lineIndex => $labelLine) {
+                            chartTextStyledCentered($image, 16, $x, $bottom + 12 + $lineIndex * 20, $labelLine, $dark, $labelParts['style']);
                         }
                     }
                 }
@@ -722,6 +836,36 @@ function createTableChart(array $table, string $chartType, array &$temporaryImag
     return $pngPath;
 }
 
+function compressPdfIfNeeded(string $pdfContent): string
+{
+    if (strlen($pdfContent) <= 5 * 1024 * 1024) {
+        return $pdfContent;
+    }
+    $input = tempnam(sys_get_temp_dir(), 'tekraportti-pdf-');
+    $output = tempnam(sys_get_temp_dir(), 'tekraportti-pdf-packed-');
+    if ($input === false || $output === false) {
+        if ($input !== false) { @unlink($input); }
+        if ($output !== false) { @unlink($output); }
+        return $pdfContent;
+    }
+    file_put_contents($input, $pdfContent);
+    $command = 'gs -q -dBATCH -dNOPAUSE -sDEVICE=pdfwrite -dPDFSETTINGS=/ebook'
+        . ' -sOutputFile=' . escapeshellarg($output) . ' ' . escapeshellarg($input);
+    $process = @proc_open($command, [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+    if (is_resource($process)) {
+        foreach ($pipes as $pipe) { fclose($pipe); }
+        $exitCode = proc_close($process);
+        if ($exitCode === 0 && is_file($output) && filesize($output) > 0) {
+            $packed = file_get_contents($output);
+            if (is_string($packed) && strlen($packed) < strlen($pdfContent)) {
+                $pdfContent = $packed;
+            }
+        }
+    }
+    @unlink($input); @unlink($output);
+    return $pdfContent;
+}
+
 function localImagePath(string $url): ?string
 {
     if ($url === '' || str_contains($url, '..') || preg_match('/^https?:\/\//i', $url)) {
@@ -738,6 +882,34 @@ function isPdfImagePath(?string $path): bool
 {
     return $path !== null
         && in_array(strtolower(pathinfo($path, PATHINFO_EXTENSION)), ['jpg', 'jpeg', 'png', 'gif', 'webp'], true);
+}
+
+function normalizePdfImageOrientation(string $path, array &$temporaryImages): string
+{
+    $imageSize = @getimagesize($path);
+    if (!$imageSize || $imageSize[2] !== IMAGETYPE_JPEG || !function_exists('exif_read_data')) {
+        return $path;
+    }
+    $exif = @exif_read_data($path);
+    $orientation = (int) ($exif['Orientation'] ?? 1);
+    if ($orientation < 2 || $orientation > 8) {
+        return $path;
+    }
+    $image = @imagecreatefromjpeg($path);
+    if (!$image) { return $path; }
+    $angle = match ($orientation) { 3 => 180, 6 => -90, 8 => 90, default => 0 };
+    if ($angle !== 0) { $image = imagerotate($image, $angle, 0); }
+    if (in_array($orientation, [2, 4, 5, 7], true) && function_exists('imageflip')) {
+        imageflip($image, IMG_FLIP_HORIZONTAL);
+    }
+    $temporaryPath = tempnam(sys_get_temp_dir(), 'tekraportti-cover-');
+    $jpegPath = $temporaryPath !== false ? $temporaryPath . '.jpg' : false;
+    if ($temporaryPath !== false) { @unlink($temporaryPath); }
+    $created = $jpegPath !== false && imagejpeg($image, $jpegPath, 92);
+    imagedestroy($image);
+    if (!$created) { if ($jpegPath !== false) { @unlink($jpegPath); } return $path; }
+    $temporaryImages[] = $jpegPath;
+    return $jpegPath;
 }
 
 function pdfAnnotationColor($image, string $value)
@@ -817,10 +989,44 @@ function cropPdfImage(string $path, float $targetAspect, array &$temporaryImages
         return null;
     }
 
-    $sourceWidth = $imageSize[0];
-    $sourceHeight = $imageSize[1];
+    // GD ei huomioi JPEG:n EXIF Orientation-tietoa. Normalisoi kuva ennen
+    // mittojen ja merkintöjen käsittelyä, jotta PDF vastaa esikatselua.
+    $orientation = 1;
+    if ($imageSize[2] === IMAGETYPE_JPEG && function_exists('exif_read_data')) {
+        $exif = @exif_read_data($path);
+        $orientation = (int) ($exif['Orientation'] ?? 1);
+    }
+    if ($orientation >= 2 && $orientation <= 8) {
+        $angle = match ($orientation) { 3 => 180, 6 => -90, 8 => 90, default => 0 };
+        if ($angle !== 0) { $source = imagerotate($source, $angle, 0); }
+        if (in_array($orientation, [2, 4, 5, 7], true) && function_exists('imageflip')) { imageflip($source, IMG_FLIP_HORIZONTAL); }
+    }
+    $sourceWidth = imagesx($source);
+    $sourceHeight = imagesy($source);
     $sourceAspect = $sourceWidth / $sourceHeight;
-    if ($sourceAspect > $targetAspect) {
+    $cropAnnotation = null;
+    foreach ($annotations as $annotation) { if (($annotation['type'] ?? '') === 'crop') { $cropAnnotation = $annotation; break; } }
+    if ($cropAnnotation) {
+        $x1 = min((float) $cropAnnotation['x1'], (float) $cropAnnotation['x2']); $x2 = max((float) $cropAnnotation['x1'], (float) $cropAnnotation['x2']);
+        $y1 = min((float) $cropAnnotation['y1'], (float) $cropAnnotation['y2']); $y2 = max((float) $cropAnnotation['y1'], (float) $cropAnnotation['y2']);
+        $cropX = (int) round(max(0, min(1, $x1)) * $sourceWidth);
+        $cropY = (int) round(max(0, min(1, $y1)) * $sourceHeight);
+        $cropWidth = max(1, (int) round(max(0.01, min(1, $x2 - $x1)) * $sourceWidth));
+        $cropHeight = max(1, (int) round(max(0.01, min(1, $y2 - $y1)) * $sourceHeight));
+        $cropWidth = min($cropWidth, $sourceWidth - $cropX); $cropHeight = min($cropHeight, $sourceHeight - $cropY);
+        // Säilytä tulosteen vakiomuoto: rajaus laajennetaan tarvittaessa
+        // valinnan keskeltä, jotta kuva ei veny PDF:ssä.
+        $selectedAspect = $cropWidth / $cropHeight;
+        if ($selectedAspect > $targetAspect) {
+            $newHeight = min($sourceHeight - $cropY, (int) round($cropWidth / $targetAspect));
+            $cropY = max(0, min($sourceHeight - $newHeight, (int) round($cropY + ($cropHeight - $newHeight) / 2)));
+            $cropHeight = $newHeight;
+        } elseif ($selectedAspect < $targetAspect) {
+            $newWidth = min($sourceWidth - $cropX, (int) round($cropHeight * $targetAspect));
+            $cropX = max(0, min($sourceWidth - $newWidth, (int) round($cropX + ($cropWidth - $newWidth) / 2)));
+            $cropWidth = $newWidth;
+        }
+    } elseif ($sourceAspect > $targetAspect) {
         $cropHeight = $sourceHeight;
         $cropWidth = (int) floor($sourceHeight * $targetAspect);
         $cropX = (int) floor(($sourceWidth - $cropWidth) / 2);
@@ -838,7 +1044,7 @@ function cropPdfImage(string $path, float $targetAspect, array &$temporaryImages
     $white = imagecolorallocate($output, 255, 255, 255);
     imagefill($output, 0, 0, $white);
     imagecopyresampled($output, $source, 0, 0, $cropX, $cropY, $outputWidth, $outputHeight, $cropWidth, $cropHeight);
-    drawPdfImageAnnotations($output, $annotations, $sourceWidth, $sourceHeight, $cropX, $cropY, $cropWidth, $cropHeight, $outputWidth, $outputHeight);
+    drawPdfImageAnnotations($output, array_values(array_filter($annotations, static fn (array $annotation): bool => ($annotation['type'] ?? '') !== 'crop')), $sourceWidth, $sourceHeight, $cropX, $cropY, $cropWidth, $cropHeight, $outputWidth, $outputHeight);
 
     $temporaryPath = tempnam(sys_get_temp_dir(), 'tekraportti-image-');
     $jpegPath = $temporaryPath !== false ? $temporaryPath . '.jpg' : false;
@@ -942,16 +1148,16 @@ function youtubeThumbnailPath(string $url, array &$temporaryImages): ?string
     return $jpegPath;
 }
 
-class TekraPdf extends FPDF
+class TekraPdf extends \setasign\Fpdi\Fpdi
 {
     public function drawClosedListMarker(): void
     {
         $centerX = $this->GetX() + 2.5;
         $centerY = $this->GetY() + 3;
-        $radius = 1.2;
+        $radius = 0.9;
         $this->SetDrawColor(0, 0, 0);
-        $this->SetLineWidth(0.4);
-        for ($offset = -1.0; $offset <= 1.0; $offset += 0.5) {
+        $this->SetLineWidth(0.25);
+        for ($offset = -0.75; $offset <= 0.75; $offset += 0.25) {
             $halfWidth = sqrt(max(0, $radius * $radius - $offset * $offset));
             $this->Line($centerX - $halfWidth, $centerY + $offset, $centerX + $halfWidth, $centerY + $offset);
         }
@@ -961,9 +1167,7 @@ class TekraPdf extends FPDF
 
     public function drawFilledListMarker(): void
     {
-        $this->SetFillColor(0, 0, 0);
-        $this->Rect($this->GetX() + 1.5, $this->GetY() + 2, 2.5, 2.5, 'F');
-        $this->Cell(5, 6, '', 0, 0);
+        $this->drawClosedListMarker();
     }
 
     public function drawOpenListMarker(): void
@@ -1094,11 +1298,17 @@ register_shutdown_function(static function () use (&$temporaryImages): void {
 $pdf->AddPage();
 $pdf->Ln(35);
 $coverPath = localImagePath((string) ($report['kansikuva'] ?? ''));
+if ($coverPath !== null) {
+    $coverPath = normalizePdfImageOrientation($coverPath, $temporaryImages);
+}
 if ($coverPath && in_array(strtolower(pathinfo($coverPath, PATHINFO_EXTENSION)), ['jpg', 'jpeg', 'png', 'gif'], true)) {
     $imageSize = @getimagesize($coverPath);
     if ($imageSize) {
-        $maxImageWidth = 170;
-        $maxImageHeight = 80;
+        // Kansikuva saa olla kaksi osiokuvan kokoista.
+        $maxImageWidth = $sectionImageWidth * 2;
+        // Jätä kansisivulle tilaa otsikolle, asiakastiedoille ja laatijan
+        // tiedoille, jotta ne eivät siirry omalle sivulleen.
+        $maxImageHeight = 115;
         $scale = min(
             $maxImageWidth / $imageSize[0],
             $maxImageHeight / $imageSize[1]
@@ -1215,7 +1425,10 @@ foreach ($rows as $index => $row) {
         if (!$columns) {
             continue;
         }
-        $tableWidth = $pdf->GetPageWidth() - 40;
+        $pageTableWidth = $pdf->GetPageWidth() - 40;
+        $tableWidth = (string) ($table['leveys_tila'] ?? 'keskitetty') === 'kokosivu' ? $pageTableWidth : $pageTableWidth * .88;
+        $tableLeft = 20 + (($pageTableWidth - $tableWidth) / 2);
+        $tableBorder = (int) ($table['reunat'] ?? 1) === 1 ? 1 : 0;
         $columnWidths = [];
         $widthTotal = 0.0;
         foreach ($columns as $column) {
@@ -1263,17 +1476,20 @@ foreach ($rows as $index => $row) {
         $headerY = $pdf->GetY() + 2;
         $pdf->SetFont('Helvetica', 'B', 9);
         $pdf->SetFillColor(230, 235, 242);
-        $x = 20;
+        $x = $tableLeft;
         foreach ($columns as $columnIndex => $column) {
             $pdf->SetXY($x, $headerY);
-            $pdf->Cell($columnWidths[$columnIndex], $headerHeight, '', 1, 0, 'L', true);
+            $headerColor = pdfHexColor((string) ($column['taustavari'] ?? '#ffffff'), [230, 235, 242]);
+            $pdf->SetFillColor($headerColor[0], $headerColor[1], $headerColor[2]);
+            $headerTextColor = pdfHexColor((string) ($column['fonttivari'] ?? '#232d3c'), [35, 45, 60]);
+            $pdf->SetTextColor($headerTextColor[0], $headerTextColor[1], $headerTextColor[2]);
+            $pdf->Cell($columnWidths[$columnIndex], $headerHeight, '', $tableBorder, 0, 'L', true);
             $pdf->SetXY($x + 1, $headerY + 1);
             pdfWriteMarkdownCell($pdf, (string) $column['nimi'], $columnWidths[$columnIndex] - 2, 5, 'B');
             $x += $columnWidths[$columnIndex];
         }
         $tableY = $headerY + $headerHeight;
-        $pdf->SetXY(20, $tableY);
-        $pdf->SetFillColor(255, 255, 255);
+        $pdf->SetXY($tableLeft, $tableY);
         foreach ($displayRows as $displayRow) {
             $tableRow = $displayRow['row'];
             $rowLines = 1;
@@ -1282,20 +1498,44 @@ foreach ($rows as $index => $row) {
                 $rowLines = max($rowLines, pdfTableLineCount($pdf, $cellText, $columnWidths[$columnIndex]));
             }
             $rowHeight = $rowLines * 5 + 2;
+            if ($displayRow['summary']) {
+                $rowHeight = (int) ceil($rowHeight * 1.3);
+            }
             $pdf->ensureSpace($rowHeight);
             $tableY = $pdf->GetY();
-            $x = 20;
+            $x = $tableLeft;
             $pdf->SetFont('Helvetica', $displayRow['summary'] ? 'B' : '', 9);
             foreach ($columns as $columnIndex => $column) {
                 $cellText = $displayRow['summary'] ? (string) ($displayRow['cells'][(int) $column['id']] ?? '') : (string) ($table['solut'][(int) $tableRow['id']][(int) $column['id']] ?? '');
                 $pdf->SetXY($x, $tableY);
-                $pdf->Cell($columnWidths[$columnIndex], $rowHeight, '', 1);
-                $pdf->SetXY($x + 1, $tableY + 1);
-                pdfWriteMarkdownCell($pdf, $cellText, $columnWidths[$columnIndex] - 2);
+                $cellColor = $displayRow['summary'] ? [255, 255, 255] : pdfHexColor((string) ($column['taustavari'] ?? '#ffffff'));
+                $pdf->SetFillColor($cellColor[0], $cellColor[1], $cellColor[2]);
+                $textColor = pdfHexColor((string) ($column['fonttivari'] ?? '#232d3c'), [35, 45, 60]);
+                $pdf->SetTextColor($textColor[0], $textColor[1], $textColor[2]);
+                $pdf->Cell($columnWidths[$columnIndex], $rowHeight, '', $tableBorder, 0, 'L', true);
+                $cellTextY = $tableY + 1;
+                if ($displayRow['summary']) {
+                    $cellLines = pdfTableLineCount($pdf, $cellText, $columnWidths[$columnIndex] - 2, 'B');
+                    $cellTextY = $tableY + max(1, $rowHeight - ($cellLines * 5) - 1);
+                }
+                $pdf->SetXY($x + 1, $cellTextY);
+                $cellNumber = pdfTableNumber($cellText);
+                $styledCellNumber = pdfTableNumberRun($cellText);
+                if ($cellNumber !== null || $styledCellNumber !== null) {
+                    // Cell() saa koko solun leveyden, jolloin R kohdistaa
+                    // numeron oikeaan reunaan eikä vain tekstipätkän kohdalle.
+                    $numberStyle = $displayRow['summary'] ? 'B' : (string) ($styledCellNumber['style'] ?? '');
+                    $numberText = $styledCellNumber !== null ? (string) $styledCellNumber['text'] : $cellText;
+                    $pdf->SetFont('Helvetica', $numberStyle, 9);
+                    $pdf->Cell($columnWidths[$columnIndex] - 2, 5, pdfText($numberText), 0, 0, 'R');
+                } else {
+                    pdfWriteMarkdownCell($pdf, $cellText, $columnWidths[$columnIndex] - 2, 5, $displayRow['summary'] ? 'B' : '', 'L');
+                }
                 $x += $columnWidths[$columnIndex];
             }
-            $pdf->SetXY(20, $tableY + $rowHeight);
+            $pdf->SetXY($tableLeft, $tableY + $rowHeight);
         }
+        $pdf->SetTextColor(35, 45, 60);
         $pdf->Ln(6);
         $chartType = (string) ($chartSelections[(int) $table['id']] ?? '');
         $selectedColumnIds = array_map('intval', (array) ($chartColumnSelections[(int) $table['id']] ?? []));
@@ -1420,4 +1660,35 @@ if ($title !== '') {
     $pdf->Cell(0, 7, pdfText($title), 0, 1, 'L');
 }
 
-$pdf->Output('I', 'raportti-' . $raporttiId . '.pdf');
+// Liitteet lisätään alkuperäisinä PDF-sivuina raportin allekirjoituksen jälkeen.
+foreach ($attachments as $attachment) {
+    $attachmentPath = localImagePath((string) $attachment['tiedosto']);
+    if (!$attachmentPath || !is_file($attachmentPath)) { continue; }
+    try {
+        $pageCount = $pdf->setSourceFile($attachmentPath);
+        for ($pageNumber = 1; $pageNumber <= $pageCount; $pageNumber++) {
+            $template = $pdf->importPage($pageNumber);
+            $size = $pdf->getTemplateSize($template);
+            // Skannereiden PDF-sivut voivat sisältää kaksinkertaiset mitat.
+            // Sovita jokainen sivu A4:lle mittasuhteet säilyttäen.
+            $landscape = $size['width'] > $size['height'];
+            $pageWidth = $landscape ? 297.0 : 210.0;
+            $pageHeight = $landscape ? 210.0 : 297.0;
+            $scale = min($pageWidth / $size['width'], $pageHeight / $size['height']);
+            $renderWidth = $size['width'] * $scale;
+            $renderHeight = $size['height'] * $scale;
+            $renderX = ($pageWidth - $renderWidth) / 2;
+            $renderY = ($pageHeight - $renderHeight) / 2;
+            $pdf->AddPage($landscape ? 'L' : 'P', 'A4');
+            $pdf->useTemplate($template, $renderX, $renderY, $renderWidth, $renderHeight);
+        }
+    } catch (Throwable $error) {
+        error_log('PDF-liitteen lisääminen epäonnistui: ' . $error->getMessage());
+    }
+}
+
+$pdfContent = compressPdfIfNeeded($pdf->Output('S'));
+header('Content-Type: application/pdf');
+header('Content-Disposition: inline; filename="raportti-' . $raporttiId . '.pdf"');
+header('Content-Length: ' . strlen($pdfContent));
+echo $pdfContent;

@@ -32,6 +32,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string) ($_POST['action'] ?? '') =
         $loadError = true;
     } else {
         $mediaFiles = [];
+        $attachmentFiles = [];
         $coverFile = '';
         $deleteSucceeded = false;
         try {
@@ -43,6 +44,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string) ($_POST['action'] ?? '') =
             $query->execute();
             $reportToDelete = $query->get_result()->fetch_assoc();
             $query->close();
+
+            $query = $db->prepare('SELECT tiedosto FROM raporttiliitteet WHERE raportti_id = ? AND laatijat_id = ?');
+            $query->bind_param('ii', $reportId, $laatijatId); $query->execute();
+            $attachmentFiles = $query->get_result()->fetch_all(MYSQLI_ASSOC); $query->close();
             if (!$reportToDelete) {
                 throw new RuntimeException('Raporttia ei löytynyt.');
             }
@@ -80,6 +85,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string) ($_POST['action'] ?? '') =
             deleteStoredFile($coverFile);
             foreach ($mediaFiles as $mediaFile) {
                 deleteStoredFile((string) $mediaFile['url']);
+            }
+            foreach ($attachmentFiles as $attachmentFile) {
+                deleteStoredFile((string) $attachmentFile['tiedosto']);
             }
             $redirect = 'raportit.php';
             if ($showAll) {

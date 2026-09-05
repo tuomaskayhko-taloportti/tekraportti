@@ -356,6 +356,9 @@ function getCurrentLaatija(): ?array
  */
 function storeUploadedFile(array $file, string $folder, ?array $allowedExtensions = null): string
 {
+    if (($file['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_INI_SIZE) {
+        throw new RuntimeException('Tiedosto ylittää palvelimen upload_max_filesize-rajan. Valitse pienempi tiedosto tai suurenna PHP:n upload_max_filesize-asetusta.');
+    }
     if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
         throw new RuntimeException('Tiedoston lataus epäonnistui.');
     }
@@ -414,7 +417,7 @@ function normalizeImageAnnotations(string $json): string
 
     $normalized = [];
     foreach (array_slice($decoded, 0, 200) as $annotation) {
-        if (!is_array($annotation) || !in_array((string) ($annotation['type'] ?? ''), ['arrow', 'rectangle', 'circle', 'freehand', 'text'], true)) {
+        if (!is_array($annotation) || !in_array((string) ($annotation['type'] ?? ''), ['arrow', 'rectangle', 'circle', 'freehand', 'text', 'crop'], true)) {
             continue;
         }
         $item = [
@@ -534,6 +537,43 @@ function sendReportShareNotification(string $recipientEmail, string $itemTitle, 
             : '';
         error_log('Raportin jakamisilmoituksen lähetys epäonnistui: ' . $error->getMessage()
             . ($mailError !== '' ? ' | PHPMailer: ' . $mailError : ''));
+        return false;
+    }
+}
+
+/** Lähettää etusivun käyttöönottopyynnön asiakaspalveluun. */
+function sendServiceRequest(string $name, string $phone, string $email, string $company = '', string $businessId = '', string $message = ''): bool
+{
+    $mailer = null;
+    try {
+        $settings = getApplicationSecrets();
+        $sender = trim((string) $settings['mailUser']);
+        if (!filter_var($sender, FILTER_VALIDATE_EMAIL) || trim((string) $settings['mailServer']) === '' || (string) $settings['mailPWD'] === '') {
+            throw new RuntimeException('Sähköpostin SMTP-asetukset puuttuvat.');
+        }
+        $port = filter_var($settings['mailPort'], FILTER_VALIDATE_INT);
+        if ($port === false || $port < 1 || $port > 65535) {
+            throw new RuntimeException('Sähköpostin SMTP-portti on virheellinen.');
+        }
+        $encryption = strtolower(trim((string) $settings['mailEncryption']));
+        $secure = match ($encryption) {
+            'ssl', 'smtps' => \PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_SMTPS,
+            'tls', 'starttls' => \PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS,
+            'none', '' => '',
+            default => throw new RuntimeException('Sähköpostin SMTP-salaus on virheellinen.'),
+        };
+        $mailer = new \PHPMailer\PHPMailer\PHPMailer(true);
+        $mailer->isSMTP(); $mailer->Host = trim((string) $settings['mailServer']); $mailer->SMTPAuth = true;
+        $mailer->Username = $sender; $mailer->Password = (string) $settings['mailPWD']; $mailer->Port = $port;
+        $mailer->SMTPSecure = $secure; $mailer->CharSet = \PHPMailer\PHPMailer\PHPMailer::CHARSET_UTF8;
+        $mailer->setFrom($sender, 'TEKRAPORTTI'); $mailer->addAddress('asiakaspalvelu@taloportti.fi');
+        $mailer->addReplyTo($email, $name); $mailer->Subject = 'Uusi TEKRAPORTTI-käyttöönottopyyntö';
+        $mailer->Body = "Uusi yhteydenotto TEKRAPORTTI-palveluun.\n\nNimi: {$name}\nPuhelin: {$phone}\nSähköposti: {$email}\nYritys: {$company}\nY-tunnus: {$businessId}\n" . ($message !== '' ? "\nViesti:\n{$message}\n" : '');
+        $mailer->isHTML(false);
+        return $mailer->send();
+    } catch (Throwable $error) {
+        $mailError = $mailer instanceof \PHPMailer\PHPMailer\PHPMailer ? $mailer->ErrorInfo : '';
+        error_log('Käyttöönottopyynnön lähetys epäonnistui: ' . $error->getMessage() . ($mailError !== '' ? ' | PHPMailer: ' . $mailError : ''));
         return false;
     }
 }

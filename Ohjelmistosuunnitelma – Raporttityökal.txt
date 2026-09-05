@@ -15,6 +15,7 @@ Järjestelmän pääasialliset kokonaisuudet ovat:
 * raporttien hallinta
 * raportin sisältöosioiden hallinta
 * kuvien ja videoiden liittäminen
+* PDF-liitteiden liittäminen raportin loppuun
 * raportin PDF-generointi
 * raporttien asiakas- ja projektikohtainen järjestäminen
 
@@ -296,6 +297,22 @@ Kuvasta voidaan tallentaa:
 
 PDF:ään käytetään optimoitua versiota, jotta esimerkiksi puhelimella otettu 8 MB kuva ei paisuta raporttia järjettömän suureksi.
 
+Kuvan EXIF Orientation -tieto huomioidaan sekä muokkausnäkymässä että PDF-tulosteessa. Puhelimella otettu pystykuva ei siten käänny PDF:ssä kyljelleen.
+
+Kuvan muokkausikkunassa kuva sovitetaan kokonaisuudessaan näkyviin käytettävissä olevaan tilaan. Kuvan päälle voidaan lisätä merkintöjä, kuten nuolia, suorakulmioita, ympyröitä, vapaata piirtoa ja tekstiä.
+
+Kuvasta voidaan lisäksi valita rajaus. Rajaus tallennetaan kuvan yhteyteen, ja sitä käytetään PDF:ssä ilman, että raportin vakiintunut osiokuvan tulostuskoko muuttuu.
+
+Kansikuva käsitellään samalla EXIF-suunnan korjauksella. Kansikuva voi olla osiokuvia suurempi, mutta sen kokoa rajoitetaan niin, että kansilehden otsikko-, asiakas- ja laatijatiedot mahtuvat samalle sivulle.
+
+## 11.2 PDF-liitteet
+
+Raportille voidaan lisätä yksi tai useampi PDF-liite. Liitteet voidaan valita tiedostoselaimella tai raahata drag and drop -toiminnolla liitekenttään.
+
+Liitteet tallennetaan raporttikohtaisessa lisäysjärjestyksessä. Käyttöliittymässä liite voidaan poistaa, jolloin myös palvelimelle tallennettu tiedosto poistetaan.
+
+PDF-esikatselussa liitteet lisätään alkuperäisinä PDF-sivuina raportin varsinaisen sisällön ja allekirjoitustietojen jälkeen. Jokainen liitesivu sovitetaan A4-kokoiselle pysty- tai vaakasivulle mittasuhteet säilyttäen. Tämä koskee myös skannattuja PDF:iä, joiden sivumitat voivat olla tavallista suuremmat.
+
 ---
 
 # 12. Videolinkit
@@ -362,6 +379,7 @@ PDF sisältää:
 5. kuvat
 6. videolinkit
 7. lopputiedot
+8. PDF-liitteet allekirjoituksen jälkeen
 
 PDF:n sivuille voidaan kansilehteä lukuun ottamatta lisätä:
 
@@ -376,6 +394,8 @@ PDF:ää ei ole välttämätöntä tallentaa pysyvästi palvelimelle.
 Se voidaan generoida tarvittaessa tietokannassa olevasta raportista.
 
 Tämä vähentää riskiä siitä, että muokatun raportin tietokantaversio ja vanha PDF-versio eroavat toisistaan.
+
+Jos muodostettavan PDF:n koko ylittää 5 MB, sitä voidaan yrittää pakata Ghostscriptillä. Pakkaus tehdään vain, jos palvelimelle on asennettu `gs`-komento. Pakkaus säilyttää PDF:n sivurakenteen ja liitteet, mutta voi heikentää rasterikuvien laatua hieman.
 
 ---
 
@@ -618,6 +638,27 @@ Linkkiä käytettäessä käytetään `url`-kenttää.
 
 Tämä rakenne mahdollistaa useita kuvia ja videoita samalla raporttirivillä ilman tietokannan venyttämistä omituiseksi sarakeviidakoksi.
 
+## 22.1 Raportin PDF-liitteet
+
+PDF-liitteille käytetään omaa taulua:
+
+```text
+raporttiliitteet
+---------------
+id
+laatijat_id
+raportti_id
+tiedosto
+alkuperainen_nimi
+tiedostokoko
+jarjestys
+created_at
+```
+
+Liitteen `tiedosto` sisältää palvelimelle tallennetun satunnaisen tiedostonimen tai polun. `alkuperainen_nimi` näytetään käyttöliittymässä. `jarjestys` määrää liitteiden järjestyksen raportin lopussa.
+
+Tuettu tiedostomuoto on PDF ja enimmäiskoko on 10 MB liitettä kohden. Tiedoston MIME-tyyppi tarkistetaan palvelimella ennen tallennusta.
+
 ---
 
 # 23. Kirjautumiskoodit
@@ -656,6 +697,8 @@ laatijat
           +-- raporttirivit
                  |
                  +-- raporttimedia
+          |
+          +-- raporttiliitteet
 ```
 
 Lisäksi:

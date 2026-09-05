@@ -8,6 +8,12 @@ if (!isset($_SESSION['laatijat_id'])) {
     exit;
 }
 
+// Muokkauslomakkeissa on istuntokohtainen CSRF-tunniste ja tiedostokenttiä.
+// Estä selainta käyttämästä poiston tai tallennuksen jälkeen vanhaa lomakesivua.
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache');
+header('Expires: 0');
+
 $laatijatId = (int) $_SESSION['laatijat_id'];
 $currentLaatijaId = $laatijatId;
 $raporttiId = (int) ($_GET['id'] ?? $_POST['raportti_id'] ?? 0);
@@ -22,6 +28,7 @@ $projects = [];
 $sharedEmails = [];
 $rows = [];
 $media = [];
+$attachments = [];
 $tables = [];
 $summaryRows = [];
 if ((string) ($_GET['saved'] ?? '') === '1') {
@@ -78,7 +85,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = (string) ($_POST['action'] ?? '');
     $postedToken = (string) ($_POST['csrf_token'] ?? '');
 
-    if (!hash_equals($csrfToken, $postedToken)) {
+    // PHP hylkää koko multipart-lomakkeen, jos post_max_size ylittyy.
+    // Tällöin myös CSRF-kenttä puuttuu ja virhe näkyisi muuten harhaanjohtavasti
+    // vanhentuneena pyyntönä.
+    $postMaxSize = (string) ini_get('post_max_size');
+    $postMaxBytes = static function (string $value): int {
+        $value = trim($value);
+        if ($value === '') { return 0; }
+        $unit = strtolower(substr($value, -1));
+        $number = (float) $value;
+        return (int) round($number * match ($unit) {
+            'g' => 1024 ** 3,
+            'm' => 1024 ** 2,
+            'k' => 1024,
+            default => 1,
+        });
+    };
+    if (($_SERVER['CONTENT_LENGTH'] ?? 0) > 0 && $postMaxBytes($postMaxSize) > 0
+        && (int) $_SERVER['CONTENT_LENGTH'] > $postMaxBytes($postMaxSize)) {
+        $message = 'Lähetettävä tiedosto on liian suuri palvelimen asetuksiin nähden. Valitse pienempi kuva tai suurenna PHP:n post_max_size-asetusta.';
+    } elseif (!hash_equals($csrfToken, $postedToken)) {
         $message = 'Pyyntö vanheni. Lataa sivu uudelleen ja yritä uudestaan.';
     } else {
         try {
@@ -293,7 +319,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } elseif (in_array($action, ['update-table', 'add-table-column', 'add-table-row', 'delete-table-column', 'delete-table-row', 'add-table-summary', 'delete-table-summary'], true)) {
                 $tableId = (int) ($_POST['taulukko_id'] ?? 0);
                 $tableTitle = trim((string) ($_POST['taulukko_otsikko'] ?? ''));
+                $tableBorders = isset($_POST['taulukko_reunat']) ? 1 : 0;
+                $tableWidthMode = (string) ($_POST['taulukko_leveys'] ?? 'keskitetty');
                 $columnNames = $_POST['sarake_nimi'] ?? [];
+                $columnColors = $_POST['sarake_taustavari'] ?? [];
+                $columnFontColors = $_POST['sarake_fonttivari'] ?? [];
                 $cellValues = $_POST['solu'] ?? [];
                 $newColumnName = trim((string) ($_POST['uusi_sarake_nimi'] ?? ''));
                 $summaryType = (string) ($_POST['yhteenveto_tyyppi'] ?? '');
@@ -301,20 +331,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($action === 'add-table-column' && $newColumnName === '') {
                     throw new RuntimeException('Anna sarakkeelle nimi.');
                 }
+                if (!in_array($tableWidthMode, ['keskitetty', 'kokosivu'], true)) {
+                    throw new RuntimeException('Valitse taulukon leveys.');
+                }
                 $query = $db->prepare('SELECT id FROM raporttitaulukot WHERE id = ? AND raportti_id = ? AND laatijat_id = ? LIMIT 1');
                 $query->bind_param('iii', $tableId, $raporttiId, $laatijatId); $query->execute();
                 $tableExists = (bool) $query->get_result()->fetch_assoc(); $query->close();
                 if (!$tableExists) {
                     throw new RuntimeException('Taulukkoa ei löytynyt.');
                 }
-                $query = $db->prepare('UPDATE raporttitaulukot SET otsikko = ? WHERE id = ? AND raportti_id = ? AND laatijat_id = ?');
-                $query->bind_param('siii', $tableTitle, $tableId, $raporttiId, $laatijatId); $query->execute(); $query->close();
-                $query = $db->prepare('UPDATE raporttitaulukko_sarakkeet SET nimi = ? WHERE id = ? AND taulukko_id = ? AND laatijat_id = ?');
+                $query = $db->prepare('UPDATE raporttitaulukot SET otsikko = ?, reunat = ?, leveys_tila = ? WHERE id = ? AND raportti_id = ? AND laatijat_id = ?');
+                $query->bind_param('sisiii', $tableTitle, $tableBorders, $tableWidthMode, $tableId, $raporttiId, $laatijatId); $query->execute(); $query->close();
+                $query = $db->prepare('UPDATE raporttitaulukko_sarakkeet SET nimi = ?, taustavari = ?, fonttivari = ? WHERE id = ? AND taulukko_id = ? AND laatijat_id = ?');
                 foreach ((array) ($columnNames[$tableId] ?? []) as $columnId => $columnName) {
                     $columnId = (int) $columnId;
                     $columnName = trim((string) $columnName);
                     if ($columnId > 0 && $columnName !== '') {
-                        $query->bind_param('siii', $columnName, $columnId, $tableId, $laatijatId); $query->execute();
+                        $columnColor = strtolower(trim((string) (($columnColors[$tableId][$columnId] ?? '#ffffff'))));
+                        if (!preg_match('/^#[0-9a-f]{6}$/', $columnColor)) { $columnColor = '#ffffff'; }
+                        $fontColor = strtolower(trim((string) (($columnFontColors[$tableId][$columnId] ?? '#232d3c'))));
+                        if (!preg_match('/^#[0-9a-f]{6}$/', $fontColor)) { $fontColor = '#232d3c'; }
+                        $query->bind_param('sssiii', $columnName, $columnColor, $fontColor, $columnId, $tableId, $laatijatId); $query->execute();
                     }
                 }
                 $query->close();
@@ -455,6 +492,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $query->close();
                 $files = $type === 'videolinkki' ? [null] : $_FILES['media_files']['name'];
                 foreach ($files as $fileIndex => $_fileName) {
+                    if ($type !== 'videolinkki' && (int) ($_FILES['media_files']['error'][$fileIndex] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
+                        continue;
+                    }
                     $mediaUrl = $url;
                     if ($type !== 'videolinkki') {
                         $uploadedFile = [
@@ -509,6 +549,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $query->close();
                 $message = 'Kuvan merkinnät tallennettiin.';
                 $messageType = 'success';
+            } elseif ($action === 'add-attachment') {
+                if (!isset($_FILES['liite_tiedosto']['name']) || !is_array($_FILES['liite_tiedosto']['name'])) {
+                    throw new RuntimeException('Valitse PDF-liite.');
+                }
+                $query = $db->prepare('SELECT COALESCE(MAX(jarjestys), 0) + 1 AS seuraava FROM raporttiliitteet WHERE raportti_id = ? AND laatijat_id = ?');
+                $query->bind_param('ii', $raporttiId, $laatijatId); $query->execute();
+                $order = (int) $query->get_result()->fetch_assoc()['seuraava']; $query->close();
+                foreach ($_FILES['liite_tiedosto']['name'] as $index => $_name) {
+                    $file = ['name' => $_FILES['liite_tiedosto']['name'][$index], 'type' => $_FILES['liite_tiedosto']['type'][$index], 'tmp_name' => $_FILES['liite_tiedosto']['tmp_name'][$index], 'error' => $_FILES['liite_tiedosto']['error'][$index], 'size' => $_FILES['liite_tiedosto']['size'][$index]];
+                    $stored = storeUploadedFile($file, 'liitteet', ['application/pdf' => 'pdf']);
+                    $query = $db->prepare('INSERT INTO raporttiliitteet (laatijat_id, raportti_id, tiedosto, alkuperainen_nimi, tiedostokoko, jarjestys) VALUES (?, ?, ?, ?, ?, ?)');
+                    $size = (int) $file['size']; $name = (string) $file['name'];
+                    $query->bind_param('iissii', $laatijatId, $raporttiId, $stored, $name, $size, $order); $query->execute(); $query->close(); $order++;
+                }
+                $message = 'Liite lisättiin.'; $messageType = 'success';
+            } elseif ($action === 'delete-attachment') {
+                $attachmentId = (int) ($_POST['liite_id'] ?? 0);
+                $query = $db->prepare('SELECT tiedosto FROM raporttiliitteet WHERE id = ? AND raportti_id = ? AND laatijat_id = ? LIMIT 1');
+                $query->bind_param('iii', $attachmentId, $raporttiId, $laatijatId); $query->execute(); $attachment = $query->get_result()->fetch_assoc(); $query->close();
+                $query = $db->prepare('DELETE FROM raporttiliitteet WHERE id = ? AND raportti_id = ? AND laatijat_id = ?');
+                $query->bind_param('iii', $attachmentId, $raporttiId, $laatijatId); $query->execute(); $query->close();
+                if ($attachment) deleteStoredFile((string) $attachment['tiedosto']);
+                $message = 'Liite poistettiin.'; $messageType = 'success';
             }
         } catch (Throwable $error) {
             $message = $error->getMessage();
@@ -527,6 +590,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $messageType === 'success') {
             'update-row', 'delete-row', 'add-media', 'add-table', 'update-media-annotations' => 'osio-' . (int) ($_POST['rivi_id'] ?? 0),
             'update-table', 'add-table-column', 'add-table-row',
             'delete-table-column', 'delete-table-row', 'add-table-summary', 'delete-table-summary', 'delete-table' => 'taulukko-' . (int) ($_POST['taulukko_id'] ?? 0),
+            'add-attachment', 'delete-attachment' => 'liitteet',
             default => '',
         };
     }
@@ -553,11 +617,14 @@ try {
     $query = $db->prepare('SELECT id, raporttirivi_id, tyyppi, url, kuvateksti, merkinnat_json FROM raporttimedia WHERE raportti_id = ? AND laatijat_id = ? ORDER BY raporttirivi_id, jarjestys, id');
     $query->bind_param('ii', $raporttiId, $laatijatId); $query->execute(); $result = $query->get_result();
     while ($item = $result->fetch_assoc()) { $media[] = $item; } $query->close();
-    $query = $db->prepare('SELECT id, raporttirivi_id, otsikko, jarjestys FROM raporttitaulukot WHERE raportti_id = ? AND laatijat_id = ? ORDER BY raporttirivi_id, jarjestys, id');
+    $query = $db->prepare('SELECT id, tiedosto, alkuperainen_nimi, tiedostokoko FROM raporttiliitteet WHERE raportti_id = ? AND laatijat_id = ? ORDER BY jarjestys, id');
+    $query->bind_param('ii', $raporttiId, $laatijatId); $query->execute();
+    $attachments = $query->get_result()->fetch_all(MYSQLI_ASSOC); $query->close();
+    $query = $db->prepare('SELECT id, raporttirivi_id, otsikko, reunat, leveys_tila, jarjestys FROM raporttitaulukot WHERE raportti_id = ? AND laatijat_id = ? ORDER BY raporttirivi_id, jarjestys, id');
     $query->bind_param('ii', $raporttiId, $laatijatId); $query->execute(); $result = $query->get_result();
         while ($item = $result->fetch_assoc()) { $item['sarakkeet'] = []; $item['rivit'] = []; $item['solut'] = []; $item['yhteenvetorivit'] = []; $tables[(int) $item['id']] = $item; } $query->close();
     if ($tables) {
-        $query = $db->prepare('SELECT id, taulukko_id, nimi, jarjestys FROM raporttitaulukko_sarakkeet WHERE laatijat_id = ? ORDER BY taulukko_id, jarjestys, id');
+        $query = $db->prepare('SELECT id, taulukko_id, nimi, taustavari, fonttivari, jarjestys FROM raporttitaulukko_sarakkeet WHERE laatijat_id = ? ORDER BY taulukko_id, jarjestys, id');
         $query->bind_param('i', $laatijatId); $query->execute(); $result = $query->get_result();
         while ($item = $result->fetch_assoc()) { if (isset($tables[(int) $item['taulukko_id']])) { $tables[(int) $item['taulukko_id']]['sarakkeet'][] = $item; } } $query->close();
         $query = $db->prepare('SELECT id, taulukko_id, jarjestys FROM raporttitaulukko_rivit WHERE laatijat_id = ? ORDER BY taulukko_id, jarjestys, id');
@@ -645,6 +712,7 @@ openLayoutShell('Muokkaa raporttia – TEKRAPORTTI');
 #image-annotation-canvas {
     display: block;
     max-width: 100%;
+    max-height: 60vh;
     height: auto;
     margin: auto;
     background: #fff;
@@ -675,6 +743,7 @@ openLayoutShell('Muokkaa raporttia – TEKRAPORTTI');
 .report-chart-options {
     position: relative;
 }
+.table-no-borders > :not(caption) > * > * { border: 0 !important; }
 .report-chart-options > summary {
     cursor: pointer;
     max-width: 180px;
@@ -798,8 +867,9 @@ openLayoutShell('Muokkaa raporttia – TEKRAPORTTI');
                 </div>
                 <form method="post" action="muokkaa_raportti.php?id=<?= $raporttiId ?>">
                     <input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="taulukko_id" value="<?= (int) $table['id'] ?>">
-                    <input class="form-control form-control-sm mb-2" name="taulukko_otsikko" value="<?= editValue($table['otsikko']) ?>" placeholder="Taulukon otsikko">
-                    <div class="table-responsive"><table class="table table-bordered table-sm align-middle mb-2"><thead><tr><?php foreach ($table['sarakkeet'] as $column): ?><th><input class="form-control form-control-sm" name="sarake_nimi[<?= (int) $table['id'] ?>][<?= (int) $column['id'] ?>]" value="<?= editValue($column['nimi']) ?>"><div class="text-end mt-1"><button class="btn btn-link btn-sm text-danger p-0" type="submit" name="action" value="delete-table-column" onclick="this.form.sarake_id.value='<?= (int) $column['id'] ?>';">Poista</button></div></th><?php endforeach; ?></tr></thead><tbody><?php foreach ($table['rivit'] as $tableRow): ?><tr><?php foreach ($table['sarakkeet'] as $column): ?><td><textarea class="form-control form-control-sm" name="solu[<?= (int) $table['id'] ?>][<?= (int) $tableRow['id'] ?>][<?= (int) $column['id'] ?>]" rows="2" data-markdown-editor><?= editValue($table['solut'][(int) $tableRow['id']][(int) $column['id']] ?? '') ?></textarea></td><?php endforeach; ?><td class="border-0 p-1"><button class="btn btn-link btn-sm text-danger" type="submit" name="action" value="delete-table-row" onclick="this.form.taulukko_rivi_id.value='<?= (int) $tableRow['id'] ?>';">Poista rivi</button></td></tr><?php endforeach; ?></tbody></table></div>
+                    <div class="row g-2 mb-2 align-items-end"><div class="col-md-5"><label class="form-label mb-1" for="taulukko-leveys-<?= (int) $table['id'] ?>">Taulukon leveys</label><select class="form-select form-select-sm" id="taulukko-leveys-<?= (int) $table['id'] ?>" name="taulukko_leveys"><option value="keskitetty" <?= ($table['leveys_tila'] ?? 'keskitetty') === 'keskitetty' ? 'selected' : '' ?>>Keskitetty</option><option value="kokosivu" <?= ($table['leveys_tila'] ?? '') === 'kokosivu' ? 'selected' : '' ?>>Koko sivun levyinen</option></select></div><div class="col-md-4"><div class="form-check mb-1"><input class="form-check-input" type="checkbox" id="taulukko-reunat-<?= (int) $table['id'] ?>" name="taulukko_reunat" <?= (int) ($table['reunat'] ?? 1) === 1 ? 'checked' : '' ?>><label class="form-check-label" for="taulukko-reunat-<?= (int) $table['id'] ?>">Reunukset</label></div></div></div>
+                    <div class="row g-2 mb-2"><div class="col-12"><span class="small text-muted">Sarakkeiden fonttivärit:</span><?php foreach ($table['sarakkeet'] as $column): ?><label class="small text-muted ms-3"><?= editValue($column['nimi']) ?> <input type="color" name="sarake_fonttivari[<?= (int) $table['id'] ?>][<?= (int) $column['id'] ?>]" value="<?= editValue(preg_match('/^#[0-9a-fA-F]{6}$/', (string) ($column['fonttivari'] ?? '')) ? $column['fonttivari'] : '#232d3c') ?>"></label><?php endforeach; ?></div></div>
+                    <div class="table-responsive"><table class="table table-sm align-middle mb-2 <?= (int) ($table['reunat'] ?? 1) === 1 ? 'table-bordered' : 'table-no-borders' ?>"><thead><tr><?php foreach ($table['sarakkeet'] as $column): ?><th style="background-color:<?= editValue(preg_match('/^#[0-9a-fA-F]{6}$/', (string) ($column['taustavari'] ?? '')) ? $column['taustavari'] : '#ffffff') ?>"><input class="form-control form-control-sm" name="sarake_nimi[<?= (int) $table['id'] ?>][<?= (int) $column['id'] ?>]" value="<?= editValue($column['nimi']) ?>"><label class="small text-muted d-flex align-items-center gap-1 mt-1">Taustaväri <input type="color" name="sarake_taustavari[<?= (int) $table['id'] ?>][<?= (int) $column['id'] ?>]" value="<?= editValue(preg_match('/^#[0-9a-fA-F]{6}$/', (string) ($column['taustavari'] ?? '')) ? $column['taustavari'] : '#ffffff') ?>"></label><div class="text-end mt-1"><button class="btn btn-link btn-sm text-danger p-0" type="submit" name="action" value="delete-table-column" onclick="this.form.sarake_id.value='<?= (int) $column['id'] ?>';">Poista</button></div></th><?php endforeach; ?></tr></thead><tbody><?php foreach ($table['rivit'] as $tableRow): ?><tr><?php foreach ($table['sarakkeet'] as $column): ?><td style="background-color:<?= editValue(preg_match('/^#[0-9a-fA-F]{6}$/', (string) ($column['taustavari'] ?? '')) ? $column['taustavari'] : '#ffffff') ?>"><textarea class="form-control form-control-sm" name="solu[<?= (int) $table['id'] ?>][<?= (int) $tableRow['id'] ?>][<?= (int) $column['id'] ?>]" rows="2" data-markdown-editor><?= editValue($table['solut'][(int) $tableRow['id']][(int) $column['id']] ?? '') ?></textarea></td><?php endforeach; ?><td class="border-0 p-1"><button class="btn btn-link btn-sm text-danger" type="submit" name="action" value="delete-table-row" onclick="this.form.taulukko_rivi_id.value='<?= (int) $tableRow['id'] ?>';">Poista rivi</button></td></tr><?php endforeach; ?></tbody></table></div>
                     <?php if ($table['yhteenvetorivit']): ?><div class="small fw-semibold mt-3">Summarivit</div><?php foreach ($table['yhteenvetorivit'] as $summary): ?><div class="border rounded p-2 mt-2"><div class="row g-2 align-items-center"><div class="col-md-2"><select class="form-select form-select-sm" name="yhteenveto[<?= (int) $summary['id'] ?>][tyyppi]"><option value="summa" <?= $summary['tyyppi'] === 'summa' ? 'selected' : '' ?>>Summarivi</option><option value="valisummaa" <?= $summary['tyyppi'] === 'valisummaa' ? 'selected' : '' ?>>Välisummaa</option></select></div><div class="col-md-3"><select class="form-select form-select-sm" name="yhteenveto[<?= (int) $summary['id'] ?>][jalkeen_rivi_id]"><option value="0">Taulukon loppuun</option><?php foreach ($table['rivit'] as $tableRow): ?><option value="<?= (int) $tableRow['id'] ?>" <?= (int) $summary['jalkeen_rivi_id'] === (int) $tableRow['id'] ? 'selected' : '' ?>>Rivin <?= editValue($table['solut'][(int) $tableRow['id']][(int) $table['sarakkeet'][0]['id']] ?? '') ?> jälkeen</option><?php endforeach; ?></select></div><div class="col-md-6"><?php foreach ($table['sarakkeet'] as $column): ?><label class="me-2"><input type="checkbox" name="yhteenveto[<?= (int) $summary['id'] ?>][sarakkeet][]" value="<?= (int) $column['id'] ?>" <?= in_array((int) $column['id'], $summary['sarakkeet'], true) ? 'checked' : '' ?>> <?= editValue($column['nimi']) ?></label><?php endforeach; ?></div><div class="col-md-1 text-end"><button class="btn btn-link btn-sm text-danger" type="submit" name="action" value="delete-table-summary" onclick="this.form.yhteenvetorivi_id.value='<?= (int) $summary['id'] ?>';">Poista</button></div></div></div><?php endforeach; ?><?php endif; ?>
                     <input type="hidden" name="sarake_id" value=""><input type="hidden" name="taulukko_rivi_id" value=""><input type="hidden" name="yhteenvetorivi_id" value=""><div class="d-flex flex-wrap gap-2 align-items-center"><button class="btn btn-primary btn-sm" type="submit" name="action" value="update-table">Tallenna taulukko</button><input class="form-control form-control-sm" style="max-width:220px" name="uusi_sarake_nimi" placeholder="Uuden sarakkeen nimi"><button class="btn btn-outline-secondary btn-sm" type="submit" name="action" value="add-table-column">Tallenna ja lisää sarake</button><button class="btn btn-outline-secondary btn-sm" type="submit" name="action" value="add-table-row">Tallenna ja lisää rivi</button></div>
                     <div class="border rounded p-2 mt-2"><div class="small fw-semibold mb-1">Lisää summarivi</div><div class="row g-2"><div class="col-md-2"><select class="form-select form-select-sm" name="yhteenveto_tyyppi"><option value="summa">Summarivi</option><option value="valisummaa">Välisummaa</option></select></div><div class="col-md-3"><select class="form-select form-select-sm" name="yhteenveto_jalkeen_rivi_id"><option value="0">Taulukon loppuun</option><?php foreach ($table['rivit'] as $tableRow): ?><option value="<?= (int) $tableRow['id'] ?>">Rivin <?= editValue($table['solut'][(int) $tableRow['id']][(int) $table['sarakkeet'][0]['id']] ?? '') ?> jälkeen</option><?php endforeach; ?></select></div><div class="col-md-6"><?php foreach ($table['sarakkeet'] as $column): ?><label class="me-2"><input type="checkbox" name="yhteenveto_sarakkeet[]" value="<?= (int) $column['id'] ?>"> <?= editValue($column['nimi']) ?></label><?php endforeach; ?></div><div class="col-md-1"><button class="btn btn-outline-secondary btn-sm w-100" type="submit" name="action" value="add-table-summary">Lisää</button></div></div></div>
@@ -809,6 +879,15 @@ openLayoutShell('Muokkaa raporttia – TEKRAPORTTI');
         <form method="post" action="muokkaa_raportti.php?id=<?= $raporttiId ?>" class="d-flex gap-2 mt-3"><input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="add-table"><input type="hidden" name="rivi_id" value="<?= (int) $row['id'] ?>"><input class="form-control form-control-sm" name="taulukko_otsikko" placeholder="Uuden taulukon otsikko"><button class="btn btn-outline-primary btn-sm">+ Lisää taulukko</button></form>
     </div></details>
 <?php endforeach; ?>
+
+<section class="card border-0 shadow-sm mb-4" id="liitteet">
+    <div class="card-header bg-white"><h2 class="h5 mb-0">Raportin PDF-liitteet</h2></div>
+    <div class="card-body p-4">
+        <?php if (!$attachments): ?><p class="text-muted mb-3">Ei liitteitä.</p><?php endif; ?>
+        <?php foreach ($attachments as $attachment): ?><div class="d-flex align-items-center gap-2 border-bottom py-2"><span class="flex-grow-1"><?= editValue($attachment['alkuperainen_nimi']) ?></span><small class="text-muted"><?= number_format((int) $attachment['tiedostokoko'] / 1024, 0, ',', ' ') ?> kt</small><form method="post" action="muokkaa_raportti.php?id=<?= $raporttiId ?>" onsubmit="return confirm('Poistetaanko liite?');"><input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="delete-attachment"><input type="hidden" name="liite_id" value="<?= (int) $attachment['id'] ?>"><input type="hidden" name="return_anchor" value="liitteet"><button class="btn btn-link btn-sm text-danger">Poista</button></form></div><?php endforeach; ?>
+        <form method="post" enctype="multipart/form-data" action="muokkaa_raportti.php?id=<?= $raporttiId ?>" class="row g-2 mt-3"><input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="add-attachment"><input type="hidden" name="return_anchor" value="liitteet"><div class="col-md-10"><div class="file-drop-zone" data-file-drop><input type="file" class="form-control" name="liite_tiedosto[]" accept="application/pdf,.pdf" multiple required><div class="file-drop-zone-hint">Raahaa PDF-tiedostot tähän tai valitse tiedostot.</div></div><div class="form-text">PDF-tiedostoja, enintään 10 MB/tiedosto. Liitteet tulevat raportin loppuun allekirjoituksen jälkeen valitussa järjestyksessä.</div></div><div class="col-md-2"><button class="btn btn-outline-primary w-100">+ Lisää liitteet</button></div></form>
+    </div>
+</section>
 
 <span id="uusi-osio"></span>
 <div class="card border-0 shadow-sm"><div class="card-header bg-white"><h2 class="h5 mb-0">Lisää uusi osio</h2></div><form method="post" action="muokkaa_raportti.php?id=<?= $raporttiId ?>"><input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="add-row"><div class="card-body p-4"><input class="form-control mb-3" name="rivi_otsikko" placeholder="Osion otsikko" maxlength="255" required><textarea class="form-control mb-3" name="rivi_sisalto" rows="6" placeholder="Tekstisisältö" data-markdown-editor></textarea><div class="form-check"><input class="form-check-input" type="checkbox" id="uusi-asiakastiedot" name="sisaltaa_asiakastiedot"><label class="form-check-label" for="uusi-asiakastiedot">Tulosta asiakkaan tiedot tämän osion alussa</label></div></div><div class="card-footer bg-white border-0 px-4 pb-4"><button class="btn btn-primary">+ Lisää osio</button></div></form></div>
@@ -828,6 +907,7 @@ openLayoutShell('Muokkaa raporttia – TEKRAPORTTI');
             <button type="button" class="btn btn-outline-secondary btn-sm" data-annotation-tool="circle">Ympyrä</button>
             <button type="button" class="btn btn-outline-secondary btn-sm" data-annotation-tool="freehand">Vapaa piirto</button>
             <button type="button" class="btn btn-outline-secondary btn-sm" data-annotation-tool="text">Teksti</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm" data-annotation-tool="crop">Rajaa</button>
             <label>Tekstin koko <select id="image-annotation-font-size"><option value="16">Pieni</option><option value="24" selected>Normaali</option><option value="36">Suuri</option><option value="52">Erittäin suuri</option></select></label>
             <label class="ms-2">Väri <input type="color" id="image-annotation-color" value="#dc3545"></label>
             <button type="button" class="btn btn-outline-danger btn-sm ms-auto" id="image-annotation-delete" disabled>Poista valittu</button>
@@ -915,6 +995,12 @@ document.querySelectorAll('[data-file-drop]').forEach(function (dropZone) {
         context.lineWidth = index === selectedIndex ? 6 : 4;
         context.setLineDash(index === selectedIndex ? [8, 5] : []);
         if (annotation.type === 'rectangle') {
+            context.strokeRect(start.x, start.y, end.x - start.x, end.y - start.y);
+        } else if (annotation.type === 'crop') {
+            context.fillStyle = 'rgba(255,255,255,.22)';
+            context.fillRect(start.x, start.y, end.x - start.x, end.y - start.y);
+            context.strokeStyle = '#198754';
+            context.setLineDash([10, 6]);
             context.strokeRect(start.x, start.y, end.x - start.x, end.y - start.y);
         } else if (annotation.type === 'circle') {
             context.beginPath();
@@ -1017,7 +1103,12 @@ document.querySelectorAll('[data-file-drop]').forEach(function (dropZone) {
             document.getElementById('image-annotation-media-id').value = button.dataset.mediaId;
             document.getElementById('image-annotation-return-anchor').value = (button.closest('[id^="osio-"]') || {}).id || '';
             image.onload = function () {
-                const scale = Math.min(1, 1400 / image.naturalWidth);
+                // Sovita koko kuva työkalulle. Canvasin todellinen koko pienenee
+                // tarvittaessa myös korkeuden perusteella, jotta vieritystä ei
+                // tarvita ja koko rajattava alue on kerralla nähtävissä.
+                const maxWidth = Math.min(1400, window.innerWidth * .9);
+                const maxHeight = Math.max(240, window.innerHeight * .60);
+                const scale = Math.min(1, maxWidth / image.naturalWidth, maxHeight / image.naturalHeight);
                 canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
                 canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
                 render();
@@ -1046,6 +1137,8 @@ document.querySelectorAll('[data-file-drop]').forEach(function (dropZone) {
             }
         } else if (activeTool === 'freehand') {
             drawing = {type: 'freehand', x1: point.x, y1: point.y, x2: point.x, y2: point.y, points: [[point.x, point.y]], color: color};
+        } else if (activeTool === 'crop') {
+            drawing = {type: 'crop', x1: point.x, y1: point.y, x2: point.x, y2: point.y, color: '#198754'};
         } else {
             drawing = {type: activeTool, x1: point.x, y1: point.y, x2: point.x, y2: point.y, color: color};
         }
@@ -1067,6 +1160,7 @@ document.querySelectorAll('[data-file-drop]').forEach(function (dropZone) {
 
     canvas.addEventListener('pointerup', function () {
         if (drawing) {
+            if (drawing.type === 'crop') annotations = annotations.filter(function (annotation) { return annotation.type !== 'crop'; });
             if (drawing.type !== 'freehand' || drawing.points.length > 1) annotations.push(drawing);
             selectedIndex = annotations.length - 1;
             drawing = null;

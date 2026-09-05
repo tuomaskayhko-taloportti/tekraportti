@@ -142,6 +142,22 @@ CREATE TABLE `raportit` (
         ON UPDATE CASCADE ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE `raporttiliitteet` (
+    `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `laatijat_id` INT UNSIGNED NOT NULL,
+    `raportti_id` INT UNSIGNED NOT NULL,
+    `tiedosto` VARCHAR(512) NOT NULL,
+    `alkuperainen_nimi` VARCHAR(255) NOT NULL,
+    `tiedostokoko` BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    `jarjestys` INT UNSIGNED NOT NULL DEFAULT 1,
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `idx_raporttiliitteet_raportti` (`raportti_id`, `jarjestys`, `id`),
+    CONSTRAINT `fk_raporttiliitteet_raportti`
+        FOREIGN KEY (`raportti_id`, `laatijat_id`) REFERENCES `raportit` (`id`, `laatijat_id`)
+        ON UPDATE CASCADE ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE `raporttijaot` (
     `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
     `raportti_id` INT UNSIGNED NOT NULL,
@@ -182,6 +198,8 @@ CREATE TABLE `raporttitaulukot` (
     `raportti_id` INT UNSIGNED NOT NULL,
     `raporttirivi_id` INT UNSIGNED NOT NULL,
     `otsikko` VARCHAR(255) NULL,
+    `reunat` TINYINT(1) NOT NULL DEFAULT 1,
+    `leveys_tila` ENUM('keskitetty', 'kokosivu') NOT NULL DEFAULT 'keskitetty',
     `jarjestys` INT UNSIGNED NOT NULL DEFAULT 1,
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -201,6 +219,8 @@ CREATE TABLE `raporttitaulukko_sarakkeet` (
     `laatijat_id` INT UNSIGNED NOT NULL,
     `taulukko_id` INT UNSIGNED NOT NULL,
     `nimi` VARCHAR(255) NOT NULL,
+    `taustavari` CHAR(7) NOT NULL DEFAULT '#ffffff',
+    `fonttivari` CHAR(7) NOT NULL DEFAULT '#232d3c',
     `leveys` DECIMAL(10,2) NULL,
     `jarjestys` INT UNSIGNED NOT NULL DEFAULT 1,
     PRIMARY KEY (`id`),
