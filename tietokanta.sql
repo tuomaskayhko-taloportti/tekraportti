@@ -83,6 +83,7 @@ CREATE TABLE `asiakas_lisatiedot` (
 CREATE TABLE `projektit` (
     `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
     `laatijat_id` INT UNSIGNED NOT NULL,
+    `asiakas_id` INT UNSIGNED NULL,
     `nimi` VARCHAR(200) NOT NULL,
     `kuvaus` TEXT NULL,
     `alkupvm` DATE NULL,
@@ -91,9 +92,13 @@ CREATE TABLE `projektit` (
     `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
     KEY `idx_projektit_laatijat_id` (`laatijat_id`),
+    KEY `idx_projektit_asiakas_id` (`asiakas_id`),
     CONSTRAINT `fk_projektit_laatijat`
         FOREIGN KEY (`laatijat_id`) REFERENCES `laatijat` (`id`)
         ON UPDATE CASCADE ON DELETE CASCADE
+    ,CONSTRAINT `fk_projektit_asiakas`
+        FOREIGN KEY (`asiakas_id`) REFERENCES `asiakkaat` (`id`)
+        ON UPDATE CASCADE ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `projektijaot` (

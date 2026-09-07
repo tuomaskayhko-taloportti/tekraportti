@@ -15,14 +15,26 @@ $editId = max(0, (int) ($_GET['muokkaa'] ?? $_POST['id'] ?? 0));
 $projects = [];
 $message = '';
 $messageType = 'danger';
-$form = ['nimi' => '', 'kuvaus' => '', 'alkupvm' => '', 'loppupvm' => '', 'jaettava_sahkoposti' => ''];
+$form = ['asiakas_id' => '', 'nimi' => '', 'kuvaus' => '', 'alkupvm' => '', 'loppupvm' => '', 'jaettava_sahkoposti' => ''];
+$customers = [];
 $sharedEmails = [];
 
 try {
     $db = getDatabaseConnection();
 
+    $query = $db->prepare('SELECT a.id, a.nimi, a.yritys FROM asiakkaat a WHERE a.laatijat_id = ? OR EXISTS (
+        SELECT 1 FROM asiakasjaot j WHERE j.asiakas_id = a.id AND j.laatijat_id = ?
+    ) OR EXISTS (
+        SELECT 1 FROM raportit rs INNER JOIN raporttijaot rj ON rj.raportti_id = rs.id
+        WHERE rs.asiakas_id = a.id AND rj.laatijat_id = ?
+    ) ORDER BY a.nimi, a.yritys');
+    $query->bind_param('iii', $currentLaatijaId, $currentLaatijaId, $currentLaatijaId);
+    $query->execute();
+    $customers = $query->get_result()->fetch_all(MYSQLI_ASSOC);
+    $query->close();
+
     if ($editId > 0) {
-        $query = $db->prepare('SELECT p.nimi, p.kuvaus, p.alkupvm, p.loppupvm, p.laatijat_id
+        $query = $db->prepare('SELECT p.asiakas_id, p.nimi, p.kuvaus, p.alkupvm, p.loppupvm, p.laatijat_id
             FROM projektit p WHERE p.id = ? AND (p.laatijat_id = ? OR EXISTS (
                 SELECT 1 FROM projektijaot j WHERE j.projekti_id = p.id AND j.laatijat_id = ?
             )) LIMIT 1');
@@ -80,11 +92,25 @@ try {
             $datesValid = ($form['alkupvm'] === '' || ($startDate && $startDate->format('Y-m-d') === $form['alkupvm']))
                 && ($form['loppupvm'] === '' || ($endDate && $endDate->format('Y-m-d') === $form['loppupvm']))
                 && (!$startDate || !$endDate || $form['alkupvm'] <= $form['loppupvm']);
-            if ($form['nimi'] === '' || !$datesValid) {
+            if ((int) $form['asiakas_id'] < 1 || $form['nimi'] === '' || !$datesValid) {
                 $message = 'Anna projektin nimi ja voimassa olevat päivämäärät.';
             } elseif (mb_strlen($form['nimi']) > 200 || mb_strlen($form['jaettava_sahkoposti']) > 4000) {
                 $message = 'Projektin nimi on liian pitkä.';
             } else {
+                $customerId = (int) $form['asiakas_id'];
+                $query = $db->prepare('SELECT a.id FROM asiakkaat a WHERE a.id = ? AND (a.laatijat_id = ? OR EXISTS (
+                    SELECT 1 FROM asiakasjaot j WHERE j.asiakas_id = a.id AND j.laatijat_id = ?
+                ) OR EXISTS (
+                    SELECT 1 FROM raportit rs INNER JOIN raporttijaot rj ON rj.raportti_id = rs.id
+                    WHERE rs.asiakas_id = a.id AND rj.laatijat_id = ?
+                )) LIMIT 1');
+                $query->bind_param('iiii', $customerId, $currentLaatijaId, $currentLaatijaId, $currentLaatijaId);
+                $query->execute();
+                $customerExists = (bool) $query->get_result()->fetch_assoc();
+                $query->close();
+                if (!$customerExists) {
+                    throw new RuntimeException('Valittu asiakas ei ole käytettävissä.');
+                }
                 $sharedEmails = parseReportShareEmails($form['jaettava_sahkoposti']);
                 $currentLaatija = getCurrentLaatija() ?: [];
                 $currentEmail = strtolower(trim((string) ($currentLaatija['sahkoposti'] ?? '')));
@@ -99,14 +125,16 @@ try {
                     if (!$sharedLaatija) { throw new RuntimeException('Käyttäjää ei löytynyt tällä sähköpostiosoitteella: ' . $sharedEmail . '. Lisää laatija ensin ylläpidossa.'); }
                     $sharedLaatijat[] = ['id' => (int) $sharedLaatija['id'], 'email' => $sharedEmail];
                 }
-                $values = array_values(array_map(static fn (string $value): ?string => $value !== '' ? $value : null, $form));
+                $values = array_map(static fn (string $value): ?string => $value !== '' ? $value : null, [
+                    $form['nimi'], $form['kuvaus'], $form['alkupvm'], $form['loppupvm'],
+                ]);
                 $db->begin_transaction();
                 if ($editId > 0) {
-                    $query = $db->prepare('UPDATE projektit SET nimi = ?, kuvaus = ?, alkupvm = ?, loppupvm = ? WHERE id = ? AND laatijat_id = ?');
-                    $query->bind_param('ssssii', $values[0], $values[1], $values[2], $values[3], $editId, $laatijatId);
+                    $query = $db->prepare('UPDATE projektit SET asiakas_id = ?, nimi = ?, kuvaus = ?, alkupvm = ?, loppupvm = ? WHERE id = ? AND laatijat_id = ?');
+                    $query->bind_param('issssii', $customerId, $values[0], $values[1], $values[2], $values[3], $editId, $laatijatId);
                 } else {
-                    $query = $db->prepare('INSERT INTO projektit (laatijat_id, nimi, kuvaus, alkupvm, loppupvm) VALUES (?, ?, ?, ?, ?)');
-                    $query->bind_param('issss', $laatijatId, $values[0], $values[1], $values[2], $values[3]);
+                    $query = $db->prepare('INSERT INTO projektit (laatijat_id, asiakas_id, nimi, kuvaus, alkupvm, loppupvm) VALUES (?, ?, ?, ?, ?, ?)');
+                    $query->bind_param('iissss', $laatijatId, $customerId, $values[0], $values[1], $values[2], $values[3]);
                 }
                 $query->execute();
                 $query->close();
@@ -129,16 +157,18 @@ try {
                 $message = $editId > 0 ? 'Projektin tiedot päivitettiin.' : 'Projekti lisättiin.';
                 $messageType = 'success';
                 $editId = 0;
-                $form = ['nimi' => '', 'kuvaus' => '', 'alkupvm' => '', 'loppupvm' => '', 'jaettava_sahkoposti' => ''];
+                $form = ['asiakas_id' => '', 'nimi' => '', 'kuvaus' => '', 'alkupvm' => '', 'loppupvm' => '', 'jaettava_sahkoposti' => ''];
             }
         }
     }
 
     $query = $db->prepare(
-        'SELECT p.id, p.laatijat_id, p.nimi, p.kuvaus, p.alkupvm, p.loppupvm, COUNT(r.id) AS raporttien_maara
+        'SELECT p.id, p.laatijat_id, p.asiakas_id, a.nimi AS asiakas_nimi, a.yritys AS asiakas_yritys,
+                p.nimi, p.kuvaus, p.alkupvm, p.loppupvm, COUNT(r.id) AS raporttien_maara
          FROM projektit p LEFT JOIN raportit r ON r.projekti_id = p.id
+         LEFT JOIN asiakkaat a ON a.id = p.asiakas_id
          WHERE p.laatijat_id = ? OR EXISTS (SELECT 1 FROM projektijaot j WHERE j.projekti_id = p.id AND j.laatijat_id = ?)
-         GROUP BY p.id, p.laatijat_id, p.nimi, p.kuvaus, p.alkupvm, p.loppupvm ORDER BY p.nimi, p.id'
+         GROUP BY p.id, p.laatijat_id, p.asiakas_id, a.nimi, a.yritys, p.nimi, p.kuvaus, p.alkupvm, p.loppupvm ORDER BY p.nimi, p.id'
     );
     $query->bind_param('ii', $currentLaatijaId, $currentLaatijaId);
     $query->execute();
@@ -175,6 +205,7 @@ openLayoutShell('Projektit – TEKRAPORTTI');
     <form method="post" action="projektit.php<?= $editId > 0 ? '?muokkaa=' . $editId : '' ?>">
         <input type="hidden" name="csrf_token" value="<?= projectValue(['value' => $csrfToken], 'value') ?>"><input type="hidden" name="action" value="save"><input type="hidden" name="id" value="<?= $editId ?>">
         <div class="card-body p-4"><div class="row g-3">
+            <div class="col-md-6"><label class="form-label" for="asiakas_id">Asiakas <span class="text-danger">*</span></label><select class="form-select" id="asiakas_id" name="asiakas_id" required><option value="">Valitse asiakas</option><?php foreach ($customers as $customer): ?><option value="<?= (int) $customer['id'] ?>" <?= (string) $form['asiakas_id'] === (string) $customer['id'] ? 'selected' : '' ?>><?= projectValue(['value' => $customer['yritys'] ? $customer['nimi'] . ' – ' . $customer['yritys'] : $customer['nimi']], 'value') ?></option><?php endforeach; ?></select></div>
             <div class="col-md-6"><label class="form-label" for="nimi">Projektin nimi <span class="text-danger">*</span></label><input class="form-control" id="nimi" name="nimi" value="<?= projectValue($form, 'nimi') ?>" maxlength="200" required></div>
             <div class="col-md-3"><label class="form-label" for="alkupvm">Alkupäivä</label><input type="date" class="form-control" id="alkupvm" name="alkupvm" value="<?= projectValue($form, 'alkupvm') ?>"></div>
             <div class="col-md-3"><label class="form-label" for="loppupvm">Loppupäivä</label><input type="date" class="form-control" id="loppupvm" name="loppupvm" value="<?= projectValue($form, 'loppupvm') ?>"></div>
@@ -183,9 +214,9 @@ openLayoutShell('Projektit – TEKRAPORTTI');
         </div></div><div class="card-footer bg-white border-0 px-4 pb-4"><button class="btn btn-primary"><?= $editId > 0 ? 'Tallenna muutokset' : 'Lisää projekti' ?></button><?php if ($editId > 0): ?> <a class="btn btn-outline-secondary" href="projektit.php">Peruuta</a><?php endif; ?></div>
     </form>
 </div>
-<div class="card border-0 shadow-sm"><div class="table-responsive"><table class="table table-hover align-middle mb-0"><thead class="table-light"><tr><th>Projekti</th><th>Kuvaus</th><th>Ajanjakso</th><th>Raportteja</th><th class="text-end">Toiminnot</th></tr></thead><tbody>
-<?php if (!$projects): ?><tr><td colspan="5" class="text-center text-body-secondary py-4">Ei tallennettuja projekteja.</td></tr><?php else: foreach ($projects as $project): ?><tr>
-    <td><?= projectValue($project, 'nimi') ?></td><td><?= markdownToHtml((string) ($project['kuvaus'] ?? '')) ?></td>
+<div class="card border-0 shadow-sm"><div class="table-responsive"><table class="table table-hover align-middle mb-0"><thead class="table-light"><tr><th>Projekti</th><th>Asiakas</th><th>Kuvaus</th><th>Ajanjakso</th><th>Raportteja</th><th class="text-end">Toiminnot</th></tr></thead><tbody>
+<?php if (!$projects): ?><tr><td colspan="6" class="text-center text-body-secondary py-4">Ei tallennettuja projekteja.</td></tr><?php else: foreach ($projects as $project): ?><tr>
+    <td><?= projectValue($project, 'nimi') ?></td><td><?= projectValue(['value' => ($project['asiakas_yritys'] ? $project['asiakas_nimi'] . ' – ' . $project['asiakas_yritys'] : $project['asiakas_nimi'])], 'value') ?></td><td><?= markdownToHtml((string) ($project['kuvaus'] ?? '')) ?></td>
     <td><?= projectDate($project['alkupvm']) ?><?= $project['alkupvm'] && $project['loppupvm'] ? ' – ' : '' ?><?= projectDate($project['loppupvm']) ?></td>
     <td><?= (int) $project['raporttien_maara'] ?></td><td class="text-end text-nowrap"><a class="btn btn-sm btn-outline-primary" href="<?= htmlspecialchars('projektit.php?muokkaa=' . (int) $project['id'] . '#projektlomake', ENT_QUOTES, 'UTF-8') ?>">Muokkaa</a> <?php if ((int) $project['laatijat_id'] === $laatijatId): ?><form method="post" action="projektit.php" class="d-inline" onsubmit="return confirm('Poistetaanko projekti?');"><input type="hidden" name="csrf_token" value="<?= projectValue(['value' => $csrfToken], 'value') ?>"><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="<?= (int) $project['id'] ?>"><button class="btn btn-sm btn-outline-danger">Poista</button></form><?php endif; ?></td>
 </tr><?php endforeach; endif; ?></tbody></table></div></div>

@@ -26,9 +26,12 @@ try {
     $query = $db->prepare(
         'SELECT a.id, a.nimi, a.yritys FROM asiakkaat a WHERE a.laatijat_id = ? OR EXISTS (
             SELECT 1 FROM asiakasjaot j WHERE j.asiakas_id = a.id AND j.laatijat_id = ?
+        ) OR EXISTS (
+            SELECT 1 FROM raportit rs INNER JOIN raporttijaot rj ON rj.raportti_id = rs.id
+            WHERE rs.asiakas_id = a.id AND rj.laatijat_id = ?
         ) ORDER BY a.nimi, a.yritys'
     );
-    $query->bind_param('ii', $laatijatId, $laatijatId);
+    $query->bind_param('iii', $laatijatId, $laatijatId, $laatijatId);
     $query->execute();
     $result = $query->get_result();
     while ($asiakas = $result->fetch_assoc()) {
@@ -37,7 +40,7 @@ try {
     $query->close();
 
     $query = $db->prepare(
-        'SELECT p.id, p.nimi FROM projektit p WHERE p.laatijat_id = ? OR EXISTS (
+        'SELECT p.id, p.asiakas_id, p.nimi FROM projektit p WHERE p.laatijat_id = ? OR EXISTS (
             SELECT 1 FROM projektijaot j WHERE j.projekti_id = p.id AND j.laatijat_id = ?
         ) ORDER BY p.nimi'
     );
@@ -82,9 +85,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $query = $db->prepare(
                 'SELECT a.id FROM asiakkaat a WHERE a.id = ? AND (a.laatijat_id = ? OR EXISTS (
                     SELECT 1 FROM asiakasjaot j WHERE j.asiakas_id = a.id AND j.laatijat_id = ?
+                ) OR EXISTS (
+                    SELECT 1 FROM raportit rs INNER JOIN raporttijaot rj ON rj.raportti_id = rs.id
+                    WHERE rs.asiakas_id = a.id AND rj.laatijat_id = ?
                 )) LIMIT 1'
             );
-            $query->bind_param('iii', $form['asiakas_id'], $laatijatId, $laatijatId);
+            $query->bind_param('iiii', $form['asiakas_id'], $laatijatId, $laatijatId, $laatijatId);
             $query->execute();
             $customerExists = (bool) $query->get_result()->fetch_assoc();
             $query->close();
@@ -94,11 +100,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             if ($projectId !== null) {
                 $query = $db->prepare(
-                    'SELECT p.id FROM projektit p WHERE p.id = ? AND (p.laatijat_id = ? OR EXISTS (
+                    'SELECT p.id FROM projektit p WHERE p.id = ? AND p.asiakas_id = ? AND (p.laatijat_id = ? OR EXISTS (
                         SELECT 1 FROM projektijaot j WHERE j.projekti_id = p.id AND j.laatijat_id = ?
                     )) LIMIT 1'
                 );
-                $query->bind_param('iii', $projectId, $laatijatId, $laatijatId);
+                $query->bind_param('iiii', $projectId, $form['asiakas_id'], $laatijatId, $laatijatId);
                 $query->execute();
                 $projectExists = (bool) $query->get_result()->fetch_assoc();
                 $query->close();
@@ -248,7 +254,7 @@ openLayoutShell('Luo raportti – TEKRAPORTTI');
                     <select class="form-select" id="projekti_id" name="projekti_id">
                         <option value="">Ei projektia</option>
                         <?php foreach ($projektit as $projekti): ?>
-                            <option value="<?= (int) $projekti['id'] ?>" <?= (string) $form['projekti_id'] === (string) $projekti['id'] ? 'selected' : '' ?>>
+                            <option value="<?= (int) $projekti['id'] ?>" data-asiakas-id="<?= (int) $projekti['asiakas_id'] ?>" <?= (string) $form['projekti_id'] === (string) $projekti['id'] ? 'selected' : '' ?>>
                                 <?= htmlspecialchars($projekti['nimi'], ENT_QUOTES, 'UTF-8') ?>
                             </option>
                         <?php endforeach; ?>
@@ -319,6 +325,24 @@ document.querySelectorAll('[data-file-drop]').forEach(function (dropZone) {
         input.files = transfer.files;
     });
 });
+</script>
+
+<script>
+(function () {
+    const customer = document.getElementById('asiakas_id');
+    const project = document.getElementById('projekti_id');
+    if (!customer || !project) return;
+    function filterProjects() {
+        const customerId = customer.value;
+        Array.from(project.options).forEach(function (option) {
+            if (!option.value) return;
+            option.hidden = option.dataset.asiakasId !== customerId;
+        });
+        if (project.selectedOptions[0] && project.selectedOptions[0].hidden) project.value = '';
+    }
+    customer.addEventListener('change', filterProjects);
+    filterProjects();
+}());
 </script>
 
 <?php closeLayoutShell(); ?>
