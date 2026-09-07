@@ -559,16 +559,17 @@ function chartFontPath(bool $bold = false, bool $italic = false): ?string
 
 function chartTextStyledCentered($image, int $size, float $centerX, int $y, string $text, int $color, string $style = ''): void
 {
+    $scale = (int) ($GLOBALS['chartRenderScale'] ?? 1);
     $bold = $style === 'B';
     $italic = $style === 'I';
     $font = chartFontPath($bold, $italic);
     $textWidth = chartTextWidth($size, $text, $bold);
     $x = max(0, (int) round($centerX - $textWidth / 2));
     if ($font !== null && function_exists('imagettftext')) {
-        imagettftext($image, $size, 0, $x, $y + $size, $color, $font, $text);
+        imagettftext($image, $size * $scale, 0, $x * $scale, ($y + $size) * $scale, $color, $font, $text);
         return;
     }
-    imagestring($image, 5, $x, $y, pdfText($text), $color);
+    imagestring($image, 5, $x * $scale, $y * $scale, pdfText($text), $color);
 }
 
 function chartMarkdownLabelParts(string $label): array
@@ -582,12 +583,13 @@ function chartMarkdownLabelParts(string $label): array
 
 function chartText($image, int $size, int $x, int $y, string $text, int $color, bool $bold = false, int $angle = 0): void
 {
+    $scale = (int) ($GLOBALS['chartRenderScale'] ?? 1);
     $font = chartFontPath($bold);
     if ($font !== null && function_exists('imagettftext')) {
-        imagettftext($image, $size, $angle, $x, $y + $size, $color, $font, $text);
+        imagettftext($image, $size * $scale, $angle, $x * $scale, ($y + $size) * $scale, $color, $font, $text);
         return;
     }
-    imagestring($image, 5, $x, $y, pdfText($text), $color);
+    imagestring($image, 5, $x * $scale, $y * $scale, pdfText($text), $color);
 }
 
 function chartLabelLines(string $label, int $maxCharacters = 14): array
@@ -697,12 +699,29 @@ function createTableChart(array $table, string $chartType, array &$temporaryImag
         return null;
     }
 
-    $width = 1200;
-    $height = 650;
+    // Piirrä kaavio kolminkertaisella resoluutiolla. PDF:ään kuva asetetaan
+    // edelleen samaan fyysiseen kokoon, joten tämä parantaa rasterireunojen
+    // ja tekstin laatua ilman, että raportin taitto muuttuu.
+    $scale = 3;
+    $GLOBALS['chartRenderScale'] = $scale;
+    $width = 1200 * $scale;
+    $height = 650 * $scale;
     $image = imagecreatetruecolor($width, $height);
     $white = imagecolorallocate($image, 255, 255, 255);
     $dark = imagecolorallocate($image, 35, 45, 60);
     imagefill($image, 0, 0, $white);
+    $drawLine = static function ($image, int $x1, int $y1, int $x2, int $y2, int $color) use ($scale): void {
+        imageline($image, $x1 * $scale, $y1 * $scale, $x2 * $scale, $y2 * $scale, $color);
+    };
+    $drawRectangle = static function ($image, int $x1, int $y1, int $x2, int $y2, int $color) use ($scale): void {
+        imagefilledrectangle($image, $x1 * $scale, $y1 * $scale, $x2 * $scale, $y2 * $scale, $color);
+    };
+    $drawEllipse = static function ($image, int $x, int $y, int $width, int $height, int $color) use ($scale): void {
+        imagefilledellipse($image, $x * $scale, $y * $scale, $width * $scale, $height * $scale, $color);
+    };
+    $drawArc = static function ($image, int $x, int $y, int $width, int $height, float $start, float $end, int $color) use ($scale): void {
+        imagefilledarc($image, $x * $scale, $y * $scale, $width * $scale, $height * $scale, $start, $end, $color, IMG_ARC_PIE);
+    };
     $tableTitle = trim((string) ($table['otsikko'] ?? ''));
     $diagramLabels = ['pie' => 'Piirakkadiagrammi', 'bar' => 'Pylväsdiagrammi', 'line' => 'Viivadiagrammi'];
     $diagramTitle = $tableTitle !== '' ? ($diagramLabels[$chartType] . ': ' . $tableTitle) : '';
@@ -755,7 +774,7 @@ function createTableChart(array $table, string $chartType, array &$temporaryImag
         $start = 0.0;
         foreach ($values as $index => $value) {
             $angle = $value / $total * 360;
-            imagefilledarc($image, $centerX, $centerY, $diameter, $diameter, $start, $start + $angle, $palette[$index % count($palette)], IMG_ARC_PIE);
+            $drawArc($image, $centerX, $centerY, $diameter, $diameter, $start, $start + $angle, $palette[$index % count($palette)]);
             $start += $angle;
         }
         if ($diagramTitle !== '') {
@@ -763,7 +782,7 @@ function createTableChart(array $table, string $chartType, array &$temporaryImag
         }
         $legendY = 100;
         foreach ($pieLabels as $index => $label) {
-            imagefilledrectangle($image, 730, $legendY, 750, $legendY + 20, $palette[$index % count($palette)]);
+            $drawRectangle($image, 730, $legendY, 750, $legendY + 20, $palette[$index % count($palette)]);
             chartText($image, 20, 765, $legendY - 1, $label, $dark);
             $legendY += 32;
         }
@@ -779,13 +798,13 @@ function createTableChart(array $table, string $chartType, array &$temporaryImag
             }
         }
         $maxValue = $maxValue > 0 ? $maxValue * 1.1 : 1;
-        imageline($image, $left, $top, $left, $bottom, $dark);
-        imageline($image, $left, $bottom, $right, $bottom, $dark);
+        $drawLine($image, $left, $top, $left, $bottom, $dark);
+        $drawLine($image, $left, $bottom, $right, $bottom, $dark);
         for ($tick = 0; $tick <= 5; $tick++) {
             $y = $bottom - ($bottom - $top) * $tick / 5;
             $value = $maxValue * $tick / 5;
             $grid = imagecolorallocate($image, 220, 225, 232);
-            imageline($image, $left, (int) $y, $right, (int) $y, $grid);
+            $drawLine($image, $left, (int) $y, $right, (int) $y, $grid);
             chartText($image, 18, 10, (int) $y - 10, number_format($value, 1, ',', ' '), $dark);
         }
         if ($diagramTitle !== '') {
@@ -804,7 +823,7 @@ function createTableChart(array $table, string $chartType, array &$temporaryImag
                     $value = max(0, (float) ($item['values'][$index] ?? 0));
                     $x = $groupX + ($seriesIndex - (count($series) - 1) / 2) * $barWidth;
                     $barTop = $bottom - ($bottom - $top) * $value / $maxValue;
-                    imagefilledrectangle($image, (int) ($x - $barWidth / 2), (int) $barTop, (int) ($x + $barWidth / 2), $bottom, $palette[$seriesIndex % count($palette)]);
+                    $drawRectangle($image, (int) ($x - $barWidth / 2), (int) $barTop, (int) ($x + $barWidth / 2), $bottom, $palette[$seriesIndex % count($palette)]);
                     $valueLabel = chartValueLabel($value);
                     $valueLabelY = chartValueLabelPosition($placedValueLabels, $x, (int) $barTop - 22, $valueLabel);
                     chartTextCentered($image, 15, $x, $valueLabelY, $valueLabel, $dark, true);
@@ -823,9 +842,9 @@ function createTableChart(array $table, string $chartType, array &$temporaryImag
                     $x = $count === 1 ? ($left + $right) / 2 : $left + ($right - $left) * $index / ($count - 1);
                     $y = $bottom - ($bottom - $top) * $value / $maxValue;
                     if ($previousX !== null) {
-                        imageline($image, (int) $previousX, (int) $previousY, (int) $x, (int) $y, $palette[$seriesIndex % count($palette)]);
+                        $drawLine($image, (int) $previousX, (int) $previousY, (int) $x, (int) $y, $palette[$seriesIndex % count($palette)]);
                     }
-                    imagefilledellipse($image, (int) $x, (int) $y, 12, 12, $palette[$seriesIndex % count($palette)]);
+                    $drawEllipse($image, (int) $x, (int) $y, 12, 12, $palette[$seriesIndex % count($palette)]);
                     $valueLabel = chartValueLabel($value);
                     $valueLabelY = chartValueLabelPosition($placedValueLabels, $x, (int) $y - 22, $valueLabel);
                     chartTextCentered($image, 15, $x, $valueLabelY, $valueLabel, $dark, true);
