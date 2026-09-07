@@ -774,7 +774,10 @@ function createTableChart(array $table, string $chartType, array &$temporaryImag
         $start = 0.0;
         foreach ($values as $index => $value) {
             $angle = $value / $total * 360;
-            $drawArc($image, $centerX, $centerY, $diameter, $diameter, $start, $start + $angle, $palette[$index % count($palette)]);
+            // GD:n kulmapyöristys voi jättää viereisten sektoreiden väliin
+            // yhden pikselin valkoisen raon. Piirretään sektorit hieman
+            // päällekkäin, jotta saumakohta täyttyy myös suurennettuna.
+            $drawArc($image, $centerX, $centerY, $diameter, $diameter, $start, $start + $angle + 0.5, $palette[$index % count($palette)]);
             $start += $angle;
         }
         if ($diagramTitle !== '') {
