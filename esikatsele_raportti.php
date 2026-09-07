@@ -1539,7 +1539,7 @@ foreach ($rows as $index => $row) {
             foreach ($columns as $columnIndex => $column) {
                 $cellText = $displayRow['summary'] ? (string) ($displayRow['cells'][(int) $column['id']] ?? '') : (string) ($table['solut'][(int) $tableRow['id']][(int) $column['id']] ?? '');
                 $pdf->SetXY($x, $tableY);
-                $cellColor = $displayRow['summary'] ? [255, 255, 255] : pdfHexColor((string) ($column['taustavari'] ?? '#ffffff'));
+                $cellColor = pdfHexColor((string) ($column['taustavari'] ?? '#ffffff'));
                 $pdf->SetFillColor($cellColor[0], $cellColor[1], $cellColor[2]);
                 $textColor = pdfHexColor((string) ($column['fonttivari'] ?? '#232d3c'), [35, 45, 60]);
                 $pdf->SetTextColor($textColor[0], $textColor[1], $textColor[2]);
