@@ -185,6 +185,22 @@ function pdfTableNumberRun(string $value): ?array
     return $number === null ? null : ['value' => $number['value'], 'currency' => $number['currency'], 'style' => $style, 'text' => $value];
 }
 
+function pdfTableColumnIsNumeric(array $table, array $displayRows, int $columnId): bool
+{
+    $hasRows = false;
+    foreach ($displayRows as $displayRow) {
+        if ($displayRow['summary']) {
+            continue;
+        }
+        $hasRows = true;
+        $value = (string) ($table['solut'][(int) $displayRow['row']['id']][$columnId] ?? '');
+        if (pdfTableNumberRun($value) === null) {
+            return false;
+        }
+    }
+    return $hasRows;
+}
+
 function pdfHexColor(string $value, array $fallback = [255, 255, 255]): array
 {
     if (!preg_match('/^#([0-9a-f]{6})$/i', trim($value), $match)) {
@@ -449,6 +465,16 @@ function pdfWriteMarkdownCell(FPDF $pdf, string $text, float $width, float $line
     $startX = $pdf->GetX();
     $lineWidth = 0.0;
     foreach (preg_split('/\r\n|\r|\n/', $text) ?: [''] as $line) {
+        $lineStartX = $startX;
+        if ($alignment === 'R') {
+            $fullLineWidth = 0.0;
+            foreach (pdfMarkdownRuns($line) as $run) {
+                $pdf->SetFont('Helvetica', $baseStyle . $run['style'], 9);
+                $fullLineWidth += $pdf->GetStringWidth(pdfText($run['text']));
+            }
+            $lineStartX += max(0, $availableWidth - $fullLineWidth);
+        }
+        $pdf->SetX($lineStartX);
         foreach (pdfMarkdownRuns($line) as $run) {
             $pdf->SetFont('Helvetica', $baseStyle . $run['style'], 9);
             $tokens = preg_split('/(\s+)/u', $run['text'], -1, PREG_SPLIT_DELIM_CAPTURE) ?: [''];
@@ -1453,6 +1479,10 @@ foreach ($rows as $index => $row) {
                 pdfTableLineCount($pdf, (string) $column['nimi'], $columnWidths[$columnIndex] - 2, 'B')
             );
         }
+        $numericColumns = [];
+        foreach ($columns as $column) {
+            $numericColumns[] = pdfTableColumnIsNumeric($table, $displayRows, (int) $column['id']);
+        }
         $headerHeight = $headerLines * 5 + 2;
         $estimatedHeight = $headerHeight + 4;
         if ($tableTitle !== '') {
@@ -1485,7 +1515,8 @@ foreach ($rows as $index => $row) {
             $pdf->SetTextColor($headerTextColor[0], $headerTextColor[1], $headerTextColor[2]);
             $pdf->Cell($columnWidths[$columnIndex], $headerHeight, '', $tableBorder, 0, 'L', true);
             $pdf->SetXY($x + 1, $headerY + 1);
-            pdfWriteMarkdownCell($pdf, (string) $column['nimi'], $columnWidths[$columnIndex] - 2, 5, 'B');
+            $headerAlignment = $numericColumns[$columnIndex] ? 'R' : 'L';
+            pdfWriteMarkdownCell($pdf, (string) $column['nimi'], $columnWidths[$columnIndex] - 2, 5, 'B', $headerAlignment);
             $x += $columnWidths[$columnIndex];
         }
         $tableY = $headerY + $headerHeight;
