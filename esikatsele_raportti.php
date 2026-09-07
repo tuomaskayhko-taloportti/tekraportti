@@ -772,13 +772,28 @@ function createTableChart(array $table, string $chartType, array &$temporaryImag
         $centerY = 315;
         $diameter = 480;
         $start = 0.0;
+        $piePercentages = [];
         foreach ($values as $index => $value) {
             $angle = $value / $total * 360;
             // GD:n kulmapyöristys voi jättää viereisten sektoreiden väliin
             // yhden pikselin valkoisen raon. Piirretään sektorit hieman
             // päällekkäin, jotta saumakohta täyttyy myös suurennettuna.
             $drawArc($image, $centerX, $centerY, $diameter, $diameter, $start, $start + $angle + 0.5, $palette[$index % count($palette)]);
+            $piePercentages[] = [
+                'angle' => $start + $angle / 2,
+                'text' => number_format($value / $total * 100, 1, ',', '') . '%',
+            ];
             $start += $angle;
+        }
+        $labelRadius = $diameter * 0.30;
+        foreach ($piePercentages as $percentage) {
+            $angleRadians = deg2rad($percentage['angle']);
+            $labelX = $centerX + cos($angleRadians) * $labelRadius;
+            $labelY = $centerY + sin($angleRadians) * $labelRadius - 9;
+            // Tumma varjo pitää valkoisen prosenttitekstin luettavana myös
+            // vaaleassa sektorissa.
+            chartTextCentered($image, 18, $labelX + 1, (int) $labelY + 1, $percentage['text'], $dark, true);
+            chartTextCentered($image, 18, $labelX, (int) $labelY, $percentage['text'], $white, true);
         }
         if ($diagramTitle !== '') {
             chartText($image, 24, 10, 15, $diagramTitle, $dark, true);
