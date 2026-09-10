@@ -635,17 +635,6 @@ function chartText($image, int $size, int $x, int $y, string $text, int $color, 
     imagestring($image, 5, $x * $scale, $y * $scale, pdfText($text), $color);
 }
 
-function chartTextStyled($image, int $size, int $x, int $y, string $text, int $color, string $style = ''): void
-{
-    $scale = (int) ($GLOBALS['chartRenderScale'] ?? 1);
-    $font = chartFontPath($style === 'B', $style === 'I');
-    if ($font !== null && function_exists('imagettftext')) {
-        imagettftext($image, $size * $scale, 0, $x * $scale, ($y + $size) * $scale, $color, $font, $text);
-        return;
-    }
-    imagestring($image, 5, $x * $scale, $y * $scale, pdfText($text), $color);
-}
-
 function chartLabelLines(string $label, int $maxCharacters = 14): array
 {
     $words = preg_split('/\s+/', trim($label)) ?: [''];
@@ -728,7 +717,7 @@ function chartValueLabel(float $value, string $currency = ''): string
 
 function chartBarValueLabel(float $value): string
 {
-    return str_replace(' t', '', chartValueLabel($value));
+    return str_replace(' t', ' k', chartValueLabel($value));
 }
 
 function createTableChart(array $table, string $chartType, array &$temporaryImages, array $selectedColumnIds = []): ?string
@@ -757,13 +746,6 @@ function createTableChart(array $table, string $chartType, array &$temporaryImag
     if (!$series) {
         return null;
     }
-    $hasThousandsValues = false;
-    foreach ($series as $item) {
-        foreach ($item['values'] as $value) {
-            if ((float) ($value ?? 0) >= 1000) { $hasThousandsValues = true; }
-        }
-    }
-
     // Piirrä kaavio kolminkertaisella resoluutiolla. PDF:ään kuva asetetaan
     // edelleen samaan fyysiseen kokoon, joten tämä parantaa rasterireunojen
     // ja tekstin laatua ilman, että raportin taitto muuttuu.
@@ -790,7 +772,6 @@ function createTableChart(array $table, string $chartType, array &$temporaryImag
     $tableTitle = trim((string) ($table['otsikko'] ?? ''));
     $diagramTitle = $tableTitle;
     $diagramTitleSize = $chartType === 'line' ? 20 : 24;
-    $thousandsLegend = 'Arvot esitetään tuhansina';
     $currencies = array_values(array_filter(array_unique(array_map(
         static fn (array $item): string => (string) ($item['currency'] ?? ''),
         $series
@@ -1027,9 +1008,6 @@ function createTableChart(array $table, string $chartType, array &$temporaryImag
         }
     }
 
-    if ($hasThousandsValues) {
-        chartTextStyled($image, 16, 10, 40, $thousandsLegend, $dark, 'I');
-    }
     $temporaryPath = tempnam(sys_get_temp_dir(), 'tekraportti-chart-');
     $pngPath = $temporaryPath !== false ? $temporaryPath . '.png' : false;
     if ($temporaryPath !== false) {
