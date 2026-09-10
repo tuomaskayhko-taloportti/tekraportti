@@ -953,7 +953,7 @@ function createTableChart(array $table, string $chartType, array &$temporaryImag
             // Käytä ryhmän vapaata tilaa, mutta jätä pylväiden väliin selkeä
             // marginaali ja pidä usean sarjan pylväät erillään toisistaan.
             $barSeries = $chartType === 'combo' ? array_slice($series, 0, 1) : $series;
-            $barWidth = max(8, min(90, ($groupWidth * .72) / max(1, count($barSeries))));
+            $barWidth = max(8, min(140, ($groupWidth * .80) / max(1, count($barSeries))));
             foreach ($labels as $index => $label) {
                 $groupX = $left + $groupWidth * $index + $groupWidth / 2;
                 foreach ($barSeries as $seriesIndex => $item) {
