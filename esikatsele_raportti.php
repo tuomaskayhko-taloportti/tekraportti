@@ -823,19 +823,46 @@ function createTableChart(array $table, string $chartType, array &$temporaryImag
             $drawArc($image, $centerX, $centerY, $diameter, $diameter, $start, $start + $angle + 0.5, $palette[$index % count($palette)]);
             $piePercentages[] = [
                 'angle' => $start + $angle / 2,
+                'percent' => $value / $total * 100,
                 'text' => number_format($value / $total * 100, 1, ',', '') . '%',
             ];
             $start += $angle;
         }
         $labelRadius = $diameter * 0.30;
+        $externalLabels = ['left' => [], 'right' => []];
         foreach ($piePercentages as $percentage) {
             $angleRadians = deg2rad($percentage['angle']);
+            if ($percentage['percent'] < 8) {
+                $side = cos($angleRadians) >= 0 ? 'right' : 'left';
+                $externalLabels[$side][] = [
+                    'angle' => $percentage['angle'],
+                    'text' => $percentage['text'],
+                    'y' => $centerY + sin($angleRadians) * ($diameter * 0.52),
+                ];
+                continue;
+            }
             $labelX = $centerX + cos($angleRadians) * $labelRadius;
             $labelY = $centerY + sin($angleRadians) * $labelRadius - 9;
             // Tumma varjo pitää valkoisen prosenttitekstin luettavana myös
             // vaaleassa sektorissa.
             chartTextCentered($image, 18, $labelX + 1, (int) $labelY + 1, $percentage['text'], $dark, true);
             chartTextCentered($image, 18, $labelX, (int) $labelY, $percentage['text'], $white, true);
+        }
+        foreach ($externalLabels as $side => $labelsOnSide) {
+            usort($labelsOnSide, static fn (array $first, array $second): int => $first['y'] <=> $second['y']);
+            $previousY = 45;
+            foreach ($labelsOnSide as $label) {
+                $labelY = max(45, min(555, (float) $label['y']));
+                if ($labelY < $previousY + 24) { $labelY = min(555, $previousY + 24); }
+                $previousY = $labelY;
+                $angleRadians = deg2rad($label['angle']);
+                $lineX = $centerX + cos($angleRadians) * ($diameter * 0.50);
+                $lineY = $centerY + sin($angleRadians) * ($diameter * 0.50);
+                $textX = $side === 'right' ? 655 : 25;
+                $lineEndX = $side === 'right' ? $textX - 6 : $textX + 42;
+                $drawLine($image, (int) $lineX, (int) $lineY, $lineEndX, (int) ($labelY + 7), $dark);
+                chartText($image, 18, $textX, (int) $labelY, $label['text'], $dark, true);
+            }
         }
         if ($diagramTitle !== '') {
             chartText($image, 24, 10, 15, $diagramTitle, $dark, true);
