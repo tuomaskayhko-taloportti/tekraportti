@@ -1451,6 +1451,7 @@ $GLOBALS['reportLogoPath'] = localImagePath((string) ($report['laatija_logo_url'
 $temporaryImages = [];
 $chartSelections = is_array($_GET['kaavio'] ?? null) ? $_GET['kaavio'] : [];
 $chartColumnSelections = is_array($_GET['kaavio_sarakkeet'] ?? null) ? $_GET['kaavio_sarakkeet'] : [];
+$hideTableSelections = is_array($_GET['piilota_taulukko'] ?? null) ? $_GET['piilota_taulukko'] : [];
 $customerInfoColorOverride = strtolower(trim((string) ($_GET['asiakastiedot_taustavari'] ?? '')));
 if (!preg_match('/^#[0-9a-f]{6}$/', $customerInfoColorOverride)) {
     $customerInfoColorOverride = '';
@@ -1631,6 +1632,9 @@ foreach ($rows as $index => $row) {
         if (!$columns) {
             continue;
         }
+        $chartType = (string) ($chartSelections[(int) $table['id']] ?? '');
+        $hideTable = $chartType !== '' && isset($hideTableSelections[(int) $table['id']]);
+        if (!$hideTable) {
         $pageTableWidth = $pdf->GetPageWidth() - 40;
         $tableWidth = (string) ($table['leveys_tila'] ?? 'keskitetty') === 'kokosivu' ? $pageTableWidth : $pageTableWidth * .88;
         $tableLeft = 20 + (($pageTableWidth - $tableWidth) / 2);
@@ -1758,9 +1762,12 @@ foreach ($rows as $index => $row) {
             }
             $pdf->SetXY($tableLeft, $tableY + $rowHeight);
         }
+        }
         $pdf->SetTextColor(35, 45, 60);
+        if ($hideTable) {
+            $pdf->Ln(4);
+        }
         $pdf->Ln(6);
-        $chartType = (string) ($chartSelections[(int) $table['id']] ?? '');
         $selectedColumnIds = array_map('intval', (array) ($chartColumnSelections[(int) $table['id']] ?? []));
         $chartPath = createTableChart($table, $chartType, $temporaryImages, $selectedColumnIds);
         if ($chartPath !== null) {
