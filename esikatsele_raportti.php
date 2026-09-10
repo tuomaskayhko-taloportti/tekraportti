@@ -796,7 +796,7 @@ function createTableChart(array $table, string $chartType, array &$temporaryImag
         // summataan rivikohtaisesti.
         $pieLabels = [];
         $values = [];
-        foreach ($table['rivit'] as $rowIndex => $tableRow) {
+        foreach ($chartRows as $rowIndex => $tableRow) {
             $value = 0.0;
             foreach ($series as $item) {
                 $value += max(0, (float) ($item['values'][$rowIndex] ?? 0));
