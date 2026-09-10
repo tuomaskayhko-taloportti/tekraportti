@@ -674,7 +674,7 @@ function chartValueLabel(float $value, string $currency = ''): string
 
 function createTableChart(array $table, string $chartType, array &$temporaryImages, array $selectedColumnIds = []): ?string
 {
-    if (!in_array($chartType, ['pie', 'bar', 'line'], true) || count($table['sarakkeet']) < 2 || !$table['rivit']) {
+    if (!in_array($chartType, ['pie', 'bar', 'bar_horizontal', 'line', 'combo'], true) || count($table['sarakkeet']) < 2 || !$table['rivit']) {
         return null;
     }
 
@@ -723,15 +723,14 @@ function createTableChart(array $table, string $chartType, array &$temporaryImag
         imagefilledarc($image, $x * $scale, $y * $scale, $width * $scale, $height * $scale, $start, $end, $color, IMG_ARC_PIE);
     };
     $tableTitle = trim((string) ($table['otsikko'] ?? ''));
-    $diagramLabels = ['pie' => 'Piirakkadiagrammi', 'bar' => 'Pylväsdiagrammi', 'line' => 'Viivadiagrammi'];
-    $diagramTitle = $tableTitle !== '' ? ($diagramLabels[$chartType] . ': ' . $tableTitle) : '';
+    $diagramTitle = $tableTitle;
     $currencies = array_values(array_filter(array_unique(array_map(
         static fn (array $item): string => (string) ($item['currency'] ?? ''),
         $series
     ))));
     if ($currencies) {
         $currencySuffix = '(' . implode(' / ', $currencies) . ')';
-        $diagramTitle = $diagramTitle !== '' ? $diagramTitle . ' ' . $currencySuffix : $diagramLabels[$chartType] . ' ' . $currencySuffix;
+        $diagramTitle = $diagramTitle !== '' ? $diagramTitle . ' ' . $currencySuffix : $currencySuffix;
     }
     $palette = [
         imagecolorallocate($image, 31, 111, 235),
@@ -804,6 +803,40 @@ function createTableChart(array $table, string $chartType, array &$temporaryImag
             chartText($image, 20, 765, $legendY - 1, $label, $dark);
             $legendY += 32;
         }
+    } elseif ($chartType === 'bar_horizontal') {
+        $left = 300;
+        $right = 1130;
+        $top = 75;
+        $bottom = 545;
+        $maxValue = 0.0;
+        foreach ($series as $item) {
+            foreach ($item['values'] as $value) { $maxValue = max($maxValue, (float) ($value ?? 0)); }
+        }
+        $maxValue = $maxValue > 0 ? $maxValue * 1.1 : 1;
+        for ($tick = 0; $tick <= 5; $tick++) {
+            $x = $left + ($right - $left) * $tick / 5;
+            $value = $maxValue * $tick / 5;
+            $grid = imagecolorallocate($image, 220, 225, 232);
+            $drawLine($image, (int) $x, $top, (int) $x, $bottom, $grid);
+            chartTextCentered($image, 16, $x, $bottom + 8, number_format($value, 1, ',', ' '), $dark);
+        }
+        $drawLine($image, $left, $top, $left, $bottom, $dark);
+        $groupHeight = ($bottom - $top) / max(1, count($labels));
+        $barHeight = max(8, min(34, ($groupHeight * .72) / max(1, count($series))));
+        foreach ($labels as $index => $label) {
+            $groupY = $top + $groupHeight * $index + $groupHeight / 2;
+            $labelParts = chartMarkdownLabelParts($label);
+            chartText($image, 16, 10, (int) ($groupY - 8), implode(' ', chartLabelLines($labelParts['text'], 24)), $dark);
+            foreach ($series as $seriesIndex => $item) {
+                $value = max(0, (float) ($item['values'][$index] ?? 0));
+                $y = $groupY + ($seriesIndex - (count($series) - 1) / 2) * $barHeight;
+                $barRight = $left + ($right - $left) * $value / $maxValue;
+                $drawRectangle($image, $left, (int) ($y - $barHeight / 2), (int) $barRight, (int) ($y + $barHeight / 2), $palette[$seriesIndex % count($palette)]);
+                chartText($image, 14, (int) $barRight + 5, (int) ($y - 7), chartValueLabel($value), $dark, true);
+            }
+        }
+        if ($diagramTitle !== '') { chartText($image, 24, 10, 15, $diagramTitle, $dark, true); }
+        foreach ($series as $seriesIndex => $item) { chartText($image, 16, 930, 20 + $seriesIndex * 24, $item['name'], $palette[$seriesIndex % count($palette)], true); }
     } else {
         $left = 140;
         $right = 1130;
@@ -830,16 +863,17 @@ function createTableChart(array $table, string $chartType, array &$temporaryImag
         }
         $count = max(1, count($labels));
         $placedValueLabels = [];
-        if ($chartType === 'bar') {
+        if (in_array($chartType, ['bar', 'combo'], true)) {
             $groupWidth = ($right - $left) / $count;
             // Käytä ryhmän vapaata tilaa, mutta jätä pylväiden väliin selkeä
             // marginaali ja pidä usean sarjan pylväät erillään toisistaan.
-            $barWidth = max(8, min(90, ($groupWidth * .72) / max(1, count($series))));
+            $barSeries = $chartType === 'combo' ? array_slice($series, 0, 1) : $series;
+            $barWidth = max(8, min(90, ($groupWidth * .72) / max(1, count($barSeries))));
             foreach ($labels as $index => $label) {
                 $groupX = $left + $groupWidth * $index + $groupWidth / 2;
-                foreach ($series as $seriesIndex => $item) {
+                foreach ($barSeries as $seriesIndex => $item) {
                     $value = max(0, (float) ($item['values'][$index] ?? 0));
-                    $x = $groupX + ($seriesIndex - (count($series) - 1) / 2) * $barWidth;
+                    $x = $groupX + ($seriesIndex - (count($barSeries) - 1) / 2) * $barWidth;
                     $barTop = $bottom - ($bottom - $top) * $value / $maxValue;
                     $drawRectangle($image, (int) ($x - $barWidth / 2), (int) $barTop, (int) ($x + $barWidth / 2), $bottom, $palette[$seriesIndex % count($palette)]);
                     $valueLabel = chartValueLabel($value);
@@ -851,8 +885,10 @@ function createTableChart(array $table, string $chartType, array &$temporaryImag
                     chartTextStyledCentered($image, 16, $groupX, $bottom + 12 + $lineIndex * 20, $labelLine, $dark, $labelParts['style']);
                 }
             }
-        } else {
-            foreach ($series as $seriesIndex => $item) {
+        }
+        if ($chartType === 'line' || $chartType === 'combo') {
+            $lineSeries = $chartType === 'combo' ? array_slice($series, 1, null, true) : $series;
+            foreach ($lineSeries as $seriesIndex => $item) {
                 $previousX = null;
                 $previousY = null;
                 foreach ($labels as $index => $label) {
@@ -868,7 +904,7 @@ function createTableChart(array $table, string $chartType, array &$temporaryImag
                     chartTextCentered($image, 15, $x, $valueLabelY, $valueLabel, $dark, true);
                     $previousX = $x;
                     $previousY = $y;
-                    if ($seriesIndex === 0) {
+                    if ($seriesIndex === 0 && $chartType !== 'combo') {
                         $labelParts = chartMarkdownLabelParts($label);
                         foreach (chartLabelLines($labelParts['text']) as $lineIndex => $labelLine) {
                             chartTextStyledCentered($image, 16, $x, $bottom + 12 + $lineIndex * 20, $labelLine, $dark, $labelParts['style']);
