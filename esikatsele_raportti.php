@@ -1673,7 +1673,7 @@ foreach ($rows as $index => $row) {
                 $pdf->SetTextColor($textColor[0], $textColor[1], $textColor[2]);
                 $pdf->Cell($columnWidths[$columnIndex], $rowHeight, '', $tableBorder, 0, 'L', true);
                 $cellTextY = $tableY + 1;
-                if ($displayRow['summary']) {
+                if ($displayRow['summary'] || !empty($displayRow['calculation'])) {
                     $cellLines = pdfTableLineCount($pdf, $cellText, $columnWidths[$columnIndex] - 2, 'B');
                     $cellTextY = $tableY + max(1, $rowHeight - ($cellLines * 5) - 1);
                 }
