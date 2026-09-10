@@ -635,6 +635,17 @@ function chartText($image, int $size, int $x, int $y, string $text, int $color, 
     imagestring($image, 5, $x * $scale, $y * $scale, pdfText($text), $color);
 }
 
+function chartTextStyled($image, int $size, int $x, int $y, string $text, int $color, string $style = ''): void
+{
+    $scale = (int) ($GLOBALS['chartRenderScale'] ?? 1);
+    $font = chartFontPath($style === 'B', $style === 'I');
+    if ($font !== null && function_exists('imagettftext')) {
+        imagettftext($image, $size * $scale, 0, $x * $scale, ($y + $size) * $scale, $color, $font, $text);
+        return;
+    }
+    imagestring($image, 5, $x * $scale, $y * $scale, pdfText($text), $color);
+}
+
 function chartLabelLines(string $label, int $maxCharacters = 14): array
 {
     $words = preg_split('/\s+/', trim($label)) ?: [''];
@@ -715,6 +726,11 @@ function chartValueLabel(float $value, string $currency = ''): string
     return $number . ($currency !== '' ? ' ' . $currency : '');
 }
 
+function chartBarValueLabel(float $value): string
+{
+    return str_replace(' t', '', chartValueLabel($value));
+}
+
 function createTableChart(array $table, string $chartType, array &$temporaryImages, array $selectedColumnIds = []): ?string
 {
     if (!in_array($chartType, ['pie', 'bar', 'bar_horizontal', 'line', 'combo'], true) || count($table['sarakkeet']) < 2 || !$table['rivit']) {
@@ -740,6 +756,12 @@ function createTableChart(array $table, string $chartType, array &$temporaryImag
     }
     if (!$series) {
         return null;
+    }
+    $hasThousandsValues = false;
+    foreach ($series as $item) {
+        foreach ($item['values'] as $value) {
+            if ((float) ($value ?? 0) >= 1000) { $hasThousandsValues = true; }
+        }
     }
 
     // Piirrä kaavio kolminkertaisella resoluutiolla. PDF:ään kuva asetetaan
@@ -767,6 +789,8 @@ function createTableChart(array $table, string $chartType, array &$temporaryImag
     };
     $tableTitle = trim((string) ($table['otsikko'] ?? ''));
     $diagramTitle = $tableTitle;
+    $diagramTitleSize = $chartType === 'line' ? 20 : 24;
+    $thousandsLegend = 'Arvot esitetään tuhansina';
     $currencies = array_values(array_filter(array_unique(array_map(
         static fn (array $item): string => (string) ($item['currency'] ?? ''),
         $series
@@ -865,8 +889,9 @@ function createTableChart(array $table, string $chartType, array &$temporaryImag
             }
         }
         if ($diagramTitle !== '') {
-            chartText($image, 24, 10, 15, $diagramTitle, $dark, true);
+            chartText($image, $diagramTitleSize, 10, 15, $diagramTitle, $dark, true);
         }
+        if ($hasThousandsValues) { chartTextStyled($image, $diagramTitleSize - 1, 10, 40, $thousandsLegend, $dark, 'I'); }
         $legendY = 100;
         foreach ($pieLabels as $index => $label) {
             $drawRectangle($image, 730, $legendY, 750, $legendY + 20, $palette[$index % count($palette)]);
@@ -906,10 +931,11 @@ function createTableChart(array $table, string $chartType, array &$temporaryImag
                 $y = $groupY + ($seriesIndex - (count($series) - 1) / 2) * $barHeight;
                 $barRight = $left + ($right - $left) * $value / $maxValue;
                 $drawRectangle($image, $left, (int) ($y - $barHeight / 2), (int) $barRight, (int) ($y + $barHeight / 2), $palette[$seriesIndex % count($palette)]);
-                chartText($image, 14, (int) $barRight + 5, (int) ($y - 7), chartValueLabel($value), $dark, true);
+                chartText($image, 14, (int) $barRight + 5, (int) ($y - 7), chartBarValueLabel($value), $dark, true);
             }
         }
-        if ($diagramTitle !== '') { chartText($image, 24, 10, 15, $diagramTitle, $dark, true); }
+        if ($diagramTitle !== '') { chartText($image, $diagramTitleSize, 10, 15, $diagramTitle, $dark, true); }
+        if ($hasThousandsValues) { chartTextStyled($image, $diagramTitleSize - 1, 10, 40, $thousandsLegend, $dark, 'I'); }
         foreach ($series as $seriesIndex => $item) {
             $legendColumn = $seriesIndex % 2;
             $legendRow = (int) floor($seriesIndex / 2);
@@ -944,8 +970,9 @@ function createTableChart(array $table, string $chartType, array &$temporaryImag
             chartText($image, 18, 10, (int) $y - 10, number_format($value, 1, ',', ' '), $dark);
         }
         if ($diagramTitle !== '') {
-            chartText($image, $chartType === 'line' ? 20 : 24, 10, 15, $diagramTitle, $dark, true);
+            chartText($image, $diagramTitleSize, 10, 15, $diagramTitle, $dark, true);
         }
+        if ($hasThousandsValues) { chartTextStyled($image, $diagramTitleSize - 1, 10, 40, $thousandsLegend, $dark, 'I'); }
         $count = max(1, count($labels));
         $placedValueLabels = [];
         if (in_array($chartType, ['bar', 'combo'], true)) {
@@ -961,7 +988,7 @@ function createTableChart(array $table, string $chartType, array &$temporaryImag
                     $x = $groupX + ($seriesIndex - (count($barSeries) - 1) / 2) * $barWidth;
                     $barTop = $bottom - ($bottom - $top) * $value / $maxValue;
                     $drawRectangle($image, (int) ($x - $barWidth / 2), (int) $barTop, (int) ($x + $barWidth / 2), $bottom, $palette[$seriesIndex % count($palette)]);
-                    $valueLabel = chartValueLabel($value);
+                    $valueLabel = chartBarValueLabel($value);
                     $valueLabelY = chartValueLabelPosition($placedValueLabels, $x, (int) $barTop - 22, $valueLabel);
                     chartTextCentered($image, 15, $x, $valueLabelY, $valueLabel, $dark, true);
                 }
