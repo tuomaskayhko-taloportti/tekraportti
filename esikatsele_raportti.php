@@ -1396,6 +1396,9 @@ register_shutdown_function(static function () use (&$temporaryImages): void {
 // Kansisivu.
 $pdf->AddPage();
 $pdf->Ln(35);
+$pdf->SetFont('Helvetica', 'B', 24);
+$pdf->MultiCell(0, 12, pdfText($report['otsikko']), 0, 'C');
+$pdf->Ln(8);
 $coverPath = localImagePath((string) ($report['kansikuva'] ?? ''));
 if ($coverPath !== null) {
     $coverPath = normalizePdfImageOrientation($coverPath, $temporaryImages);
@@ -1405,8 +1408,8 @@ if ($coverPath && in_array(strtolower(pathinfo($coverPath, PATHINFO_EXTENSION)),
     if ($imageSize) {
         // Kansikuva saa olla kaksi osiokuvan kokoista.
         $maxImageWidth = $sectionImageWidth * 2;
-        // Jätä kansisivulle tilaa otsikolle, asiakastiedoille ja laatijan
-        // tiedoille, jotta ne eivät siirry omalle sivulleen.
+        // Jätä kansisivulle tilaa asiakastiedoille ja laatijan tiedoille,
+        // jotta ne eivät siirry omalle sivulleen.
         $maxImageHeight = 115;
         $scale = min(
             $maxImageWidth / $imageSize[0],
@@ -1419,9 +1422,6 @@ if ($coverPath && in_array(strtolower(pathinfo($coverPath, PATHINFO_EXTENSION)),
         $pdf->Ln($imageHeight + 15);
     }
 }
-$pdf->SetFont('Helvetica', 'B', 24);
-$pdf->MultiCell(0, 12, pdfText($report['otsikko']), 0, 'C');
-$pdf->Ln(8);
 $pdf->SetFont('Helvetica', '', 13);
 $customerCompany = trim((string) ($report['asiakas_yritys'] ?? ''));
 $customerAddress = trim((string) ($report['asiakas_osoite'] ?? ''));
