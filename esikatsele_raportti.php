@@ -410,9 +410,9 @@ function pdfFooterContact(array $report): string
     return implode(' | ', $parts);
 }
 
-function pdfCustomerInfoLines(array $report, array $customerDetails): array
+function pdfCustomerInfoRows(array $report, array $customerDetails): array
 {
-    $lines = [];
+    $rows = [];
     $fields = [
         'Yhteyshenkilö' => 'asiakas_nimi',
         'Yritys' => 'asiakas_yritys',
@@ -424,21 +424,21 @@ function pdfCustomerInfoLines(array $report, array $customerDetails): array
     foreach ($fields as $label => $field) {
         $value = trim((string) ($report[$field] ?? ''));
         if ($value !== '') {
-            $lines[] = $label . ': ' . $value;
+            $rows[] = [$label, $value];
         }
     }
     $postal = trim((string) ($report['asiakas_postinro'] ?? '') . ' ' . (string) ($report['asiakas_postitmp'] ?? ''));
     if ($postal !== '') {
-        $lines[] = 'Postinumero ja -toimipaikka: ' . $postal;
+        $rows[] = ['Postinumero ja -toimipaikka', $postal];
     }
     foreach ($customerDetails as $detail) {
         $name = trim((string) ($detail['nimi'] ?? ''));
         $value = trim((string) ($detail['arvo'] ?? ''));
         if ($name !== '' && $value !== '') {
-            $lines[] = $name . ': ' . $value;
+            $rows[] = [$name, $value];
         }
     }
-    return $lines;
+    return $rows;
 }
 
 function pdfTableLineCount(FPDF $pdf, string $text, float $width, string $baseStyle = ''): int
@@ -1451,6 +1451,10 @@ $GLOBALS['reportLogoPath'] = localImagePath((string) ($report['laatija_logo_url'
 $temporaryImages = [];
 $chartSelections = is_array($_GET['kaavio'] ?? null) ? $_GET['kaavio'] : [];
 $chartColumnSelections = is_array($_GET['kaavio_sarakkeet'] ?? null) ? $_GET['kaavio_sarakkeet'] : [];
+$customerInfoColorOverride = strtolower(trim((string) ($_GET['asiakastiedot_taustavari'] ?? '')));
+if (!preg_match('/^#[0-9a-f]{6}$/', $customerInfoColorOverride)) {
+    $customerInfoColorOverride = '';
+}
 // Osiokuvien kiinteä mallikoko ensimmäisen mallikuvan perusteella.
 $sectionImageWidth = 82.5;
 $sectionImagePixelWidth = 390;
@@ -1571,14 +1575,47 @@ foreach ($rows as $index => $row) {
     $pdf->SetFont('Helvetica', 'B', 17);
     $pdf->MultiCell(0, 10, pdfText(($index + 1) . '. ' . $row['otsikko']), 0, 'L');
     if (!empty($row['sisaltaa_asiakastiedot'])) {
-        $customerInfoLines = pdfCustomerInfoLines($report, $customerDetails);
-        if ($customerInfoLines) {
-            $pdf->Ln(2);
-            $pdf->SetFont('Helvetica', '', 10);
-            foreach ($customerInfoLines as $customerInfoLine) {
-                pdfWriteMarkdown($pdf, $customerInfoLine, 5);
-                $pdf->Ln(5);
+        $customerInfoRows = pdfCustomerInfoRows($report, $customerDetails);
+        if ($customerInfoRows) {
+            $nextTable = $tablesByRow[(int) $row['id']][0] ?? null;
+            $defaultCustomerInfoColor = '#ffffff';
+            if ($nextTable && !empty($nextTable['sarakkeet'])) {
+                $candidateColor = (string) ($nextTable['sarakkeet'][0]['taustavari'] ?? '');
+                if (preg_match('/^#[0-9a-f]{6}$/i', $candidateColor)) { $defaultCustomerInfoColor = strtolower($candidateColor); }
             }
+            $customerInfoColor = $customerInfoColorOverride !== '' ? $customerInfoColorOverride : $defaultCustomerInfoColor;
+            $customerInfoTableWidth = $pdf->GetPageWidth() - 40;
+            $customerInfoColumnWidths = [$customerInfoTableWidth * 0.48, $customerInfoTableWidth * 0.52];
+            $customerInfoRowHeights = [];
+            $customerInfoHeight = 0.0;
+            foreach ($customerInfoRows as $customerInfoRow) {
+                $rowLines = max(
+                    pdfTableLineCount($pdf, (string) $customerInfoRow[0], $customerInfoColumnWidths[0] - 2),
+                    pdfTableLineCount($pdf, (string) $customerInfoRow[1], $customerInfoColumnWidths[1] - 2)
+                );
+                $rowHeight = $rowLines * 5 + 2;
+                $customerInfoRowHeights[] = $rowHeight;
+                $customerInfoHeight += $rowHeight;
+            }
+            $pdf->ensureSpace($customerInfoHeight + 5);
+            $pdf->Ln(2);
+            $customerInfoY = $pdf->GetY();
+            foreach ($customerInfoRows as $rowIndex => $customerInfoRow) {
+                $rowHeight = $customerInfoRowHeights[$rowIndex];
+                $x = 20;
+                foreach ($customerInfoRow as $columnIndex => $cellText) {
+                    $pdf->SetXY($x, $customerInfoY);
+                    $cellColor = $columnIndex === 0 ? pdfHexColor($customerInfoColor) : [255, 255, 255];
+                    $pdf->SetFillColor($cellColor[0], $cellColor[1], $cellColor[2]);
+                    $pdf->SetTextColor(35, 45, 60);
+                    $pdf->Cell($customerInfoColumnWidths[$columnIndex], $rowHeight, '', 1, 0, 'L', true);
+                    $pdf->SetXY($x + 1, $customerInfoY + 1);
+                    pdfWriteMarkdownCell($pdf, (string) $cellText, $customerInfoColumnWidths[$columnIndex] - 2, 5, '', 'L');
+                    $x += $customerInfoColumnWidths[$columnIndex];
+                }
+                $customerInfoY += $rowHeight;
+            }
+            $pdf->SetXY(20, $customerInfoY + 5);
         }
     }
     $pdf->Ln(5);
