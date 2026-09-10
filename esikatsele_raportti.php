@@ -896,7 +896,11 @@ function createTableChart(array $table, string $chartType, array &$temporaryImag
         foreach ($labels as $index => $label) {
             $groupY = $top + $groupHeight * $index + $groupHeight / 2;
             $labelParts = chartMarkdownLabelParts($label);
-            chartText($image, 16, 10, (int) ($groupY - 8), implode(' ', chartLabelLines($labelParts['text'], 24)), $dark);
+            $labelLines = chartLabelLines($labelParts['text'], 20);
+            $labelStartY = $groupY - (($labelLinesCount = count($labelLines) - 1) * 18) / 2 - 7;
+            foreach ($labelLines as $lineIndex => $labelLine) {
+                chartTextStyledCentered($image, 16, 150, (int) ($labelStartY + $lineIndex * 18), $labelLine, $dark, $labelParts['style']);
+            }
             foreach ($series as $seriesIndex => $item) {
                 $value = max(0, (float) ($item['values'][$index] ?? 0));
                 $y = $groupY + ($seriesIndex - (count($series) - 1) / 2) * $barHeight;
@@ -906,7 +910,14 @@ function createTableChart(array $table, string $chartType, array &$temporaryImag
             }
         }
         if ($diagramTitle !== '') { chartText($image, 24, 10, 15, $diagramTitle, $dark, true); }
-        foreach ($series as $seriesIndex => $item) { chartText($image, 16, 930, 20 + $seriesIndex * 24, $item['name'], $palette[$seriesIndex % count($palette)], true); }
+        foreach ($series as $seriesIndex => $item) {
+            $legendColumn = $seriesIndex % 2;
+            $legendRow = (int) floor($seriesIndex / 2);
+            $legendX = $legendColumn === 0 ? 300 : 740;
+            $legendY = 575 + $legendRow * 28;
+            $drawRectangle($image, $legendX, $legendY, $legendX + 18, $legendY + 18, $palette[$seriesIndex % count($palette)]);
+            chartText($image, 16, $legendX + 26, $legendY - 1, $item['name'], $dark, true);
+        }
     } else {
         $left = 140;
         $right = 1130;
