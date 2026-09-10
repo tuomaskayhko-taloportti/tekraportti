@@ -891,7 +891,7 @@ function createTableChart(array $table, string $chartType, array &$temporaryImag
         if ($diagramTitle !== '') {
             chartText($image, $diagramTitleSize, 10, 15, $diagramTitle, $dark, true);
         }
-        if ($hasThousandsValues) { chartTextStyled($image, $diagramTitleSize - 1, 10, 40, $thousandsLegend, $dark, 'I'); }
+        if ($hasThousandsValues) { chartTextStyled($image, 16, 10, 40, $thousandsLegend, $dark, 'I'); }
         $legendY = 100;
         foreach ($pieLabels as $index => $label) {
             $drawRectangle($image, 730, $legendY, 750, $legendY + 20, $palette[$index % count($palette)]);
@@ -935,7 +935,7 @@ function createTableChart(array $table, string $chartType, array &$temporaryImag
             }
         }
         if ($diagramTitle !== '') { chartText($image, $diagramTitleSize, 10, 15, $diagramTitle, $dark, true); }
-        if ($hasThousandsValues) { chartTextStyled($image, $diagramTitleSize - 1, 10, 40, $thousandsLegend, $dark, 'I'); }
+        if ($hasThousandsValues) { chartTextStyled($image, 16, 10, 40, $thousandsLegend, $dark, 'I'); }
         foreach ($series as $seriesIndex => $item) {
             $legendColumn = $seriesIndex % 2;
             $legendRow = (int) floor($seriesIndex / 2);
@@ -972,7 +972,7 @@ function createTableChart(array $table, string $chartType, array &$temporaryImag
         if ($diagramTitle !== '') {
             chartText($image, $diagramTitleSize, 10, 15, $diagramTitle, $dark, true);
         }
-        if ($hasThousandsValues) { chartTextStyled($image, $diagramTitleSize - 1, 10, 40, $thousandsLegend, $dark, 'I'); }
+        if ($hasThousandsValues) { chartTextStyled($image, 16, 10, 40, $thousandsLegend, $dark, 'I'); }
         $count = max(1, count($labels));
         $placedValueLabels = [];
         if (in_array($chartType, ['bar', 'combo'], true)) {
