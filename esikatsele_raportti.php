@@ -1665,7 +1665,7 @@ foreach ($rows as $index => $row) {
             $x = $tableLeft;
             $pdf->SetFont('Helvetica', ($displayRow['summary'] || !empty($displayRow['calculation'])) ? 'B' : '', 9);
             foreach ($columns as $columnIndex => $column) {
-                $cellText = $displayRow['summary'] ? (string) ($displayRow['cells'][(int) $column['id']] ?? '') : (string) ($table['solut'][(int) $tableRow['id']][(int) $column['id']] ?? '');
+                $cellText = ($displayRow['summary'] || !empty($displayRow['calculation'])) ? (string) ($displayRow['cells'][(int) $column['id']] ?? '') : (string) ($table['solut'][(int) $tableRow['id']][(int) $column['id']] ?? '');
                 $pdf->SetXY($x, $tableY);
                 $cellColor = pdfHexColor((string) ($column['taustavari'] ?? '#ffffff'));
                 $pdf->SetFillColor($cellColor[0], $cellColor[1], $cellColor[2]);
