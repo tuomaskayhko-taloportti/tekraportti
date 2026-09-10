@@ -85,6 +85,7 @@ try {
             $item['rivit'] = [];
             $item['solut'] = [];
             $item['yhteenvetorivit'] = [];
+            $item['laskentarivit'] = [];
         $tables[(int) $item['id']] = $item;
     }
     $query->close();
@@ -113,6 +114,10 @@ try {
             $query->close();
         }
         foreach ($summaryRows as $summary) { if (isset($tables[(int) $summary['taulukko_id']])) { $tables[(int) $summary['taulukko_id']]['yhteenvetorivit'][] = $summary; } }
+
+        $query = $db->prepare('SELECT id, taulukko_id, yhteenvetorivi_id, nimittaja, yksikot, toiminto, lahde_sarake_id, jarjestys FROM raporttitaulukko_laskentarivit WHERE laatijat_id = ? ORDER BY yhteenvetorivi_id, jarjestys, id');
+        $query->bind_param('i', $laatijatId); $query->execute(); $result = $query->get_result();
+        while ($item = $result->fetch_assoc()) { if (isset($tables[(int) $item['taulukko_id']])) { $tables[(int) $item['taulukko_id']]['laskentarivit'][] = $item; } } $query->close();
 
         $query = $db->prepare('SELECT id, taulukko_id, jarjestys FROM raporttitaulukko_rivit WHERE laatijat_id = ? ORDER BY taulukko_id, jarjestys, id');
         $query->bind_param('i', $laatijatId);
@@ -189,7 +194,7 @@ function pdfTableColumnIsNumeric(array $table, array $displayRows, int $columnId
 {
     $hasRows = false;
     foreach ($displayRows as $displayRow) {
-        if ($displayRow['summary']) {
+        if ($displayRow['summary'] || $displayRow['calculation']) {
             continue;
         }
         $hasRows = true;
@@ -219,13 +224,50 @@ function pdfTableRowsWithSummaries(array $table): array
         $result[] = ['row' => $tableRow, 'summary' => false];
         foreach ($summariesByAfter[(int) $tableRow['id']] ?? [] as $summary) {
             $result[] = ['row' => ['id' => -((int) $summary['id']), 'summary' => $summary], 'summary' => true];
+            foreach ($table['laskentarivit'] ?? [] as $calculation) {
+                if ((int) $calculation['yhteenvetorivi_id'] === (int) $summary['id']) {
+                    $result[] = ['row' => ['id' => -1000000000 - (int) $calculation['id'], 'calculation' => $calculation], 'calculation' => true, 'summary' => false];
+                }
+            }
         }
     }
     foreach ($summariesByAfter[0] ?? [] as $summary) {
         $result[] = ['row' => ['id' => -((int) $summary['id']), 'summary' => $summary], 'summary' => true];
+        foreach ($table['laskentarivit'] ?? [] as $calculation) {
+            if ((int) $calculation['yhteenvetorivi_id'] === (int) $summary['id']) {
+                $result[] = ['row' => ['id' => -1000000000 - (int) $calculation['id'], 'calculation' => $calculation], 'calculation' => true, 'summary' => false];
+            }
+        }
     }
     $running = [];
+    $summaryCellsById = [];
     foreach ($result as &$entry) {
+        if (!empty($entry['calculation'])) {
+            $calculation = $entry['row']['calculation'];
+            $source = pdfTableNumber((string) (($summaryCellsById[(int) $calculation['yhteenvetorivi_id']][(int) $calculation['lahde_sarake_id']]) ?? ''));
+            $units = (float) $calculation['yksikot'];
+            $value = $source['value'] ?? 0.0;
+            if ((string) $calculation['toiminto'] === 'jaa') {
+                $value = $units > 0 ? $value / $units : 0.0;
+            } elseif ((string) $calculation['toiminto'] === 'prosentti') {
+                $value = $value * $units / 100;
+            } else {
+                $value *= $units;
+            }
+            $calculationCells = [];
+            foreach ($table['sarakkeet'] as $columnIndex => $column) {
+                if ($columnIndex === 0) {
+                    $unitText = rtrim(rtrim(number_format($units, 2, ',', ' '), '0'), ',');
+                    $calculationCells[(int) $column['id']] = (string) $calculation['nimittaja'] . ' (yksiköt: ' . $unitText . ')';
+                } elseif ($columnIndex === count($table['sarakkeet']) - 1) {
+                    $calculationCells[(int) $column['id']] = pdfTableNumberText($value, (string) ($source['currency'] ?? ''));
+                } else {
+                    $calculationCells[(int) $column['id']] = '';
+                }
+            }
+            $entry['cells'] = $calculationCells;
+            continue;
+        }
         if (!$entry['summary']) {
             foreach ($table['sarakkeet'] as $column) {
                 $number = pdfTableNumberRun((string) ($table['solut'][(int) $entry['row']['id']][(int) $column['id']] ?? ''));
@@ -244,6 +286,7 @@ function pdfTableRowsWithSummaries(array $table): array
             $cells[$columnId] = in_array($columnId, $summary['sarakkeet'], true) ? pdfTableNumberText((float) ($running[$columnId]['value'] ?? 0), (string) ($running[$columnId]['currency'] ?? '')) : ($columnIndex === 0 ? ((string) $summary['tyyppi'] === 'valisummaa' ? 'Välisummaa' : 'Yhteensä') : '');
         }
         $entry['cells'] = $cells;
+        $summaryCellsById[(int) $summary['id']] = $cells;
         if ((string) $summary['tyyppi'] === 'valisummaa') { $running = []; }
     }
     unset($entry);
@@ -1561,14 +1604,19 @@ foreach ($rows as $index => $row) {
         if ($tableTitle !== '') {
             $estimatedHeight += 4;
         }
+        $summaryRowHeights = [];
         foreach ($displayRows as $displayRow) {
             $tableRow = $displayRow['row'];
             $rowLines = 1;
             foreach ($columns as $columnIndex => $column) {
-                $cellText = $displayRow['summary'] ? (string) ($displayRow['cells'][(int) $column['id']] ?? '') : (string) ($table['solut'][(int) $tableRow['id']][(int) $column['id']] ?? '');
+                $cellText = ($displayRow['summary'] || !empty($displayRow['calculation'])) ? (string) ($displayRow['cells'][(int) $column['id']] ?? '') : (string) ($table['solut'][(int) $tableRow['id']][(int) $column['id']] ?? '');
                 $rowLines = max($rowLines, pdfTableLineCount($pdf, $cellText, $columnWidths[$columnIndex]));
             }
-            $estimatedHeight += $rowLines * 5 + 2;
+            $rowHeight = $rowLines * 5 + 2;
+            if ($displayRow['summary']) { $rowHeight = (int) ceil($rowHeight * 1.3); }
+            if (!empty($displayRow['calculation'])) { $rowHeight = $summaryRowHeights[(int) $displayRow['row']['calculation']['yhteenvetorivi_id']] ?? $rowHeight; }
+            if ($displayRow['summary']) { $summaryRowHeights[(int) $tableRow['summary']['id']] = $rowHeight; }
+            $estimatedHeight += $rowHeight;
         }
         $pdf->ensureSpace($estimatedHeight);
         if ($tableTitle !== '') {
@@ -1594,21 +1642,28 @@ foreach ($rows as $index => $row) {
         }
         $tableY = $headerY + $headerHeight;
         $pdf->SetXY($tableLeft, $tableY);
+        $summaryRowHeights = [];
         foreach ($displayRows as $displayRow) {
             $tableRow = $displayRow['row'];
             $rowLines = 1;
             foreach ($columns as $columnIndex => $column) {
-                $cellText = $displayRow['summary'] ? (string) ($displayRow['cells'][(int) $column['id']] ?? '') : (string) ($table['solut'][(int) $tableRow['id']][(int) $column['id']] ?? '');
+                $cellText = ($displayRow['summary'] || !empty($displayRow['calculation'])) ? (string) ($displayRow['cells'][(int) $column['id']] ?? '') : (string) ($table['solut'][(int) $tableRow['id']][(int) $column['id']] ?? '');
                 $rowLines = max($rowLines, pdfTableLineCount($pdf, $cellText, $columnWidths[$columnIndex]));
             }
             $rowHeight = $rowLines * 5 + 2;
             if ($displayRow['summary']) {
                 $rowHeight = (int) ceil($rowHeight * 1.3);
             }
+            if (!empty($displayRow['calculation'])) {
+                $rowHeight = $summaryRowHeights[(int) $displayRow['row']['calculation']['yhteenvetorivi_id']] ?? $rowHeight;
+            }
+            if ($displayRow['summary']) {
+                $summaryRowHeights[(int) $tableRow['summary']['id']] = $rowHeight;
+            }
             $pdf->ensureSpace($rowHeight);
             $tableY = $pdf->GetY();
             $x = $tableLeft;
-            $pdf->SetFont('Helvetica', $displayRow['summary'] ? 'B' : '', 9);
+            $pdf->SetFont('Helvetica', ($displayRow['summary'] || !empty($displayRow['calculation'])) ? 'B' : '', 9);
             foreach ($columns as $columnIndex => $column) {
                 $cellText = $displayRow['summary'] ? (string) ($displayRow['cells'][(int) $column['id']] ?? '') : (string) ($table['solut'][(int) $tableRow['id']][(int) $column['id']] ?? '');
                 $pdf->SetXY($x, $tableY);
@@ -1628,12 +1683,12 @@ foreach ($rows as $index => $row) {
                 if ($cellNumber !== null || $styledCellNumber !== null) {
                     // Cell() saa koko solun leveyden, jolloin R kohdistaa
                     // numeron oikeaan reunaan eikä vain tekstipätkän kohdalle.
-                    $numberStyle = $displayRow['summary'] ? 'B' : (string) ($styledCellNumber['style'] ?? '');
+                    $numberStyle = ($displayRow['summary'] || !empty($displayRow['calculation'])) ? 'B' : (string) ($styledCellNumber['style'] ?? '');
                     $numberText = $styledCellNumber !== null ? (string) $styledCellNumber['text'] : $cellText;
                     $pdf->SetFont('Helvetica', $numberStyle, 9);
                     $pdf->Cell($columnWidths[$columnIndex] - 2, 5, pdfText($numberText), 0, 0, 'R');
                 } else {
-                    pdfWriteMarkdownCell($pdf, $cellText, $columnWidths[$columnIndex] - 2, 5, $displayRow['summary'] ? 'B' : '', 'L');
+                    pdfWriteMarkdownCell($pdf, $cellText, $columnWidths[$columnIndex] - 2, 5, ($displayRow['summary'] || !empty($displayRow['calculation'])) ? 'B' : '', 'L');
                 }
                 $x += $columnWidths[$columnIndex];
             }
