@@ -717,8 +717,7 @@ function chartValueLabel(float $value, string $currency = ''): string
 
 function createTableChart(array $table, string $chartType, array &$temporaryImages, array $selectedColumnIds = []): ?string
 {
-    $chartRows = array_values(array_filter((array) ($table['rivit'] ?? []), static fn (array $row): bool => empty($row['calculation']) && empty($row['laskentarivi'])));
-    if (!in_array($chartType, ['pie', 'bar', 'bar_horizontal', 'line', 'combo'], true) || count($table['sarakkeet']) < 2 || !$chartRows) {
+    if (!in_array($chartType, ['pie', 'bar', 'bar_horizontal', 'line', 'combo'], true) || count($table['sarakkeet']) < 2 || !$table['rivit']) {
         return null;
     }
 
@@ -729,7 +728,7 @@ function createTableChart(array $table, string $chartType, array &$temporaryImag
         }
         $values = [];
         $currency = '';
-        foreach ($chartRows as $tableRow) {
+        foreach ($table['rivit'] as $tableRow) {
             $cell = (string) ($table['solut'][(int) $tableRow['id']][(int) $column['id']] ?? '');
             if (str_contains($cell, '€')) { $currency = '€'; }
             if (str_contains($cell, '$')) { $currency = '$'; }
@@ -784,7 +783,7 @@ function createTableChart(array $table, string $chartType, array &$temporaryImag
         imagecolorallocate($image, 110, 95, 205),
     ];
     $labels = [];
-    foreach ($chartRows as $tableRow) {
+    foreach ($table['rivit'] as $tableRow) {
         $firstColumn = $table['sarakkeet'][0];
         $label = trim((string) ($table['solut'][(int) $tableRow['id']][(int) $firstColumn['id']] ?? ''));
         $labels[] = $label !== '' ? $label : (string) (count($labels) + 1);
