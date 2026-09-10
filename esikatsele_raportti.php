@@ -922,7 +922,11 @@ function createTableChart(array $table, string $chartType, array &$temporaryImag
         $left = 140;
         $right = 1130;
         $top = 75;
-        $bottom = 545;
+        $maxLabelLines = 1;
+        foreach ($labels as $label) {
+            $maxLabelLines = max($maxLabelLines, count(chartLabelLines(chartMarkdownLabelParts($label)['text'])));
+        }
+        $bottom = max(455, min(545, 635 - $maxLabelLines * 20));
         $maxValue = 0.0;
         foreach ($series as $item) {
             foreach ($item['values'] as $value) {
