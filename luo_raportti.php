@@ -183,7 +183,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             header('Location: muokkaa_raportti.php?id=' . $reportId);
             exit;
         } catch (Throwable $error) {
-            $message = 'Raportin tallennus epäonnistui: ' . $error->getMessage();
+            $message = 'Raportin tallennus epäonnistui.';
             error_log('Raportin tallennus epäonnistui: ' . $error->getMessage());
         }
     }
