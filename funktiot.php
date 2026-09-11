@@ -390,6 +390,29 @@ function storeUploadedFile(array $file, string $folder, ?array $allowedExtension
     return 'Tiedostot/' . $folder . '/' . $filename;
 }
 
+/** Kopioi palvelun oman ladatun tiedoston erilliseksi tiedostoksi. */
+function copyStoredFile(string $url): string
+{
+    if ($url === '' || str_contains($url, '..') || preg_match('/^https?:\/\//i', $url)) {
+        return $url;
+    }
+
+    $directory = realpath(__DIR__ . '/Tiedostot');
+    $source = realpath(__DIR__ . '/' . ltrim($url, '/'));
+    if (!$directory || !$source || !str_starts_with($source, $directory . DIRECTORY_SEPARATOR) || !is_file($source)) {
+        throw new RuntimeException('Mediaa ei voitu kopioida.');
+    }
+
+    $relativeDirectory = dirname(substr($source, strlen(__DIR__) + 1));
+    $extension = strtolower(pathinfo($source, PATHINFO_EXTENSION));
+    $filename = bin2hex(random_bytes(16)) . ($extension !== '' ? '.' . $extension : '');
+    $destination = __DIR__ . '/' . $relativeDirectory . '/' . $filename;
+    if (!copy($source, $destination)) {
+        throw new RuntimeException('Mediaa ei voitu kopioida.');
+    }
+    return $relativeDirectory . '/' . $filename;
+}
+
 /**
  * Poistaa palvelun oman ladatun tiedoston. Ulkopuolisiin tai hakemiston
  * ulkopuolisiin polkuihin ei kosketa.

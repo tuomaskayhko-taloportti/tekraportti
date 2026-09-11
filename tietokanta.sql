@@ -312,13 +312,13 @@ CREATE TABLE `raporttitaulukko_laskentarivit` (
     PRIMARY KEY (`id`),
     KEY `idx_raporttitaulukko_laskentarivit_yhteenveto` (`yhteenvetorivi_id`, `jarjestys`),
     UNIQUE KEY `uq_raporttitaulukko_laskentarivit_id_laatijat_id` (`id`, `laatijat_id`),
-    CONSTRAINT `fk_raporttitaulukko_laskentarivit_taulukko`
+    CONSTRAINT `fk_laskentarivit_taulukko_1026`
         FOREIGN KEY (`taulukko_id`, `laatijat_id`) REFERENCES `raporttitaulukot` (`id`, `laatijat_id`)
         ON UPDATE CASCADE ON DELETE CASCADE,
-    CONSTRAINT `fk_raporttitaulukko_laskentarivit_yhteenveto`
+    CONSTRAINT `fk_laskentarivit_yhteenveto_1026`
         FOREIGN KEY (`yhteenvetorivi_id`, `laatijat_id`) REFERENCES `raporttitaulukko_yhteenvetorivit` (`id`, `laatijat_id`)
         ON UPDATE CASCADE ON DELETE CASCADE,
-    CONSTRAINT `fk_raporttitaulukko_laskentarivit_sarake`
+    CONSTRAINT `fk_laskentarivit_sarake_1026`
         FOREIGN KEY (`lahde_sarake_id`, `laatijat_id`) REFERENCES `raporttitaulukko_sarakkeet` (`id`, `laatijat_id`)
         ON UPDATE CASCADE ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

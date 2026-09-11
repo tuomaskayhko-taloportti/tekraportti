@@ -243,6 +243,105 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $query->close();
                 $message = 'Osio tallennettiin.';
                 $messageType = 'success';
+            } elseif ($action === 'copy-row') {
+                $sourceRowId = (int) ($_POST['rivi_id'] ?? 0);
+                $query = $db->prepare('SELECT otsikko, sisalto, sisaltaa_asiakastiedot FROM raporttirivit WHERE id = ? AND raportti_id = ? AND laatijat_id = ? LIMIT 1');
+                $query->bind_param('iii', $sourceRowId, $raporttiId, $laatijatId); $query->execute();
+                $sourceRow = $query->get_result()->fetch_assoc(); $query->close();
+                if (!$sourceRow) { throw new RuntimeException('Kopioitavaa osiota ei löytynyt.'); }
+
+                $copiedFiles = [];
+                $db->begin_transaction();
+                try {
+                    $query = $db->prepare('SELECT COALESCE(MAX(jarjestys), 0) + 1 AS seuraava FROM raporttirivit WHERE raportti_id = ? AND laatijat_id = ?');
+                    $query->bind_param('ii', $raporttiId, $laatijatId); $query->execute();
+                    $newOrder = (int) $query->get_result()->fetch_assoc()['seuraava']; $query->close();
+                    $newTitle = mb_substr((string) $sourceRow['otsikko'] . ' (kopio)', 0, 255);
+                    $query = $db->prepare('INSERT INTO raporttirivit (laatijat_id, raportti_id, otsikko, sisalto, sisaltaa_asiakastiedot, jarjestys) VALUES (?, ?, ?, ?, ?, ?)');
+                    $includeCustomerInfo = (int) $sourceRow['sisaltaa_asiakastiedot'];
+                    $sourceContent = (string) $sourceRow['sisalto'];
+                    $query->bind_param('iissii', $laatijatId, $raporttiId, $newTitle, $sourceContent, $includeCustomerInfo, $newOrder); $query->execute();
+                    $newRowId = (int) $db->insert_id; $query->close();
+
+                    $query = $db->prepare('SELECT tyyppi, url, kuvateksti, merkinnat_json, jarjestys FROM raporttimedia WHERE raporttirivi_id = ? AND raportti_id = ? AND laatijat_id = ? ORDER BY jarjestys, id');
+                    $query->bind_param('iii', $sourceRowId, $raporttiId, $laatijatId); $query->execute(); $mediaResult = $query->get_result();
+                    $mediaItems = $mediaResult->fetch_all(MYSQLI_ASSOC); $query->close();
+                    foreach ($mediaItems as $mediaItem) {
+                        $mediaUrl = copyStoredFile((string) ($mediaItem['url'] ?? ''));
+                        if ($mediaUrl !== (string) ($mediaItem['url'] ?? '')) { $copiedFiles[] = $mediaUrl; }
+                        $query = $db->prepare('INSERT INTO raporttimedia (laatijat_id, raportti_id, raporttirivi_id, tyyppi, url, kuvateksti, merkinnat_json, jarjestys) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+                        $mediaType = (string) $mediaItem['tyyppi']; $mediaCaption = (string) $mediaItem['kuvateksti']; $mediaAnnotations = (string) $mediaItem['merkinnat_json']; $mediaOrder = (int) $mediaItem['jarjestys'];
+                        $query->bind_param('iiissssi', $laatijatId, $raporttiId, $newRowId, $mediaType, $mediaUrl, $mediaCaption, $mediaAnnotations, $mediaOrder); $query->execute(); $query->close();
+                    }
+
+                    $query = $db->prepare('SELECT id, otsikko, reunat, leveys_tila, jarjestys FROM raporttitaulukot WHERE raporttirivi_id = ? AND raportti_id = ? AND laatijat_id = ? ORDER BY jarjestys, id');
+                    $query->bind_param('iii', $sourceRowId, $raporttiId, $laatijatId); $query->execute(); $tableItems = $query->get_result()->fetch_all(MYSQLI_ASSOC); $query->close();
+                    foreach ($tableItems as $tableItem) {
+                        $sourceTableId = (int) $tableItem['id'];
+                        $query = $db->prepare('INSERT INTO raporttitaulukot (laatijat_id, raportti_id, raporttirivi_id, otsikko, reunat, leveys_tila, jarjestys) VALUES (?, ?, ?, ?, ?, ?, ?)');
+                        $tableTitle = (string) $tableItem['otsikko']; $tableBorders = (int) $tableItem['reunat']; $tableWidth = (string) $tableItem['leveys_tila']; $tableOrder = (int) $tableItem['jarjestys'];
+                        $query->bind_param('iiisisi', $laatijatId, $raporttiId, $newRowId, $tableTitle, $tableBorders, $tableWidth, $tableOrder);
+                        $query->execute(); $newTableId = (int) $db->insert_id; $query->close();
+                        $columnMap = []; $tableRowMap = [];
+                        $query = $db->prepare('SELECT id, nimi, taustavari, fonttivari, leveys, jarjestys FROM raporttitaulukko_sarakkeet WHERE taulukko_id = ? AND laatijat_id = ? ORDER BY jarjestys, id');
+                        $query->bind_param('ii', $sourceTableId, $laatijatId); $query->execute(); $columns = $query->get_result()->fetch_all(MYSQLI_ASSOC); $query->close();
+                        foreach ($columns as $column) {
+                            $query = $db->prepare('INSERT INTO raporttitaulukko_sarakkeet (laatijat_id, taulukko_id, nimi, taustavari, fonttivari, leveys, jarjestys) VALUES (?, ?, ?, ?, ?, ?, ?)');
+                            $columnName = (string) $column['nimi']; $columnColor = (string) $column['taustavari']; $columnFontColor = (string) $column['fonttivari']; $columnWidth = $column['leveys'] !== null ? (float) $column['leveys'] : null; $columnOrder = (int) $column['jarjestys'];
+                            $query->bind_param('iisssdi', $laatijatId, $newTableId, $columnName, $columnColor, $columnFontColor, $columnWidth, $columnOrder); $query->execute();
+                            $columnMap[(int) $column['id']] = (int) $db->insert_id; $query->close();
+                        }
+                        $query = $db->prepare('SELECT id, jarjestys FROM raporttitaulukko_rivit WHERE taulukko_id = ? AND laatijat_id = ? ORDER BY jarjestys, id');
+                        $query->bind_param('ii', $sourceTableId, $laatijatId); $query->execute(); $tableRows = $query->get_result()->fetch_all(MYSQLI_ASSOC); $query->close();
+                        foreach ($tableRows as $tableRow) {
+                            $query = $db->prepare('INSERT INTO raporttitaulukko_rivit (laatijat_id, taulukko_id, jarjestys) VALUES (?, ?, ?)');
+                            $tableRowOrder = (int) $tableRow['jarjestys'];
+                            $query->bind_param('iii', $laatijatId, $newTableId, $tableRowOrder); $query->execute(); $tableRowMap[(int) $tableRow['id']] = (int) $db->insert_id; $query->close();
+                        }
+                        $query = $db->prepare('SELECT rivi_id, sarake_id, sisalto FROM raporttitaulukko_solut WHERE taulukko_id = ? AND laatijat_id = ?');
+                        $query->bind_param('ii', $sourceTableId, $laatijatId); $query->execute(); $cells = $query->get_result()->fetch_all(MYSQLI_ASSOC); $query->close();
+                        foreach ($cells as $cell) {
+                            if (!isset($tableRowMap[(int) $cell['rivi_id']], $columnMap[(int) $cell['sarake_id']])) { continue; }
+                            $newTableRowId = $tableRowMap[(int) $cell['rivi_id']]; $newColumnId = $columnMap[(int) $cell['sarake_id']];
+                            $query = $db->prepare('INSERT INTO raporttitaulukko_solut (laatijat_id, taulukko_id, rivi_id, sarake_id, sisalto) VALUES (?, ?, ?, ?, ?)');
+                            $cellContent = (string) $cell['sisalto'];
+                            $query->bind_param('iiiis', $laatijatId, $newTableId, $newTableRowId, $newColumnId, $cellContent); $query->execute(); $query->close();
+                        }
+                        $summaryMap = [];
+                        $query = $db->prepare('SELECT id, tyyppi, jalkeen_rivi_id, jarjestys FROM raporttitaulukko_yhteenvetorivit WHERE taulukko_id = ? AND laatijat_id = ? ORDER BY jarjestys, id');
+                        $query->bind_param('ii', $sourceTableId, $laatijatId); $query->execute(); $summaries = $query->get_result()->fetch_all(MYSQLI_ASSOC); $query->close();
+                        foreach ($summaries as $summary) {
+                            $afterRowId = isset($tableRowMap[(int) $summary['jalkeen_rivi_id']]) ? $tableRowMap[(int) $summary['jalkeen_rivi_id']] : null;
+                            $afterRowIdValue = $afterRowId ?? 0;
+                            $summaryType = (string) $summary['tyyppi']; $summaryOrder = (int) $summary['jarjestys'];
+                            $query = $db->prepare('INSERT INTO raporttitaulukko_yhteenvetorivit (laatijat_id, taulukko_id, tyyppi, jalkeen_rivi_id, jarjestys) VALUES (?, ?, ?, NULLIF(?, 0), ?)');
+                            $query->bind_param('iisii', $laatijatId, $newTableId, $summaryType, $afterRowIdValue, $summaryOrder); $query->execute(); $newSummaryId = (int) $db->insert_id; $query->close(); $summaryMap[(int) $summary['id']] = $newSummaryId;
+                            $query = $db->prepare('SELECT sarake_id FROM raporttitaulukko_yhteenvetorivi_sarakkeet WHERE yhteenvetorivi_id = ? AND laatijat_id = ?');
+                            $query->bind_param('ii', $summary['id'], $laatijatId); $query->execute(); $summaryColumns = $query->get_result()->fetch_all(MYSQLI_ASSOC); $query->close();
+                            foreach ($summaryColumns as $summaryColumn) {
+                                if (!isset($columnMap[(int) $summaryColumn['sarake_id']])) { continue; }
+                                $newColumnId = $columnMap[(int) $summaryColumn['sarake_id']]; $query = $db->prepare('INSERT INTO raporttitaulukko_yhteenvetorivi_sarakkeet (laatijat_id, yhteenvetorivi_id, sarake_id) VALUES (?, ?, ?)');
+                                $query->bind_param('iii', $laatijatId, $newSummaryId, $newColumnId); $query->execute(); $query->close();
+                            }
+                        }
+                        $query = $db->prepare('SELECT yhteenvetorivi_id, nimittaja, yksikot, toiminto, lahde_sarake_id, jarjestys FROM raporttitaulukko_laskentarivit WHERE taulukko_id = ? AND laatijat_id = ?');
+                        $query->bind_param('ii', $sourceTableId, $laatijatId); $query->execute(); $calculations = $query->get_result()->fetch_all(MYSQLI_ASSOC); $query->close();
+                        foreach ($calculations as $calculation) {
+                            if (!isset($summaryMap[(int) $calculation['yhteenvetorivi_id']], $columnMap[(int) $calculation['lahde_sarake_id']])) { continue; }
+                            $newSummaryId = $summaryMap[(int) $calculation['yhteenvetorivi_id']]; $newColumnId = $columnMap[(int) $calculation['lahde_sarake_id']];
+                            $query = $db->prepare('INSERT INTO raporttitaulukko_laskentarivit (laatijat_id, taulukko_id, yhteenvetorivi_id, nimittaja, yksikot, toiminto, lahde_sarake_id, jarjestys) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+                            $calculationName = (string) $calculation['nimittaja']; $calculationUnits = (float) $calculation['yksikot']; $calculationOperation = (string) $calculation['toiminto']; $calculationOrder = (int) $calculation['jarjestys'];
+                            $query->bind_param('iiisdsii', $laatijatId, $newTableId, $newSummaryId, $calculationName, $calculationUnits, $calculationOperation, $newColumnId, $calculationOrder); $query->execute(); $query->close();
+                        }
+                    }
+                    $db->commit();
+                } catch (Throwable $error) {
+                    $db->rollback();
+                    foreach ($copiedFiles as $copiedFile) { deleteStoredFile($copiedFile); }
+                    throw $error;
+                }
+                $_POST['return_anchor'] = 'osio-' . $newRowId;
+                $message = 'Osio kopioitiin.'; $messageType = 'success';
             } elseif ($action === 'move-row') {
                 $rowId = (int) ($_POST['rivi_id'] ?? 0);
                 $direction = (string) ($_POST['suunta'] ?? '');
@@ -895,7 +994,7 @@ openLayoutShell('Muokkaa raporttia – TEKRAPORTTI');
             <div class="form-check mb-3"><input class="form-check-input" type="checkbox" id="asiakastiedot-<?= (int) $row['id'] ?>" name="sisaltaa_asiakastiedot" <?= !empty($row['sisaltaa_asiakastiedot']) ? 'checked' : '' ?>><label class="form-check-label" for="asiakastiedot-<?= (int) $row['id'] ?>">Tulosta asiakkaan tiedot tämän osion alussa</label></div>
             <button class="btn btn-primary btn-sm">Tallenna osio</button>
         </form>
-        <form method="post" action="muokkaa_raportti.php?id=<?= $raporttiId ?>" class="mt-2" onsubmit="return confirm('Poistetaanko osio?');"><input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="delete-row"><input type="hidden" name="rivi_id" value="<?= (int) $row['id'] ?>"><input type="hidden" name="return_anchor" value="osio-<?= (int) $row['id'] ?>"><button class="btn btn-outline-danger btn-sm">Poista osio</button></form>
+        <div class="d-flex gap-2 mt-2"><form method="post" action="muokkaa_raportti.php?id=<?= $raporttiId ?>" onsubmit="return confirm('Kopioidaanko osio ja sen sisältö?');"><input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="copy-row"><input type="hidden" name="rivi_id" value="<?= (int) $row['id'] ?>"><button class="btn btn-outline-primary btn-sm">Kopioi osio</button></form><form method="post" action="muokkaa_raportti.php?id=<?= $raporttiId ?>" onsubmit="return confirm('Poistetaanko osio?');"><input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="delete-row"><input type="hidden" name="rivi_id" value="<?= (int) $row['id'] ?>"><input type="hidden" name="return_anchor" value="osio-<?= (int) $row['id'] ?>"><button class="btn btn-outline-danger btn-sm">Poista osio</button></form></div>
         <?php foreach ($media as $item): ?><?php if ((int) $item['raporttirivi_id'] === (int) $row['id']): ?><div class="border-top mt-3 pt-2 small"><strong><?= editValue($item['tyyppi']) ?></strong>: <?= editValue($item['url']) ?>
             <?php if ($item['tyyppi'] === 'kuva'): ?><div class="image-annotation-preview mt-2"><img src="<?= editValue($item['url']) ?>" alt="" loading="lazy"><button type="button" class="btn btn-outline-secondary btn-sm" data-annotation-open data-media-id="<?= (int) $item['id'] ?>" data-image-url="<?= editValue($item['url']) ?>" data-annotations="<?= editValue(json_encode(decodeImageAnnotations($item['merkinnat_json'] ?? null), JSON_UNESCAPED_UNICODE)) ?>">Muokkaa merkintöjä</button></div><?php endif; ?>
             <form method="post" action="muokkaa_raportti.php?id=<?= $raporttiId ?>" class="row g-2 mt-1 align-items-center">
@@ -917,7 +1016,7 @@ openLayoutShell('Muokkaa raporttia – TEKRAPORTTI');
                     <div class="row g-2 mb-2"><div class="col-12"><span class="small text-muted">Sarakkeiden fonttivärit:</span><?php foreach ($table['sarakkeet'] as $column): ?><label class="small text-muted ms-3"><?= editValue($column['nimi']) ?> <input type="color" name="sarake_fonttivari[<?= (int) $table['id'] ?>][<?= (int) $column['id'] ?>]" value="<?= editValue(preg_match('/^#[0-9a-fA-F]{6}$/', (string) ($column['fonttivari'] ?? '')) ? $column['fonttivari'] : '#232d3c') ?>"></label><?php endforeach; ?></div></div>
                     <div class="table-responsive"><table class="table table-sm align-middle mb-2 <?= (int) ($table['reunat'] ?? 1) === 1 ? 'table-bordered' : 'table-no-borders' ?>"><thead><tr><?php foreach ($table['sarakkeet'] as $column): ?><th style="background-color:<?= editValue(preg_match('/^#[0-9a-fA-F]{6}$/', (string) ($column['taustavari'] ?? '')) ? $column['taustavari'] : '#ffffff') ?>"><input class="form-control form-control-sm" name="sarake_nimi[<?= (int) $table['id'] ?>][<?= (int) $column['id'] ?>]" value="<?= editValue($column['nimi']) ?>"><label class="small text-muted d-flex align-items-center gap-1 mt-1">Taustaväri <input type="color" name="sarake_taustavari[<?= (int) $table['id'] ?>][<?= (int) $column['id'] ?>]" value="<?= editValue(preg_match('/^#[0-9a-fA-F]{6}$/', (string) ($column['taustavari'] ?? '')) ? $column['taustavari'] : '#ffffff') ?>"></label><div class="text-end mt-1"><button class="btn btn-link btn-sm text-danger p-0" type="submit" name="action" value="delete-table-column" onclick="this.form.sarake_id.value='<?= (int) $column['id'] ?>';">Poista</button></div></th><?php endforeach; ?></tr></thead><tbody><?php foreach ($table['rivit'] as $tableRow): ?><tr><?php foreach ($table['sarakkeet'] as $column): ?><td style="background-color:<?= editValue(preg_match('/^#[0-9a-fA-F]{6}$/', (string) ($column['taustavari'] ?? '')) ? $column['taustavari'] : '#ffffff') ?>"><textarea class="form-control form-control-sm" name="solu[<?= (int) $table['id'] ?>][<?= (int) $tableRow['id'] ?>][<?= (int) $column['id'] ?>]" rows="2" data-markdown-editor><?= editValue($table['solut'][(int) $tableRow['id']][(int) $column['id']] ?? '') ?></textarea></td><?php endforeach; ?><td class="border-0 p-1"><button class="btn btn-link btn-sm text-danger" type="submit" name="action" value="delete-table-row" onclick="this.form.taulukko_rivi_id.value='<?= (int) $tableRow['id'] ?>';">Poista rivi</button></td></tr><?php endforeach; ?></tbody></table></div>
                     <?php if ($table['yhteenvetorivit']): ?><div class="small fw-semibold mt-3">Summarivit</div><?php foreach ($table['yhteenvetorivit'] as $summary): ?><div class="border rounded p-2 mt-2"><div class="row g-2 align-items-center"><div class="col-md-2"><select class="form-select form-select-sm" name="yhteenveto[<?= (int) $summary['id'] ?>][tyyppi]"><option value="summa" <?= $summary['tyyppi'] === 'summa' ? 'selected' : '' ?>>Summarivi</option><option value="valisummaa" <?= $summary['tyyppi'] === 'valisummaa' ? 'selected' : '' ?>>Välisummaa</option></select></div><div class="col-md-3"><select class="form-select form-select-sm" name="yhteenveto[<?= (int) $summary['id'] ?>][jalkeen_rivi_id]"><option value="0">Taulukon loppuun</option><?php foreach ($table['rivit'] as $tableRow): ?><option value="<?= (int) $tableRow['id'] ?>" <?= (int) $summary['jalkeen_rivi_id'] === (int) $tableRow['id'] ? 'selected' : '' ?>>Rivin <?= editValue($table['solut'][(int) $tableRow['id']][(int) $table['sarakkeet'][0]['id']] ?? '') ?> jälkeen</option><?php endforeach; ?></select></div><div class="col-md-6"><?php foreach ($table['sarakkeet'] as $column): ?><label class="me-2"><input type="checkbox" name="yhteenveto[<?= (int) $summary['id'] ?>][sarakkeet][]" value="<?= (int) $column['id'] ?>" <?= in_array((int) $column['id'], $summary['sarakkeet'], true) ? 'checked' : '' ?>> <?= editValue($column['nimi']) ?></label><?php endforeach; ?></div><div class="col-md-1 text-end"><button class="btn btn-link btn-sm text-danger" type="submit" name="action" value="delete-table-summary" onclick="this.form.yhteenvetorivi_id.value='<?= (int) $summary['id'] ?>';">Poista</button></div></div><div class="mt-2 small fw-semibold">Laskentarivit</div><?php foreach ($table['laskentarivit'] as $calculation): ?><?php if ((int) $calculation['yhteenvetorivi_id'] === (int) $summary['id']): ?><div class="d-flex flex-wrap gap-2 align-items-center mt-1"><span><?= editValue($calculation['nimittaja']) ?> (yksiköt: <?= editValue($calculation['yksikot']) ?>), <?= $calculation['toiminto'] === 'jaa' ? 'jaa' : ($calculation['toiminto'] === 'kerro' ? 'kertoo' : 'kertoo % summasta') ?>, lähde: <?= editValue($table['sarakkeet'][array_search((int) $calculation['lahde_sarake_id'], array_column($table['sarakkeet'], 'id'), true)]['nimi'] ?? '') ?></span><button class="btn btn-link btn-sm text-danger" type="submit" name="action" value="delete-table-calculation" onclick="this.form.laskentarivi_id.value='<?= (int) $calculation['id'] ?>';">Poista</button></div><?php endif; ?><?php endforeach; ?><div class="row g-2 mt-2"><input type="hidden" name="laskenta[yhteenvetorivi_id]" value="<?= (int) $summary['id'] ?>"><div class="col-md-3"><input class="form-control form-control-sm" name="laskenta[nimittaja]" placeholder="Nimittäjä, esim. Lainaosuus per yksikkö"></div><div class="col-md-2"><input class="form-control form-control-sm" name="laskenta[yksikot]" inputmode="decimal" placeholder="Yksiköiden lukumäärä"></div><div class="col-md-2"><select class="form-select form-select-sm" name="laskenta[toiminto]"><option value="jaa">Jaa yksiköillä</option><option value="kerro">Kerro yksiköillä</option><option value="prosentti">Kerro % summasta</option></select></div><div class="col-md-3"><select class="form-select form-select-sm" name="laskenta[lahde_sarake_id]"><option value="0">Valitse summarivin solu</option><?php foreach ($table['sarakkeet'] as $column): ?><?php if (in_array((int) $column['id'], $summary['sarakkeet'], true)): ?><option value="<?= (int) $column['id'] ?>"><?= editValue($column['nimi']) ?></option><?php endif; ?><?php endforeach; ?></select></div><div class="col-md-2"><button class="btn btn-outline-secondary btn-sm w-100" type="submit" name="action" value="add-table-calculation">Lisää laskentarivi</button></div></div></div><?php endforeach; ?><?php endif; ?>
-                    <input type="hidden" name="sarake_id" value=""><input type="hidden" name="taulukko_rivi_id" value=""><input type="hidden" name="yhteenvetorivi_id" value=""><div class="d-flex flex-wrap gap-2 align-items-center"><button class="btn btn-primary btn-sm" type="submit" name="action" value="update-table">Tallenna taulukko</button><input class="form-control form-control-sm" style="max-width:220px" name="uusi_sarake_nimi" placeholder="Uuden sarakkeen nimi"><button class="btn btn-outline-secondary btn-sm" type="submit" name="action" value="add-table-column">Tallenna ja lisää sarake</button><button class="btn btn-outline-secondary btn-sm" type="submit" name="action" value="add-table-row">Tallenna ja lisää rivi</button></div>
+                    <input type="hidden" name="sarake_id" value=""><input type="hidden" name="taulukko_rivi_id" value=""><input type="hidden" name="yhteenvetorivi_id" value=""><input type="hidden" name="laskentarivi_id" value=""><div class="d-flex flex-wrap gap-2 align-items-center"><button class="btn btn-primary btn-sm" type="submit" name="action" value="update-table">Tallenna taulukko</button><input class="form-control form-control-sm" style="max-width:220px" name="uusi_sarake_nimi" placeholder="Uuden sarakkeen nimi"><button class="btn btn-outline-secondary btn-sm" type="submit" name="action" value="add-table-column">Tallenna ja lisää sarake</button><button class="btn btn-outline-secondary btn-sm" type="submit" name="action" value="add-table-row">Tallenna ja lisää rivi</button></div>
                     <div class="border rounded p-2 mt-2"><div class="small fw-semibold mb-1">Lisää summarivi</div><div class="row g-2"><div class="col-md-2"><select class="form-select form-select-sm" name="yhteenveto_tyyppi"><option value="summa">Summarivi</option><option value="valisummaa">Välisummaa</option></select></div><div class="col-md-3"><select class="form-select form-select-sm" name="yhteenveto_jalkeen_rivi_id"><option value="0">Taulukon loppuun</option><?php foreach ($table['rivit'] as $tableRow): ?><option value="<?= (int) $tableRow['id'] ?>">Rivin <?= editValue($table['solut'][(int) $tableRow['id']][(int) $table['sarakkeet'][0]['id']] ?? '') ?> jälkeen</option><?php endforeach; ?></select></div><div class="col-md-6"><?php foreach ($table['sarakkeet'] as $column): ?><label class="me-2"><input type="checkbox" name="yhteenveto_sarakkeet[]" value="<?= (int) $column['id'] ?>"> <?= editValue($column['nimi']) ?></label><?php endforeach; ?></div><div class="col-md-1"><button class="btn btn-outline-secondary btn-sm w-100" type="submit" name="action" value="add-table-summary">Lisää</button></div></div></div>
                 </form>
             </div>
