@@ -205,6 +205,8 @@ CREATE TABLE `raporttitaulukot` (
     `otsikko` VARCHAR(255) NULL,
     `reunat` TINYINT(1) NOT NULL DEFAULT 1,
     `leveys_tila` ENUM('keskitetty', 'kokosivu') NOT NULL DEFAULT 'keskitetty',
+    `tasaus_pysty` ENUM('ylos', 'keskelle', 'alas') NOT NULL DEFAULT 'alas',
+    `tasaus_vaaka` ENUM('vasen', 'keski', 'oikea') NOT NULL DEFAULT 'vasen',
     `jarjestys` INT UNSIGNED NOT NULL DEFAULT 1,
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

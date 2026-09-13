@@ -76,7 +76,7 @@ try {
 
     $tablesByRow = [];
     $tables = [];
-    $query = $db->prepare('SELECT id, raporttirivi_id, otsikko, reunat, leveys_tila, jarjestys FROM raporttitaulukot WHERE raportti_id = ? AND laatijat_id = ? ORDER BY raporttirivi_id, jarjestys, id');
+    $query = $db->prepare('SELECT id, raporttirivi_id, otsikko, reunat, leveys_tila, tasaus_pysty, tasaus_vaaka, jarjestys FROM raporttitaulukot WHERE raportti_id = ? AND laatijat_id = ? ORDER BY raporttirivi_id, jarjestys, id');
     $query->bind_param('ii', $raporttiId, $laatijatId);
     $query->execute();
     $tableResult = $query->get_result();
@@ -154,6 +154,25 @@ function pdfText(string $value): string
 {
     $converted = iconv('UTF-8', 'Windows-1252//TRANSLIT', $value);
     return $converted === false ? '?' : $converted;
+}
+
+function pdfTableHorizontalAlignment(string $alignment): string
+{
+    return match ($alignment) {
+        'keski' => 'C',
+        'oikea' => 'R',
+        default => 'L',
+    };
+}
+
+function pdfTableCellTextY(float $cellY, float $cellHeight, int $lineCount, string $alignment): float
+{
+    $textHeight = max(1, $lineCount) * 5;
+    return $cellY + match ($alignment) {
+        'ylos' => 1,
+        'keskelle' => max(1, ($cellHeight - $textHeight) / 2),
+        default => max(1, $cellHeight - $textHeight - 1),
+    };
 }
 
 function pdfTableNumber(string $value): ?array
@@ -1723,8 +1742,9 @@ foreach ($rows as $index => $row) {
             $headerTextColor = pdfHexColor((string) ($column['fonttivari'] ?? '#232d3c'), [35, 45, 60]);
             $pdf->SetTextColor($headerTextColor[0], $headerTextColor[1], $headerTextColor[2]);
             $pdf->Cell($columnWidths[$columnIndex], $headerHeight, '', $tableBorder, 0, 'L', true);
-            $pdf->SetXY($x + 1, $headerY + 1);
-            $headerAlignment = $numericColumns[$columnIndex] ? 'R' : 'L';
+            $headerLinesForCell = pdfTableLineCount($pdf, (string) $column['nimi'], $columnWidths[$columnIndex] - 2, 'B');
+            $pdf->SetXY($x + 1, pdfTableCellTextY($headerY, $headerHeight, $headerLinesForCell, (string) ($table['tasaus_pysty'] ?? 'alas')));
+            $headerAlignment = $columnIndex === 0 ? 'L' : pdfTableHorizontalAlignment((string) ($table['tasaus_vaaka'] ?? 'vasen'));
             pdfWriteMarkdownCell($pdf, (string) $column['nimi'], $columnWidths[$columnIndex] - 2, 5, 'B', $headerAlignment);
             $x += $columnWidths[$columnIndex];
         }
@@ -1760,23 +1780,19 @@ foreach ($rows as $index => $row) {
                 $textColor = pdfHexColor((string) ($column['fonttivari'] ?? '#232d3c'), [35, 45, 60]);
                 $pdf->SetTextColor($textColor[0], $textColor[1], $textColor[2]);
                 $pdf->Cell($columnWidths[$columnIndex], $rowHeight, '', $tableBorder, 0, 'L', true);
-                $cellTextY = $tableY + 1;
-                if ($displayRow['summary'] || !empty($displayRow['calculation'])) {
-                    $cellLines = pdfTableLineCount($pdf, $cellText, $columnWidths[$columnIndex] - 2, 'B');
-                    $cellTextY = $tableY + max(1, $rowHeight - ($cellLines * 5) - 1);
-                }
+                $cellLines = pdfTableLineCount($pdf, $cellText, $columnWidths[$columnIndex] - 2, ($displayRow['summary'] || !empty($displayRow['calculation'])) ? 'B' : '');
+                $cellTextY = pdfTableCellTextY($tableY, $rowHeight, $cellLines, (string) ($table['tasaus_pysty'] ?? 'alas'));
+                $cellAlignment = $columnIndex === 0 ? 'L' : pdfTableHorizontalAlignment((string) ($table['tasaus_vaaka'] ?? 'vasen'));
                 $pdf->SetXY($x + 1, $cellTextY);
                 $cellNumber = pdfTableNumber($cellText);
                 $styledCellNumber = pdfTableNumberRun($cellText);
                 if ($cellNumber !== null || $styledCellNumber !== null) {
-                    // Cell() saa koko solun leveyden, jolloin R kohdistaa
-                    // numeron oikeaan reunaan eikä vain tekstipätkän kohdalle.
                     $numberStyle = ($displayRow['summary'] || !empty($displayRow['calculation'])) ? 'B' : (string) ($styledCellNumber['style'] ?? '');
                     $numberText = $styledCellNumber !== null ? (string) $styledCellNumber['text'] : $cellText;
                     $pdf->SetFont('Helvetica', $numberStyle, 9);
-                    $pdf->Cell($columnWidths[$columnIndex] - 2, 5, pdfText($numberText), 0, 0, 'R');
+                    $pdf->Cell($columnWidths[$columnIndex] - 2, 5, pdfText($numberText), 0, 0, $cellAlignment);
                 } else {
-                    pdfWriteMarkdownCell($pdf, $cellText, $columnWidths[$columnIndex] - 2, 5, ($displayRow['summary'] || !empty($displayRow['calculation'])) ? 'B' : '', 'L');
+                    pdfWriteMarkdownCell($pdf, $cellText, $columnWidths[$columnIndex] - 2, 5, ($displayRow['summary'] || !empty($displayRow['calculation'])) ? 'B' : '', $cellAlignment);
                 }
                 $x += $columnWidths[$columnIndex];
             }

@@ -10,6 +10,7 @@ if (!isset($_SESSION['laatijat_id'])) {
 }
 
 $laatijatId = (int) $_SESSION['laatijat_id'];
+$customerId = max(0, (int) ($_GET['asiakas_id'] ?? 0));
 $projectId = max(0, (int) ($_GET['projekti_id'] ?? 0));
 $search = trim((string) ($_GET['haku'] ?? ''));
 $showAll = (isset($_GET['kaikki']) && $_GET['kaikki'] === '1') || $search !== '';
@@ -21,6 +22,7 @@ $tablesByReport = [];
 $totalReports = 0;
 $loadError = false;
 $csrfToken = getApplicationCsrfToken();
+$customers = [];
 $projects = [];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string) ($_POST['action'] ?? '') === 'delete-report') {
@@ -101,6 +103,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string) ($_POST['action'] ?? '') =
 
 try {
     $db = getDatabaseConnection();
+    $customerQuery = $db->prepare('SELECT DISTINCT a.id, a.nimi, a.yritys
+        FROM asiakkaat a
+        INNER JOIN raportit r ON r.asiakas_id = a.id
+        WHERE r.laatijat_id = ? OR EXISTS (
+            SELECT 1 FROM raporttijaot j WHERE j.raportti_id = r.id AND j.laatijat_id = ?
+        ) OR EXISTS (
+            SELECT 1 FROM projektijaot pj WHERE pj.projekti_id = r.projekti_id AND pj.laatijat_id = ?
+        ) ORDER BY a.nimi, a.yritys, a.id');
+    $customerQuery->bind_param('iii', $laatijatId, $laatijatId, $laatijatId);
+    $customerQuery->execute();
+    $customers = $customerQuery->get_result()->fetch_all(MYSQLI_ASSOC);
+    $customerQuery->close();
+
     $projectQuery = $db->prepare('SELECT p.id, p.nimi FROM projektit p WHERE p.laatijat_id = ? OR EXISTS (
         SELECT 1 FROM projektijaot j WHERE j.projekti_id = p.id AND j.laatijat_id = ?
     ) ORDER BY p.nimi, p.id');
@@ -117,6 +132,9 @@ try {
     if ($projectId > 0) {
         $reportWhere .= ' AND r.projekti_id = ?';
     }
+    if ($customerId > 0) {
+        $reportWhere .= ' AND r.asiakas_id = ?';
+    }
     if ($search !== '') {
         $reportWhere .= ' AND ' . implode(' AND ', array_fill(0, count($searchTerms), 'CONCAT_WS(\' \', r.otsikko, a.nimi, a.yritys) LIKE ?'));
     }
@@ -131,6 +149,7 @@ try {
         $countTypes = 'iii';
         $countParams = [$laatijatId, $laatijatId, $laatijatId];
         if ($projectId > 0) { $countTypes .= 'i'; $countParams[] = $projectId; }
+        if ($customerId > 0) { $countTypes .= 'i'; $countParams[] = $customerId; }
         foreach ($searchLikes as $searchLike) { $countTypes .= 's'; $countParams[] = $searchLike; }
         bindReportParams($countQuery, $countTypes, $countParams);
         $countQuery->execute();
@@ -146,28 +165,37 @@ try {
              FROM raportit r
              INNER JOIN asiakkaat a ON a.id = r.asiakas_id
              ' . $reportWhere . '
-             ORDER BY r.raporttipvm DESC, r.id DESC
+             ORDER BY a.nimi, a.yritys, r.raporttipvm DESC, r.id DESC
              LIMIT ? OFFSET ?'
         );
         $reportTypes = 'iii';
         $reportParams = [$laatijatId, $laatijatId, $laatijatId];
         if ($projectId > 0) { $reportTypes .= 'i'; $reportParams[] = $projectId; }
+        if ($customerId > 0) { $reportTypes .= 'i'; $reportParams[] = $customerId; }
         foreach ($searchLikes as $searchLike) { $reportTypes .= 's'; $reportParams[] = $searchLike; }
         $reportTypes .= 'ii'; $reportParams[] = $perPage; $reportParams[] = $offset;
         bindReportParams($reportQuery, $reportTypes, $reportParams);
     } else {
         $totalPages = 1;
         $reportQuery = $db->prepare(
-            'SELECT r.id, r.laatijat_id, r.otsikko, r.raporttipvm, a.nimi AS asiakas_nimi, a.yritys AS asiakas_yritys
-             FROM raportit r
-             INNER JOIN asiakkaat a ON a.id = r.asiakas_id
-             ' . $reportWhere . '
-             ORDER BY r.raporttipvm DESC, r.id DESC
-             LIMIT 5'
+            'SELECT latest.id, latest.laatijat_id, latest.otsikko, latest.raporttipvm,
+                    latest.asiakas_nimi, latest.asiakas_yritys
+             FROM (
+                 SELECT r.id, r.laatijat_id, r.otsikko, r.raporttipvm,
+                        a.nimi AS asiakas_nimi, a.yritys AS asiakas_yritys
+                 FROM raportit r
+                 INNER JOIN asiakkaat a ON a.id = r.asiakas_id
+                 ' . $reportWhere . '
+                 ORDER BY r.raporttipvm DESC, r.id DESC
+                 LIMIT 5
+             ) AS latest
+             ORDER BY latest.asiakas_nimi, latest.asiakas_yritys,
+                      latest.raporttipvm DESC, latest.id DESC'
         );
         $reportTypes = 'iii';
         $reportParams = [$laatijatId, $laatijatId, $laatijatId];
         if ($projectId > 0) { $reportTypes .= 'i'; $reportParams[] = $projectId; }
+        if ($customerId > 0) { $reportTypes .= 'i'; $reportParams[] = $customerId; }
         foreach ($searchLikes as $searchLike) { $reportTypes .= 's'; $reportParams[] = $searchLike; }
         bindReportParams($reportQuery, $reportTypes, $reportParams);
     }
@@ -222,8 +250,9 @@ function formatReportDate(string $date): string
 
 function reportPageUrl(int $page): string
 {
-    global $projectId, $search;
+    global $customerId, $projectId, $search;
     $params = ['kaikki' => 1, 'sivu' => max(1, $page)];
+    if ($customerId > 0) { $params['asiakas_id'] = $customerId; }
     if ($projectId > 0) { $params['projekti_id'] = $projectId; }
     if ($search !== '') { $params['haku'] = $search; }
     return 'raportit.php?' . http_build_query($params);
@@ -289,9 +318,6 @@ openLayoutShell('Raportit – TEKRAPORTTI');
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
     <div>
         <h1 class="h3 mb-1">Raportit</h1>
-        <p class="text-body-secondary mb-0">
-            <?= $search !== '' ? 'Hakutulokset' : ($showAll ? 'Kaikki tallennetut raportit' : 'Viimeisimmät raportit') ?>
-        </p>
     </div>
     <div class="d-flex flex-wrap gap-2">
         <a class="btn btn-primary" href="luo_raportti.php">Luo uusi raportti</a>
@@ -303,6 +329,7 @@ openLayoutShell('Raportit – TEKRAPORTTI');
 
 <form method="get" action="raportit.php" class="card border-0 shadow-sm mb-4 p-3">
     <div class="row g-2 align-items-end">
+        <div class="col-md-6"><label class="form-label mb-1" for="asiakas_id">Suodata asiakkaan mukaan</label><select class="form-select" id="asiakas_id" name="asiakas_id"><option value="0">Kaikki asiakkaat</option><?php foreach ($customers as $customer): ?><option value="<?= (int) $customer['id'] ?>" <?= $customerId === (int) $customer['id'] ? 'selected' : '' ?>><?= htmlspecialchars((string) $customer['nimi'], ENT_QUOTES, 'UTF-8') ?><?= !empty($customer['yritys']) ? ' – ' . htmlspecialchars((string) $customer['yritys'], ENT_QUOTES, 'UTF-8') : '' ?></option><?php endforeach; ?></select></div>
         <div class="col-md-6"><label class="form-label mb-1" for="projekti_id">Suodata projektin mukaan</label><select class="form-select" id="projekti_id" name="projekti_id"><option value="0">Kaikki projektit</option><?php foreach ($projects as $project): ?><option value="<?= (int) $project['id'] ?>" <?= $projectId === (int) $project['id'] ? 'selected' : '' ?>><?= htmlspecialchars($project['nimi'], ENT_QUOTES, 'UTF-8') ?></option><?php endforeach; ?></select></div>
         <?php if ($search !== ''): ?><input type="hidden" name="haku" value="<?= htmlspecialchars($search, ENT_QUOTES, 'UTF-8') ?>"><?php endif; ?>
         <?php if ($showAll): ?><input type="hidden" name="kaikki" value="1"><?php endif; ?>
@@ -326,7 +353,7 @@ openLayoutShell('Raportit – TEKRAPORTTI');
             <table class="table table-hover align-middle mb-0">
                 <thead class="table-light">
                     <tr>
-                        <th scope="col">Raportti</th>
+                        <th scope="col">Raportti<?php if (!$showAll && $search === ''): ?> <span class="text-body-secondary fw-normal">(5 viimeisintä raporttia)</span><?php endif; ?></th>
                         <th scope="col">Asiakas</th>
                         <th scope="col">Yritys</th>
                         <th scope="col">Päivämäärä</th>
