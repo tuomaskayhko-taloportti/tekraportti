@@ -353,14 +353,26 @@ function pdfTextWithLists(FPDF $pdf, string $text, int $sectionNumber): void
     $listStart = 20 + $listIndent;
     $contentStart = $listStart + $listIndent;
     $lines = preg_split('/\r\n|\r|\n/', $text) ?: [''];
-    $headingNumber = 0;
+    $headingCounters = [];
 
     foreach ($lines as $line) {
-        if (preg_match('/^\s*##\s+(.+)$/u', $line, $heading)) {
-            $headingNumber++;
-            $pdf->SetFont('Helvetica', 'B', 14);
-            $pdf->Write(7, pdfText($sectionNumber . '.' . $headingNumber . ' ' . $heading[1]));
-            $pdf->Ln(8);
+        if (preg_match('/^\s*(#{2,})\s+(.+)$/u', $line, $heading)) {
+            $headingLevel = strlen($heading[1]) - 1;
+            $headingCounters[$headingLevel] = ($headingCounters[$headingLevel] ?? 0) + 1;
+            foreach ($headingCounters as $counterLevel => $value) {
+                if ($counterLevel > $headingLevel) {
+                    $headingCounters[$counterLevel] = 0;
+                }
+            }
+            $headingPath = [];
+            for ($counterLevel = 1; $counterLevel <= $headingLevel; $counterLevel++) {
+                $headingPath[] = (string) ($headingCounters[$counterLevel] ?? 0);
+            }
+            $headingIndent = min(3, $headingLevel) * 4;
+            $pdf->SetX(20 + $headingIndent);
+            $pdf->SetFont('Helvetica', 'B', max(11, 15 - min(4, $headingLevel)));
+            $pdf->MultiCell($pdf->GetPageWidth() - 40 - $headingIndent, 7, pdfText($sectionNumber . '.' . implode('.', $headingPath) . ' ' . $heading[2]), 0, 'L');
+            $pdf->Ln(1);
             $pdf->SetFont('Helvetica', '', 11);
             continue;
         }
@@ -390,14 +402,30 @@ function pdfTextWithLists(FPDF $pdf, string $text, int $sectionNumber): void
     }
 }
 
-/** Palauttaa raporttiosion tekstissä olevat ##-väliotsikot sisällysluetteloa varten. */
+/** Palauttaa raporttiosion tekstissä olevat alaotsikot tasoineen sisällysluetteloa varten. */
 function reportSubheadings(string $text): array
 {
     $headings = [];
     $lines = preg_split('/\r\n|\r|\n/', $text) ?: [];
+    $counters = [];
     foreach ($lines as $line) {
-        if (preg_match('/^\s*##\s+(.+)$/u', $line, $matches)) {
-            $headings[] = trim($matches[1]);
+        if (preg_match('/^\s*(#{2,})\s+(.+)$/u', $line, $matches)) {
+            $level = strlen($matches[1]) - 1;
+            $counters[$level] = ($counters[$level] ?? 0) + 1;
+            foreach ($counters as $counterLevel => $value) {
+                if ($counterLevel > $level) {
+                    $counters[$counterLevel] = 0;
+                }
+            }
+            $number = [];
+            for ($counterLevel = 1; $counterLevel <= $level; $counterLevel++) {
+                $number[] = (string) ($counters[$counterLevel] ?? 0);
+            }
+            $headings[] = [
+                'title' => trim($matches[2]),
+                'level' => $level,
+                'number' => implode('.', $number),
+            ];
         }
     }
     return $headings;
@@ -518,6 +546,33 @@ function pdfTextChunks(FPDF $pdf, string $text, float $width): array
         $chunks[] = $chunk;
     }
     return $chunks ?: [''];
+}
+
+/** Jakaa sisällysluettelon otsikon sanoihin ja tarvittaessa myös pitkät sanat riveille. */
+function pdfTextChunksByWords(FPDF $pdf, string $text, float $width): array
+{
+    $lines = [];
+    $line = '';
+    foreach (preg_split('/\s+/u', trim($text)) ?: [''] as $word) {
+        if ($word === '') {
+            continue;
+        }
+        $wordChunks = pdfTextChunks($pdf, $word, $width);
+        foreach ($wordChunks as $chunkIndex => $wordChunk) {
+            $separator = ($chunkIndex === 0 && $line !== '') ? ' ' : '';
+            $candidate = $line . $separator . $wordChunk;
+            if ($line !== '' && $pdf->GetStringWidth($candidate) > $width) {
+                $lines[] = $line;
+                $line = $wordChunk;
+            } else {
+                $line = $candidate;
+            }
+        }
+    }
+    if ($line !== '') {
+        $lines[] = $line;
+    }
+    return $lines ?: [''];
 }
 
 /** Tulostaa taulukon solun markdown-muotoilulla ja sovittaa tekstin solun leveyteen. */
@@ -1576,11 +1631,11 @@ foreach ($rows as $index => $row) {
         'page' => (string) ($index + 2),
         'indent' => false,
     ];
-    foreach (reportSubheadings((string) $row['sisalto']) as $headingIndex => $heading) {
+    foreach (reportSubheadings((string) $row['sisalto']) as $heading) {
         $tocEntries[] = [
-            'title' => $sectionNumber . '.' . ($headingIndex + 1) . ' ' . $heading,
+            'title' => $sectionNumber . '.' . $heading['number'] . ' ' . $heading['title'],
             'page' => (string) ($index + 2),
-            'indent' => true,
+            'indent' => (int) $heading['level'],
         ];
     }
 }
@@ -1591,16 +1646,23 @@ foreach ($tocEntries as $entry) {
     $titleText = pdfText($title);
     $pageNumberText = pdfText($pageNumber);
     $contentWidth = $pdf->GetPageWidth() - 40;
-    $indent = $entry['indent'] ? 8 : 0;
-    $pdf->SetX(20 + $indent);
-    $titleWidth = $pdf->GetStringWidth($titleText);
+    $indent = ((int) $entry['indent']) * 8;
     $pageNumberWidth = $pdf->GetStringWidth($pageNumberText);
-    $spaceWidth = $pdf->GetStringWidth(' ');
     $pageNumberGap = 3;
+    $titleMaxWidth = $contentWidth - $indent - $pageNumberWidth - $pageNumberGap - 2;
+    $titleLines = pdfTextChunksByWords($pdf, $titleText, $titleMaxWidth);
+    foreach (array_slice($titleLines, 0, -1) as $titleLine) {
+        $pdf->SetX(20 + $indent);
+        $pdf->Cell($titleMaxWidth, 7, $titleLine, 0, 1, 'L');
+    }
+    $lastTitleLine = end($titleLines) ?: '';
+    $pdf->SetX(20 + $indent);
+    $titleWidth = $pdf->GetStringWidth($lastTitleLine);
+    $spaceWidth = $pdf->GetStringWidth(' ');
     $dotsWidth = max(0, $contentWidth - $indent - $titleWidth - $pageNumberWidth - $spaceWidth - $pageNumberGap);
     $dotWidth = $pdf->GetStringWidth('.');
     $dots = $dotWidth > 0 ? str_repeat('.', (int) floor($dotsWidth / $dotWidth)) : '';
-    $pdf->Cell($titleWidth + $spaceWidth, 8, $titleText . ' ', 0, 0, 'L');
+    $pdf->Cell($titleWidth + $spaceWidth, 7, $lastTitleLine . ' ', 0, 0, 'L');
     $pdf->Cell($dotsWidth, 8, $dots, 0, 0, 'L');
     $pdf->Cell($pageNumberGap, 8, '', 0, 0, 'L');
     $pdf->Cell($pageNumberWidth, 8, $pageNumberText, 0, 1, 'R');

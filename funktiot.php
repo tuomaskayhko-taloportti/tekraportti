@@ -48,7 +48,10 @@ function openLayoutShell(string $pageTitle = 'TEKRAPORTTI'): void
         .tekra-markdown-toolbar { display:flex; gap:.25rem; margin-bottom:.35rem; }
         .tekra-markdown-toolbar button { min-width:2.1rem; }
         .tekra-markdown-help { color:#6c757d; font-size:.8rem; margin-left:.35rem; align-self:center; }
-        .tekra-rich-text h4 { margin:.7rem 0 .35rem; font-size:1.05em; }
+        .tekra-rich-text h4, .tekra-rich-text h5, .tekra-rich-text h6 { margin:.7rem 0 .35rem; }
+        .tekra-rich-text h4 { font-size:1.05em; }
+        .tekra-rich-text h5 { font-size:1em; }
+        .tekra-rich-text h6 { font-size:.95em; }
         .tekra-rich-text p { margin:0 0 .45rem; }
         .tekra-rich-text p:last-child { margin-bottom:0; }
         .tekra-topbar { min-height: 100px; background: linear-gradient(110deg, #f7fafc, #e5edf6); box-shadow: 0 1px 0 #d7e1ec; }
@@ -192,9 +195,10 @@ function markdownToHtml(string $text): string
         }
     };
     foreach ($lines as $line) {
-        if (preg_match('/^\s*##\s+(.+)$/u', $line, $matches)) {
+        if (preg_match('/^\s*(#{2,})\s+(.+)$/u', $line, $matches)) {
             $flushParagraph();
-            $html .= '<h4>' . markdownInlineToHtml($matches[1]) . '</h4>';
+            $level = min(3, strlen($matches[1]) - 1);
+            $html .= '<h' . (3 + $level) . '>' . markdownInlineToHtml($matches[2]) . '</h' . (3 + $level) . '>';
         } elseif (trim($line) === '') {
             $flushParagraph();
         } else {
@@ -236,10 +240,10 @@ function closeLayoutShell(): void
     document.querySelectorAll("textarea[data-markdown-editor]").forEach(function(textarea){
         var toolbar=document.createElement("div"); toolbar.className="tekra-markdown-toolbar";
         var headingButton=textarea.closest("table")?"":"<button type=\"button\" class=\"btn btn-sm btn-outline-secondary\" data-md-action=\"heading\">Otsikko</button>";
-        toolbar.innerHTML=headingButton+"<button type=\"button\" class=\"btn btn-sm btn-outline-secondary\" data-md-action=\"bold\"><strong>B</strong></button><button type=\"button\" class=\"btn btn-sm btn-outline-secondary\" data-md-action=\"italic\"><em>I</em></button><span class=\"tekra-markdown-help\">## väliotsikko · **lihavoitu** · *kursivoitu*</span>";
+        toolbar.innerHTML=headingButton+"<button type=\"button\" class=\"btn btn-sm btn-outline-secondary\" data-md-action=\"bold\"><strong>B</strong></button><button type=\"button\" class=\"btn btn-sm btn-outline-secondary\" data-md-action=\"italic\"><em>I</em></button><span class=\"tekra-markdown-help\">##–###### alaotsikot · **lihavoitu** · *kursivoitu*</span>";
         textarea.parentNode.insertBefore(toolbar, textarea);
     });
-        document.addEventListener("click",function(event){var button=event.target.closest("[data-md-action]");if(!button)return;var textarea=button.closest(".tekra-markdown-toolbar").parentNode.querySelector("textarea[data-markdown-editor]");if(!textarea)return;var start=textarea.selectionStart,end=textarea.selectionEnd,value=textarea.value,selected=value.slice(start,end),action=button.dataset.mdAction;if(action==="heading"){var lineStart=value.lastIndexOf("\\n",start-1)+1;textarea.setRangeText("## ",lineStart,lineStart,"end");}else{var marker=action==="bold"?"**":"*";textarea.setRangeText(marker+selected+marker,start,end,"select");}textarea.focus();});
+        document.addEventListener("click",function(event){var button=event.target.closest("[data-md-action]");if(!button)return;var textarea=button.closest(".tekra-markdown-toolbar").parentNode.querySelector("textarea[data-markdown-editor]");if(!textarea)return;var start=textarea.selectionStart,end=textarea.selectionEnd,value=textarea.value,selected=value.slice(start,end),action=button.dataset.mdAction;if(action==="heading"){var lineStart=value.lastIndexOf("\\n",start-1)+1;var lineEnd=value.indexOf("\\n",lineStart);if(lineEnd===-1)lineEnd=value.length;var line=value.slice(lineStart,lineEnd),heading=line.match(/^(\\s*)(#{2,})(\\s+)/);var replacement;if(heading){replacement=heading[1]+heading[2]+"#"+heading[3];}else{replacement="## ";}textarea.setRangeText(replacement,lineStart,lineStart+(heading?heading[0].length:0),"end");}else{var marker=action==="bold"?"**":"*";textarea.setRangeText(marker+selected+marker,start,end,"select");}textarea.focus();});
     </script>';
 }
 
