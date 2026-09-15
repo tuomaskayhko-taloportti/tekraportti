@@ -100,7 +100,7 @@ try {
             }
         }
         $query->close();
-        $query = $db->prepare('SELECT id, taulukko_id, tyyppi, jalkeen_rivi_id, jarjestys FROM raporttitaulukko_yhteenvetorivit WHERE laatijat_id = ? ORDER BY taulukko_id, jarjestys, id');
+        $query = $db->prepare('SELECT id, taulukko_id, nimittaja, tyyppi, jalkeen_rivi_id, jarjestys FROM raporttitaulukko_yhteenvetorivit WHERE laatijat_id = ? ORDER BY taulukko_id, jarjestys, id');
         $query->bind_param('i', $laatijatId);
         $query->execute();
         $result = $query->get_result();
@@ -302,7 +302,8 @@ function pdfTableRowsWithSummaries(array $table): array
         $cells = [];
         foreach ($table['sarakkeet'] as $columnIndex => $column) {
             $columnId = (int) $column['id'];
-            $cells[$columnId] = in_array($columnId, $summary['sarakkeet'], true) ? pdfTableNumberText((float) ($running[$columnId]['value'] ?? 0), (string) ($running[$columnId]['currency'] ?? '')) : ($columnIndex === 0 ? ((string) $summary['tyyppi'] === 'valisummaa' ? 'Välisummaa' : 'Yhteensä') : '');
+            $summaryName = trim((string) ($summary['nimittaja'] ?? '')) ?: ((string) $summary['tyyppi'] === 'valisummaa' ? 'Välisummaa' : 'Yhteensä');
+            $cells[$columnId] = in_array($columnId, $summary['sarakkeet'], true) ? pdfTableNumberText((float) ($running[$columnId]['value'] ?? 0), (string) ($running[$columnId]['currency'] ?? '')) : ($columnIndex === 0 ? $summaryName : '');
         }
         $entry['cells'] = $cells;
         $summaryCellsById[(int) $summary['id']] = $cells;
@@ -421,8 +422,9 @@ function reportSubheadings(string $text): array
             for ($counterLevel = 1; $counterLevel <= $level; $counterLevel++) {
                 $number[] = (string) ($counters[$counterLevel] ?? 0);
             }
+            $headingTitle = preg_replace('/\*\*([^*\r\n]+)\*\*|(?<!\*)\*([^*\r\n]+)\*(?!\*)/u', '$1$2', $matches[2]);
             $headings[] = [
-                'title' => trim($matches[2]),
+                'title' => trim($headingTitle === null ? $matches[2] : $headingTitle),
                 'level' => $level,
                 'number' => implode('.', $number),
             ];
@@ -1627,13 +1629,15 @@ $tocEntries = [];
 foreach ($rows as $index => $row) {
     $sectionNumber = $index + 1;
     $tocEntries[] = [
-        'title' => $sectionNumber . '. ' . $row['otsikko'],
+        'number' => $sectionNumber . '.',
+        'title' => $row['otsikko'],
         'page' => (string) ($index + 2),
         'indent' => false,
     ];
     foreach (reportSubheadings((string) $row['sisalto']) as $heading) {
         $tocEntries[] = [
-            'title' => $sectionNumber . '.' . $heading['number'] . ' ' . $heading['title'],
+            'number' => $sectionNumber . '.' . $heading['number'],
+            'title' => $heading['title'],
             'page' => (string) ($index + 2),
             'indent' => (int) $heading['level'],
         ];
@@ -1641,6 +1645,7 @@ foreach ($rows as $index => $row) {
 }
 foreach ($tocEntries as $entry) {
     $pdf->SetFont('Helvetica', $entry['indent'] ? '' : 'B', $entry['indent'] ? 11 : 12);
+    $numberText = pdfText((string) ($entry['number'] ?? ''));
     $title = (string) $entry['title'];
     $pageNumber = (string) $entry['page'];
     $titleText = pdfText($title);
@@ -1648,18 +1653,21 @@ foreach ($tocEntries as $entry) {
     $contentWidth = $pdf->GetPageWidth() - 40;
     $indent = ((int) $entry['indent']) * 8;
     $pageNumberWidth = $pdf->GetStringWidth($pageNumberText);
+    $numberWidth = $pdf->GetStringWidth($numberText);
     $pageNumberGap = 3;
-    $titleMaxWidth = $contentWidth - $indent - $pageNumberWidth - $pageNumberGap - 2;
+    $numberGap = 2;
+    $titleMaxWidth = $contentWidth - $indent - $numberWidth - $numberGap - $pageNumberWidth - $pageNumberGap - 2;
     $titleLines = pdfTextChunksByWords($pdf, $titleText, $titleMaxWidth);
     foreach (array_slice($titleLines, 0, -1) as $titleLine) {
-        $pdf->SetX(20 + $indent);
+        $pdf->SetX(20 + $indent + $numberWidth + $numberGap);
         $pdf->Cell($titleMaxWidth, 7, $titleLine, 0, 1, 'L');
     }
     $lastTitleLine = end($titleLines) ?: '';
     $pdf->SetX(20 + $indent);
+    $pdf->Cell($numberWidth + $numberGap, 7, $numberText . ' ', 0, 0, 'L');
     $titleWidth = $pdf->GetStringWidth($lastTitleLine);
     $spaceWidth = $pdf->GetStringWidth(' ');
-    $dotsWidth = max(0, $contentWidth - $indent - $titleWidth - $pageNumberWidth - $spaceWidth - $pageNumberGap);
+    $dotsWidth = max(0, $contentWidth - $indent - $numberWidth - $numberGap - $titleWidth - $pageNumberWidth - $spaceWidth - $pageNumberGap);
     $dotWidth = $pdf->GetStringWidth('.');
     $dots = $dotWidth > 0 ? str_repeat('.', (int) floor($dotsWidth / $dotWidth)) : '';
     $pdf->Cell($titleWidth + $spaceWidth, 7, $lastTitleLine . ' ', 0, 0, 'L');

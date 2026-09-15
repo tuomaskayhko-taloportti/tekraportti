@@ -308,14 +308,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $query->bind_param('iiiis', $laatijatId, $newTableId, $newTableRowId, $newColumnId, $cellContent); $query->execute(); $query->close();
                         }
                         $summaryMap = [];
-                        $query = $db->prepare('SELECT id, tyyppi, jalkeen_rivi_id, jarjestys FROM raporttitaulukko_yhteenvetorivit WHERE taulukko_id = ? AND laatijat_id = ? ORDER BY jarjestys, id');
+                        $query = $db->prepare('SELECT id, nimittaja, tyyppi, jalkeen_rivi_id, jarjestys FROM raporttitaulukko_yhteenvetorivit WHERE taulukko_id = ? AND laatijat_id = ? ORDER BY jarjestys, id');
                         $query->bind_param('ii', $sourceTableId, $laatijatId); $query->execute(); $summaries = $query->get_result()->fetch_all(MYSQLI_ASSOC); $query->close();
                         foreach ($summaries as $summary) {
                             $afterRowId = isset($tableRowMap[(int) $summary['jalkeen_rivi_id']]) ? $tableRowMap[(int) $summary['jalkeen_rivi_id']] : null;
                             $afterRowIdValue = $afterRowId ?? 0;
-                            $summaryType = (string) $summary['tyyppi']; $summaryOrder = (int) $summary['jarjestys'];
-                            $query = $db->prepare('INSERT INTO raporttitaulukko_yhteenvetorivit (laatijat_id, taulukko_id, tyyppi, jalkeen_rivi_id, jarjestys) VALUES (?, ?, ?, NULLIF(?, 0), ?)');
-                            $query->bind_param('iisii', $laatijatId, $newTableId, $summaryType, $afterRowIdValue, $summaryOrder); $query->execute(); $newSummaryId = (int) $db->insert_id; $query->close(); $summaryMap[(int) $summary['id']] = $newSummaryId;
+                            $summaryName = trim((string) ($summary['nimittaja'] ?? '')) ?: 'Yhteensä'; $summaryType = (string) $summary['tyyppi']; $summaryOrder = (int) $summary['jarjestys'];
+                            $query = $db->prepare('INSERT INTO raporttitaulukko_yhteenvetorivit (laatijat_id, taulukko_id, nimittaja, tyyppi, jalkeen_rivi_id, jarjestys) VALUES (?, ?, ?, ?, NULLIF(?, 0), ?)');
+                            $query->bind_param('iissii', $laatijatId, $newTableId, $summaryName, $summaryType, $afterRowIdValue, $summaryOrder); $query->execute(); $newSummaryId = (int) $db->insert_id; $query->close(); $summaryMap[(int) $summary['id']] = $newSummaryId;
                             $query = $db->prepare('SELECT sarake_id FROM raporttitaulukko_yhteenvetorivi_sarakkeet WHERE yhteenvetorivi_id = ? AND laatijat_id = ?');
                             $query->bind_param('ii', $summary['id'], $laatijatId); $query->execute(); $summaryColumns = $query->get_result()->fetch_all(MYSQLI_ASSOC); $query->close();
                             foreach ($summaryColumns as $summaryColumn) {
@@ -431,6 +431,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $cellValues = $_POST['solu'] ?? [];
                 $newColumnName = trim((string) ($_POST['uusi_sarake_nimi'] ?? ''));
                 $summaryType = (string) ($_POST['yhteenveto_tyyppi'] ?? '');
+                $summaryName = trim((string) ($_POST['yhteenveto_nimittaja'] ?? '')) ?: 'Yhteensä';
                 $summaryAfterRow = (int) ($_POST['yhteenveto_jalkeen_rivi_id'] ?? 0);
                 $calculationId = (int) ($_POST['laskentarivi_id'] ?? 0);
                 if ($action === 'add-table-column' && $newColumnName === '') {
@@ -478,12 +479,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     foreach ((array) ($_POST['yhteenveto'] ?? []) as $summaryId => $summary) {
                         $summaryId = (int) $summaryId;
                         $type = (string) ($summary['tyyppi'] ?? '');
+                        $name = trim((string) ($summary['nimittaja'] ?? '')) ?: 'Yhteensä';
                         $afterRow = (int) ($summary['jalkeen_rivi_id'] ?? 0);
                         if ($summaryId < 1 || !in_array($type, ['summa', 'valisummaa'], true)) {
                             continue;
                         }
-                        $query = $db->prepare('UPDATE raporttitaulukko_yhteenvetorivit SET tyyppi = ?, jalkeen_rivi_id = NULLIF(?, 0) WHERE id = ? AND taulukko_id = ? AND laatijat_id = ?');
-                        $query->bind_param('siiii', $type, $afterRow, $summaryId, $tableId, $laatijatId); $query->execute(); $query->close();
+                        $query = $db->prepare('UPDATE raporttitaulukko_yhteenvetorivit SET nimittaja = ?, tyyppi = ?, jalkeen_rivi_id = NULLIF(?, 0) WHERE id = ? AND taulukko_id = ? AND laatijat_id = ?');
+                        $query->bind_param('ssiiii', $name, $type, $afterRow, $summaryId, $tableId, $laatijatId); $query->execute(); $query->close();
                         $query = $db->prepare('DELETE FROM raporttitaulukko_yhteenvetorivi_sarakkeet WHERE yhteenvetorivi_id = ? AND laatijat_id = ?');
                         $query->bind_param('ii', $summaryId, $laatijatId); $query->execute(); $query->close();
                         foreach ((array) ($summary['sarakkeet'] ?? []) as $columnId) {
@@ -501,8 +503,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                     $query = $db->prepare('SELECT COALESCE(MAX(jarjestys), 0) + 1 AS seuraava FROM raporttitaulukko_yhteenvetorivit WHERE taulukko_id = ? AND laatijat_id = ?');
                     $query->bind_param('ii', $tableId, $laatijatId); $query->execute(); $summaryOrder = (int) $query->get_result()->fetch_assoc()['seuraava']; $query->close();
-                    $query = $db->prepare('INSERT INTO raporttitaulukko_yhteenvetorivit (laatijat_id, taulukko_id, tyyppi, jalkeen_rivi_id, jarjestys) VALUES (?, ?, ?, NULLIF(?, 0), ?)');
-                    $query->bind_param('iisii', $laatijatId, $tableId, $summaryType, $summaryAfterRow, $summaryOrder);
+                    $query = $db->prepare('INSERT INTO raporttitaulukko_yhteenvetorivit (laatijat_id, taulukko_id, nimittaja, tyyppi, jalkeen_rivi_id, jarjestys) VALUES (?, ?, ?, ?, NULLIF(?, 0), ?)');
+                    $query->bind_param('iissii', $laatijatId, $tableId, $summaryName, $summaryType, $summaryAfterRow, $summaryOrder);
                     $query->execute(); $summaryId = $db->insert_id; $query->close();
                     foreach ((array) ($_POST['yhteenveto_sarakkeet'] ?? []) as $columnId) {
                         $columnId = (int) $columnId;
@@ -772,7 +774,7 @@ try {
         $query = $db->prepare('SELECT taulukko_id, rivi_id, sarake_id, sisalto FROM raporttitaulukko_solut WHERE laatijat_id = ? ORDER BY taulukko_id, rivi_id, sarake_id');
         $query->bind_param('i', $laatijatId); $query->execute(); $result = $query->get_result();
         while ($item = $result->fetch_assoc()) { if (isset($tables[(int) $item['taulukko_id']])) { $tables[(int) $item['taulukko_id']]['solut'][(int) $item['rivi_id']][(int) $item['sarake_id']] = $item['sisalto']; } } $query->close();
-        $query = $db->prepare('SELECT id, taulukko_id, tyyppi, jalkeen_rivi_id, jarjestys FROM raporttitaulukko_yhteenvetorivit WHERE laatijat_id = ? ORDER BY taulukko_id, jarjestys, id');
+        $query = $db->prepare('SELECT id, taulukko_id, nimittaja, tyyppi, jalkeen_rivi_id, jarjestys FROM raporttitaulukko_yhteenvetorivit WHERE laatijat_id = ? ORDER BY taulukko_id, jarjestys, id');
         $query->bind_param('i', $laatijatId); $query->execute(); $result = $query->get_result();
         while ($item = $result->fetch_assoc()) { $item['sarakkeet'] = []; $summaryRows[(int) $item['id']] = $item; } $query->close();
         if ($summaryRows) {
@@ -1362,6 +1364,31 @@ document.querySelectorAll('[data-file-drop]').forEach(function (dropZone) {
     }
     customer.addEventListener('change', filterProjects);
     filterProjects();
+}());
+</script>
+<script>
+(function () {
+    const names = <?= json_encode(array_reduce($tables, static function (array $result, array $table): array {
+        foreach ($table['yhteenvetorivit'] ?? [] as $summary) {
+            $result[(string) $summary['id']] = trim((string) ($summary['nimittaja'] ?? '')) ?: 'Yhteensä';
+        }
+        return $result;
+    }, []), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+    document.querySelectorAll('select[name^="yhteenveto["][name$="][tyyppi]"]').forEach(function (select) {
+        const match = select.name.match(/^yhteenveto\[(\d+)\]/);
+        if (!match) return;
+        const id = match[1];
+        const wrapper = document.createElement('div');
+        wrapper.className = 'col-md-2';
+        wrapper.innerHTML = '<label class="visually-hidden">Summarivin nimittäjä</label><input class="form-control form-control-sm" name="yhteenveto[' + id + '][nimittaja]" value="' + (names[id] || 'Yhteensä').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;') + '" maxlength="255" placeholder="Yhteensä">';
+        select.parentElement.parentElement.insertBefore(wrapper, select.parentElement);
+    });
+    document.querySelectorAll('select[name="yhteenveto_tyyppi"]').forEach(function (select) {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'col-md-2';
+        wrapper.innerHTML = '<label class="visually-hidden">Summarivin nimittäjä</label><input class="form-control form-control-sm" name="yhteenveto_nimittaja" value="Yhteensä" maxlength="255" placeholder="Yhteensä">';
+        select.parentElement.insertBefore(wrapper, select);
+    });
 }());
 </script>
 <?php closeLayoutShell(); ?>

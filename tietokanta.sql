@@ -274,6 +274,7 @@ CREATE TABLE `raporttitaulukko_yhteenvetorivit` (
     `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
     `laatijat_id` INT UNSIGNED NOT NULL,
     `taulukko_id` INT UNSIGNED NOT NULL,
+    `nimittaja` VARCHAR(255) NOT NULL DEFAULT 'Yhteensä',
     `tyyppi` ENUM('summa', 'valisummaa') NOT NULL,
     `jalkeen_rivi_id` INT UNSIGNED NULL,
     `jarjestys` INT UNSIGNED NOT NULL DEFAULT 1,
