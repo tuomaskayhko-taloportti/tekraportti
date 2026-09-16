@@ -751,14 +751,20 @@ function requestLoginCode(string $email): bool
         $mailer = new \PHPMailer\PHPMailer\PHPMailer(true);
         $mailer->isSMTP();
         $mailer->Host = $mailServer;
+        // Asetetaan envelope-lähettäjä erikseen SMTP-palvelimen tarkistuksia varten.
+        $mailer->Sender = $sender;
+        $mailer->Hostname = 'kiha2025.fi';
+        $mailer->MessageID = sprintf('<%s@kiha2025.fi>', bin2hex(random_bytes(16)));
         $mailer->SMTPAuth = true;
         $mailer->Username = $sender;
         $mailer->Password = $mailPassword;
         $mailer->Port = $mailPort;
         $mailer->SMTPSecure = $smtpSecure;
         $mailer->CharSet = \PHPMailer\PHPMailer\PHPMailer::CHARSET_UTF8;
+        $mailer->Encoding = 'base64';
         $mailer->setFrom($sender, 'TEKRAPORTTI');
         $mailer->addAddress($email);
+        $mailer->addReplyTo('asiakaspalvelu@taloportti.fi', 'Taloportti');
         $mailer->Subject = $subject;
         $mailer->Body = $message;
         $mailer->isHTML(false);
