@@ -935,6 +935,20 @@ openLayoutShell('Muokkaa raporttia – TEKRAPORTTI');
 .report-section[open] > .report-section-header::after {
     content: '▴';
 }
+.report-section > .card-body {
+    background-color: #eef3f8;
+    border: 1px solid #c5d1de;
+    border-top: 0;
+}
+.report-section > .card-body .form-control,
+.report-section > .card-body .form-select {
+    background-color: #fff;
+    border-color: #9eafc1;
+}
+.report-section > .card-body .border-top,
+.report-section > .card-body .border-bottom {
+    border-color: #aebdcb !important;
+}
 .report-section > .card-body > .report-section-header {
     display: none !important;
 }
