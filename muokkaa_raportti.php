@@ -982,10 +982,12 @@ openLayoutShell('Muokkaa raporttia – TEKRAPORTTI');
 }
 .report-table-form > .table-responsive {
     grid-column: 1;
+    grid-row: 1;
     min-width: 0;
 }
 .report-table-settings {
     grid-column: 2;
+    grid-row: 1;
     display: flex;
     flex-direction: column;
     gap: 1rem;
