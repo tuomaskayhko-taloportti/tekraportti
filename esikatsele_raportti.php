@@ -1669,7 +1669,13 @@ foreach ($rows as $index => $row) {
         'page' => (string) ($index + 2),
         'indent' => false,
     ];
-    foreach (reportSubheadings((string) $row['sisalto']) as $heading) {
+    $sectionTextParts = [(string) $row['sisalto']];
+    foreach ($contentBlocksByRow[(int) $row['id']] ?? [] as $contentBlock) {
+        if (($contentBlock['type'] ?? '') === 'text') {
+            $sectionTextParts[] = (string) ($contentBlock['data']['sisalto'] ?? '');
+        }
+    }
+    foreach (reportSubheadings(implode("\n\n", $sectionTextParts)) as $heading) {
         $tocEntries[] = [
             'number' => $sectionNumber . '.' . $heading['number'],
             'title' => $heading['title'],
