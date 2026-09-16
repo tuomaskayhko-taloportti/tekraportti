@@ -968,18 +968,58 @@ openLayoutShell('Muokkaa raporttia – TEKRAPORTTI');
     border-radius: .5rem;
 }
 .report-table-form > .row.g-2.mb-2.align-items-end > [class*="col-"],
-.report-table-form > .row.g-2.mb-2:not(.align-items-end) > [class*="col-"] {
+.report-table-form > .row.g-2.mb-2:not(.align-items-end) > [class*="col-"],
+.report-table-settings > .row.g-2.mb-2.align-items-end > [class*="col-"],
+.report-table-settings > .row.g-2.mb-2:not(.align-items-end) > [class*="col-"] {
     width: 100%;
     margin-bottom: .55rem;
 }
 .report-table-form > .row.g-2.mb-2.align-items-end > [class*="col-"]:last-child,
-.report-table-form > .row.g-2.mb-2:not(.align-items-end) > [class*="col-"]:last-child {
+.report-table-form > .row.g-2.mb-2:not(.align-items-end) > [class*="col-"]:last-child,
+.report-table-settings > .row.g-2.mb-2.align-items-end > [class*="col-"]:last-child,
+.report-table-settings > .row.g-2.mb-2:not(.align-items-end) > [class*="col-"]:last-child {
     margin-bottom: 0;
 }
 .report-table-form > .table-responsive {
     grid-column: 1;
-    grid-row: 1 / span 2;
     min-width: 0;
+}
+.report-table-settings {
+    grid-column: 2;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    min-width: 0;
+}
+.report-table-settings > .row.g-2.mb-2.align-items-end,
+.report-table-settings > .row.g-2.mb-2:not(.align-items-end) {
+    position: static;
+    width: auto;
+    margin: 0;
+    padding: .75rem;
+    background: #fff;
+    border: 1px solid #000;
+    border-radius: .5rem;
+}
+.report-delete-row-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+    color: #dc3545 !important;
+    border: 1px solid #dc3545 !important;
+    border-radius: .35rem;
+}
+.report-delete-row-icon:hover,
+.report-delete-row-icon:focus {
+    color: #fff !important;
+    background-color: #dc3545;
+}
+.report-delete-row-icon svg {
+    width: 1rem;
+    height: 1rem;
 }
 .report-table-form > .small.fw-semibold.mt-3,
 .report-table-form > .border.rounded.p-2.mt-2,
@@ -1015,6 +1055,13 @@ openLayoutShell('Muokkaa raporttia – TEKRAPORTTI');
     .report-table-form > .row.g-2.mb-2 {
         position: static;
         width: auto;
+        margin-bottom: .75rem;
+    }
+    .report-table-settings {
+        display: block;
+    }
+    .report-table-settings > .row.g-2.mb-2.align-items-end,
+    .report-table-settings > .row.g-2.mb-2:not(.align-items-end) {
         margin-bottom: .75rem;
     }
 }
@@ -1156,9 +1203,24 @@ openLayoutShell('Muokkaa raporttia – TEKRAPORTTI');
 
 <script>
 document.querySelectorAll('.report-table-form').forEach(function (form) {
-    const settingsRow = form.querySelector('.row.g-2.mb-2:not(.align-items-end)');
     const table = form.querySelector('table');
-    if (!settingsRow || !table) return;
+    const tableContainer = table ? table.closest('.table-responsive') : null;
+    const settingsRows = Array.from(form.children).filter(function (item) {
+        return item.matches('.row.g-2.mb-2.align-items-end, .row.g-2.mb-2:not(.align-items-end)');
+    });
+    if (!table || !tableContainer || settingsRows.length !== 2) return;
+
+    const settings = document.createElement('div');
+    settings.className = 'report-table-settings';
+    form.insertBefore(settings, tableContainer);
+    settingsRows.forEach(function (row) {
+        settings.appendChild(row);
+    });
+
+    const settingsRow = settingsRows.find(function (row) {
+        return !row.classList.contains('align-items-end');
+    });
+    if (!settingsRow) return;
 
     const labels = Array.from(table.querySelectorAll('th label')).filter(function (label) {
         return label.querySelector('input[name^="sarake_taustavari["]');
@@ -1169,9 +1231,26 @@ document.querySelectorAll('.report-table-form').forEach(function (form) {
     backgroundSettings.className = 'report-column-background-colors';
     backgroundSettings.innerHTML = '<span class="small text-muted">Sarakkeiden taustavärit:</span>';
     labels.forEach(function (label) {
+        const columnTitle = label.closest('th').querySelector('input[name^="sarake_nimi["]');
+        const caption = document.createElement('span');
+        caption.textContent = columnTitle && columnTitle.value.trim() ? columnTitle.value.trim() : 'Sarake';
+        Array.from(label.childNodes).forEach(function (node) {
+            if (node.nodeType === Node.TEXT_NODE) node.remove();
+        });
+        label.insertBefore(caption, label.firstChild);
         backgroundSettings.appendChild(label);
     });
     settingsRow.appendChild(backgroundSettings);
+
+    form.querySelectorAll('button[name="action"][value="delete-table-column"]').forEach(function (button) {
+        button.textContent = 'Poista sarake';
+    });
+    form.querySelectorAll('button[name="action"][value="delete-table-row"]').forEach(function (button) {
+        button.classList.add('report-delete-row-icon');
+        button.setAttribute('aria-label', 'Poista rivi');
+        button.setAttribute('title', 'Poista rivi');
+        button.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>';
+    });
 });
 
 document.querySelectorAll('form[action^="muokkaa_raportti.php"]').forEach(function (form) {
