@@ -984,9 +984,6 @@ openLayoutShell('Muokkaa raporttia – TEKRAPORTTI');
     grid-column: 1;
     grid-row: 1;
     min-width: 0;
-    padding-bottom: .75rem;
-    margin-bottom: .75rem;
-    border-bottom: 3px solid #000;
 }
 .report-section > .card-body > [id^="taulukko-"].border-top {
     border-top: 3px solid #000 !important;
@@ -996,6 +993,11 @@ openLayoutShell('Muokkaa raporttia – TEKRAPORTTI');
     margin-top: 1rem !important;
     padding-top: 1rem;
     border-top: 1px solid #000;
+}
+.report-section > .card-body > form.row.g-2.mt-2 {
+    margin-top: 1rem !important;
+    padding-top: .75rem;
+    border-top: 3px solid #000;
 }
 .report-table-settings {
     grid-column: 2;
