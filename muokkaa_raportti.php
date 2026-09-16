@@ -1003,6 +1003,21 @@ openLayoutShell('Muokkaa raporttia – TEKRAPORTTI');
     border: 1px solid #000;
     border-radius: .5rem;
 }
+.report-table-settings > .row.g-2.mb-2:not(.align-items-end) > .col-md-6 {
+    display: flex;
+    flex-direction: column;
+    gap: .35rem;
+}
+.report-table-settings > .row.g-2.mb-2:not(.align-items-end) > .col-md-6 > span {
+    display: block;
+}
+.report-table-settings > .row.g-2.mb-2:not(.align-items-end) > .col-md-6 > label {
+    display: flex !important;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    margin-left: 0 !important;
+}
 .report-delete-row-icon {
     display: inline-flex;
     align-items: center;
@@ -1043,8 +1058,10 @@ openLayoutShell('Muokkaa raporttia – TEKRAPORTTI');
     flex-basis: 100%;
 }
 .report-column-background-colors label {
-    display: inline-flex;
+    display: flex;
     align-items: center;
+    justify-content: space-between;
+    width: 100%;
     gap: .25rem;
     margin: 0;
 }
