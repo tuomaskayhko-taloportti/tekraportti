@@ -74,6 +74,16 @@ try {
     }
     $query->close();
 
+    $textsByRow = [];
+    $query = $db->prepare('SELECT id, raporttirivi_id, sisalto, jarjestys FROM raporttitekstit WHERE raportti_id = ? AND laatijat_id = ? ORDER BY raporttirivi_id, jarjestys, id');
+    $query->bind_param('ii', $raporttiId, $laatijatId);
+    $query->execute();
+    $textResult = $query->get_result();
+    while ($item = $textResult->fetch_assoc()) {
+        $textsByRow[(int) $item['raporttirivi_id']][] = $item;
+    }
+    $query->close();
+
     $tablesByRow = [];
     $tables = [];
     $query = $db->prepare('SELECT id, raporttirivi_id, otsikko, reunat, leveys_tila, tasaus_pysty, tasaus_vaaka, jarjestys FROM raporttitaulukot WHERE raportti_id = ? AND laatijat_id = ? ORDER BY raporttirivi_id, jarjestys, id');
@@ -144,6 +154,31 @@ try {
     foreach ($tables as $table) {
         $tablesByRow[(int) $table['raporttirivi_id']][] = $table;
     }
+    $contentBlocksByRow = [];
+    foreach ($tables as $table) {
+        $contentBlocksByRow[(int) $table['raporttirivi_id']][] = [
+            'type' => 'table',
+            'id' => (int) $table['id'],
+            'jarjestys' => (int) ($table['jarjestys'] ?? 0),
+            'data' => $table,
+        ];
+    }
+    foreach ($textsByRow as $rowId => $texts) {
+        foreach ($texts as $text) {
+            $contentBlocksByRow[(int) $rowId][] = [
+                'type' => 'text',
+                'id' => (int) $text['id'],
+                'jarjestys' => (int) ($text['jarjestys'] ?? 0),
+                'data' => $text,
+            ];
+        }
+    }
+    foreach ($contentBlocksByRow as &$blocks) {
+        usort($blocks, static function (array $left, array $right): int {
+            return [$left['jarjestys'], $left['id']] <=> [$right['jarjestys'], $right['id']];
+        });
+    }
+    unset($blocks);
 } catch (Throwable $error) {
     http_response_code(404);
     echo htmlspecialchars($error->getMessage(), ENT_QUOTES, 'UTF-8');
@@ -1735,8 +1770,18 @@ foreach ($rows as $index => $row) {
         pdfTextWithLists($pdf, $content, $index + 1);
     }
 
-    // Osioon liitetyt taulukot.
-    foreach ($tablesByRow[(int) $row['id']] ?? [] as $table) {
+    // Osioon liitetyt tekstilohkot ja taulukot niiden yhteisessä järjestyksessä.
+    foreach ($contentBlocksByRow[(int) $row['id']] ?? [] as $contentBlock) {
+        if (($contentBlock['type'] ?? '') === 'text') {
+            $textContent = trim((string) ($contentBlock['data']['sisalto'] ?? ''));
+            if ($textContent !== '') {
+                $pdf->Ln(5);
+                $pdf->SetFont('Helvetica', '', 11);
+                pdfTextWithLists($pdf, $textContent, $index + 1);
+            }
+            continue;
+        }
+        $table = $contentBlock['data'];
         $columns = $table['sarakkeet'];
         if (!$columns) {
             continue;

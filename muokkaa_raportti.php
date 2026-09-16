@@ -30,6 +30,7 @@ $rows = [];
 $media = [];
 $attachments = [];
 $tables = [];
+$texts = [];
 $summaryRows = [];
 if ((string) ($_GET['saved'] ?? '') === '1') {
     $message = 'Muutokset tallennettiin.';
@@ -334,6 +335,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $query->bind_param('iiisdsii', $laatijatId, $newTableId, $newSummaryId, $calculationName, $calculationUnits, $calculationOperation, $newColumnId, $calculationOrder); $query->execute(); $query->close();
                         }
                     }
+
+                    $query = $db->prepare('SELECT sisalto, jarjestys FROM raporttitekstit WHERE raporttirivi_id = ? AND raportti_id = ? AND laatijat_id = ? ORDER BY jarjestys, id');
+                    $query->bind_param('iii', $sourceRowId, $raporttiId, $laatijatId);
+                    $query->execute();
+                    $textItems = $query->get_result()->fetch_all(MYSQLI_ASSOC);
+                    $query->close();
+                    foreach ($textItems as $textItem) {
+                        $textContent = (string) $textItem['sisalto'];
+                        $textOrder = (int) $textItem['jarjestys'];
+                        $query = $db->prepare('INSERT INTO raporttitekstit (laatijat_id, raportti_id, raporttirivi_id, sisalto, jarjestys) VALUES (?, ?, ?, ?, ?)');
+                        $query->bind_param('iiisi', $laatijatId, $raporttiId, $newRowId, $textContent, $textOrder);
+                        $query->execute();
+                        $query->close();
+                    }
                     $db->commit();
                 } catch (Throwable $error) {
                     $db->rollback();
@@ -397,8 +412,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (!$rowExists) {
                     throw new RuntimeException('Valittu osio ei kuulu raporttiin.');
                 }
-                $query = $db->prepare('SELECT COALESCE(MAX(jarjestys), 0) + 1 AS seuraava FROM raporttitaulukot WHERE raporttirivi_id = ? AND laatijat_id = ?');
-                $query->bind_param('ii', $rowId, $laatijatId);
+                $query = $db->prepare(
+                    'SELECT GREATEST(
+                        COALESCE((SELECT MAX(jarjestys) FROM raporttitaulukot WHERE raporttirivi_id = ? AND laatijat_id = ?), 0),
+                        COALESCE((SELECT MAX(jarjestys) FROM raporttitekstit WHERE raporttirivi_id = ? AND laatijat_id = ?), 0)
+                     ) + 1 AS seuraava'
+                );
+                $query->bind_param('iiii', $rowId, $laatijatId, $rowId, $laatijatId);
                 $query->execute();
                 $order = (int) $query->get_result()->fetch_assoc()['seuraava'];
                 $query->close();
@@ -417,6 +437,58 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $rowOrder = 1;
                 $query->bind_param('iii', $laatijatId, $tableId, $rowOrder); $query->execute(); $query->close();
                 $message = 'Taulukko lisättiin.';
+                $messageType = 'success';
+            } elseif ($action === 'add-text') {
+                $rowId = (int) ($_POST['rivi_id'] ?? 0);
+                $textContent = trim((string) ($_POST['tekstisisalto'] ?? ''));
+                if ($rowId < 1 || $textContent === '') {
+                    throw new RuntimeException('Kirjoita lisättävä tekstisisältö.');
+                }
+                $query = $db->prepare('SELECT id FROM raporttirivit WHERE id = ? AND raportti_id = ? AND laatijat_id = ? LIMIT 1');
+                $query->bind_param('iii', $rowId, $raporttiId, $laatijatId);
+                $query->execute();
+                $rowExists = (bool) $query->get_result()->fetch_assoc();
+                $query->close();
+                if (!$rowExists) {
+                    throw new RuntimeException('Valittu osio ei kuulu raporttiin.');
+                }
+                $query = $db->prepare(
+                    'SELECT GREATEST(
+                        COALESCE((SELECT MAX(jarjestys) FROM raporttitaulukot WHERE raporttirivi_id = ? AND laatijat_id = ?), 0),
+                        COALESCE((SELECT MAX(jarjestys) FROM raporttitekstit WHERE raporttirivi_id = ? AND laatijat_id = ?), 0)
+                     ) + 1 AS seuraava'
+                );
+                $query->bind_param('iiii', $rowId, $laatijatId, $rowId, $laatijatId);
+                $query->execute();
+                $order = (int) $query->get_result()->fetch_assoc()['seuraava'];
+                $query->close();
+                $query = $db->prepare('INSERT INTO raporttitekstit (laatijat_id, raportti_id, raporttirivi_id, sisalto, jarjestys) VALUES (?, ?, ?, ?, ?)');
+                $query->bind_param('iiisi', $laatijatId, $raporttiId, $rowId, $textContent, $order);
+                $query->execute();
+                $query->close();
+                $message = 'Teksti lisättiin.';
+                $messageType = 'success';
+            } elseif ($action === 'update-text') {
+                $textId = (int) ($_POST['teksti_id'] ?? 0);
+                $rowId = (int) ($_POST['rivi_id'] ?? 0);
+                $textContent = trim((string) ($_POST['tekstisisalto'] ?? ''));
+                if ($textId < 1 || $rowId < 1) {
+                    throw new RuntimeException('Tekstilohkon tiedot puuttuvat.');
+                }
+                $query = $db->prepare('UPDATE raporttitekstit SET sisalto = ? WHERE id = ? AND raporttirivi_id = ? AND raportti_id = ? AND laatijat_id = ?');
+                $query->bind_param('siiii', $textContent, $textId, $rowId, $raporttiId, $laatijatId);
+                $query->execute();
+                $query->close();
+                $message = 'Teksti tallennettiin.';
+                $messageType = 'success';
+            } elseif ($action === 'delete-text') {
+                $textId = (int) ($_POST['teksti_id'] ?? 0);
+                $rowId = (int) ($_POST['rivi_id'] ?? 0);
+                $query = $db->prepare('DELETE FROM raporttitekstit WHERE id = ? AND raporttirivi_id = ? AND raportti_id = ? AND laatijat_id = ?');
+                $query->bind_param('iiii', $textId, $rowId, $raporttiId, $laatijatId);
+                $query->execute();
+                $query->close();
+                $message = 'Teksti poistettiin.';
                 $messageType = 'success';
             } elseif (in_array($action, ['update-table', 'add-table-column', 'add-table-row', 'delete-table-column', 'delete-table-row', 'add-table-summary', 'delete-table-summary', 'add-table-calculation', 'delete-table-calculation'], true)) {
                 $tableId = (int) ($_POST['taulukko_id'] ?? 0);
@@ -725,7 +797,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $messageType === 'success') {
         $returnAnchor = match ($action ?? '') {
             'update-report' => 'perustiedot',
             'add-row' => 'uusi-osio',
-            'update-row', 'delete-row', 'add-media', 'add-table', 'update-media-annotations' => 'osio-' . (int) ($_POST['rivi_id'] ?? 0),
+            'update-row', 'delete-row', 'add-media', 'add-table', 'add-text', 'update-text', 'delete-text', 'update-media-annotations' => 'osio-' . (int) ($_POST['rivi_id'] ?? 0),
             'update-table', 'add-table-column', 'add-table-row',
             'delete-table-column', 'delete-table-row', 'add-table-summary', 'delete-table-summary', 'delete-table' => 'taulukko-' . (int) ($_POST['taulukko_id'] ?? 0),
             'add-attachment', 'delete-attachment' => 'liitteet',
@@ -758,6 +830,9 @@ try {
     $query = $db->prepare('SELECT id, raporttirivi_id, tyyppi, url, kuvateksti, merkinnat_json FROM raporttimedia WHERE raportti_id = ? AND laatijat_id = ? ORDER BY raporttirivi_id, jarjestys, id');
     $query->bind_param('ii', $raporttiId, $laatijatId); $query->execute(); $result = $query->get_result();
     while ($item = $result->fetch_assoc()) { $media[] = $item; } $query->close();
+    $query = $db->prepare('SELECT id, raporttirivi_id, sisalto, jarjestys FROM raporttitekstit WHERE raportti_id = ? AND laatijat_id = ? ORDER BY raporttirivi_id, jarjestys, id');
+    $query->bind_param('ii', $raporttiId, $laatijatId); $query->execute(); $result = $query->get_result();
+    while ($item = $result->fetch_assoc()) { $texts[] = $item; } $query->close();
     $query = $db->prepare('SELECT id, tiedosto, alkuperainen_nimi, tiedostokoko FROM raporttiliitteet WHERE raportti_id = ? AND laatijat_id = ? ORDER BY jarjestys, id');
     $query->bind_param('ii', $raporttiId, $laatijatId); $query->execute();
     $attachments = $query->get_result()->fetch_all(MYSQLI_ASSOC); $query->close();
@@ -791,6 +866,30 @@ try {
     $message = 'Raportin tietojen haku epäonnistui.';
     error_log('Raportin muokkaussivun tietojen haku epäonnistui: ' . $error->getMessage());
 }
+
+$contentBlocks = [];
+foreach ($tables as $table) {
+    $contentBlocks[(int) $table['raporttirivi_id']][] = [
+        'type' => 'table',
+        'id' => (int) $table['id'],
+        'jarjestys' => (int) ($table['jarjestys'] ?? 0),
+        'data' => $table,
+    ];
+}
+foreach ($texts as $text) {
+    $contentBlocks[(int) $text['raporttirivi_id']][] = [
+        'type' => 'text',
+        'id' => (int) $text['id'],
+        'jarjestys' => (int) ($text['jarjestys'] ?? 0),
+        'data' => $text,
+    ];
+}
+foreach ($contentBlocks as &$blocks) {
+    usort($blocks, static function (array $left, array $right): int {
+        return [$left['jarjestys'], $left['id']] <=> [$right['jarjestys'], $right['id']];
+    });
+}
+unset($blocks);
 
 $customerInfoPreviewColor = '#ffffff';
 foreach ($tables as $previewTable) {
@@ -1083,6 +1182,11 @@ openLayoutShell('Muokkaa raporttia – TEKRAPORTTI');
 .report-table-form > .d-flex.flex-wrap.gap-2.align-items-center {
     grid-column: 1;
 }
+.report-text-block,
+.report-text-add {
+    border-top: 1px solid #7b8997;
+    padding-top: .75rem;
+}
 .report-column-background-colors {
     display: flex;
     flex-basis: 100%;
@@ -1202,7 +1306,16 @@ openLayoutShell('Muokkaa raporttia – TEKRAPORTTI');
             <form method="post" action="muokkaa_raportti.php?id=<?= $raporttiId ?>" class="d-inline" onsubmit="return confirm('Poistetaanko media?');"><input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="delete-media"><input type="hidden" name="media_id" value="<?= (int) $item['id'] ?>"><input type="hidden" name="return_anchor" value="osio-<?= (int) $row['id'] ?>"><button class="btn btn-link btn-sm text-danger">Poista</button></form>
         </div><?php endif; ?><?php endforeach; ?>
         <form method="post" enctype="multipart/form-data" action="muokkaa_raportti.php?id=<?= $raporttiId ?>" class="row g-2 mt-2"><input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="add-media"><input type="hidden" name="rivi_id" value="<?= (int) $row['id'] ?>"><div class="col-md-2"><select class="form-select form-select-sm" name="media_tyyppi" required><option value="kuva">Kuva</option><option value="videolinkki">Videolinkki</option></select></div><div class="col-md-4"><div class="file-drop-zone" data-file-drop><input type="file" class="form-control form-control-sm" name="media_files[]" multiple accept="image/jpeg,image/png,image/webp"><div class="file-drop-zone-hint">Raahaa kuvat tähän tai valitse tiedostot.</div></div><div class="form-text">Voit valita useita kuvia.</div></div><div class="col-md-3"><input class="form-control form-control-sm" name="media_url" placeholder="Videolinkin HTTPS-osoite"></div><div class="col-md-2"><input class="form-control form-control-sm" name="kuvateksti" placeholder="Kuvateksti"></div><div class="col-md-1"><button class="btn btn-outline-primary btn-sm w-100">+</button></div></form>
-        <?php foreach ($tables as $table): ?><?php if ((int) $table['raporttirivi_id'] === (int) $row['id']): ?>
+        <?php foreach ($contentBlocks[(int) $row['id']] ?? [] as $contentBlock): ?><?php if ($contentBlock['type'] === 'text'): ?><?php $textBlock = $contentBlock['data']; ?>
+            <div class="report-text-block mt-4" id="teksti-<?= (int) $textBlock['id'] ?>">
+                <div class="d-flex justify-content-between align-items-center mb-2"><strong>Tekstisisältö</strong>
+                    <form method="post" action="muokkaa_raportti.php?id=<?= $raporttiId ?>" onsubmit="return confirm('Poistetaanko tekstisisältö?');"><input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="delete-text"><input type="hidden" name="teksti_id" value="<?= (int) $textBlock['id'] ?>"><input type="hidden" name="rivi_id" value="<?= (int) $row['id'] ?>"><input type="hidden" name="return_anchor" value="osio-<?= (int) $row['id'] ?>"><button class="btn btn-outline-danger btn-sm">Poista teksti</button></form>
+                </div>
+                <form method="post" action="muokkaa_raportti.php?id=<?= $raporttiId ?>">
+                    <input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="update-text"><input type="hidden" name="teksti_id" value="<?= (int) $textBlock['id'] ?>"><input type="hidden" name="rivi_id" value="<?= (int) $row['id'] ?>"><textarea class="form-control mb-2" name="tekstisisalto" rows="6" data-markdown-editor><?= editValue($textBlock['sisalto'] ?? '') ?></textarea><button class="btn btn-primary btn-sm">Tallenna teksti</button>
+                </form>
+            </div>
+        <?php else: ?><?php $table = $contentBlock['data']; ?>
             <div class="border-top mt-4 pt-3" id="taulukko-<?= (int) $table['id'] ?>">
                 <div class="d-flex justify-content-between align-items-center mb-2"><strong>Taulukko</strong>
                     <form method="post" action="muokkaa_raportti.php?id=<?= $raporttiId ?>" onsubmit="return confirm('Poistetaanko taulukko ja kaikki sen tiedot?');"><input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="delete-table"><input type="hidden" name="taulukko_id" value="<?= (int) $table['id'] ?>"><button class="btn btn-outline-danger btn-sm">Poista taulukko</button></form>
@@ -1219,6 +1332,7 @@ openLayoutShell('Muokkaa raporttia – TEKRAPORTTI');
             </div>
         <?php endif; ?><?php endforeach; ?>
         <form method="post" action="muokkaa_raportti.php?id=<?= $raporttiId ?>" class="d-flex gap-2 mt-3"><input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="add-table"><input type="hidden" name="rivi_id" value="<?= (int) $row['id'] ?>"><input class="form-control form-control-sm" name="taulukko_otsikko" placeholder="Uuden taulukon otsikko"><button class="btn btn-outline-primary btn-sm">+ Lisää taulukko</button></form>
+        <form method="post" action="muokkaa_raportti.php?id=<?= $raporttiId ?>" class="report-text-add mt-3"><input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="add-text"><input type="hidden" name="rivi_id" value="<?= (int) $row['id'] ?>"><input type="hidden" name="return_anchor" value="osio-<?= (int) $row['id'] ?>"><label class="form-label" for="uusi-teksti-<?= (int) $row['id'] ?>">Lisää teksti osion loppuun</label><textarea class="form-control mb-2" id="uusi-teksti-<?= (int) $row['id'] ?>" name="tekstisisalto" rows="6" data-markdown-editor placeholder="Kirjoita tekstisisältö tähän"></textarea><button class="btn btn-outline-primary btn-sm">+ Lisää teksti</button></form>
     </div></details>
 <?php endforeach; ?>
 
