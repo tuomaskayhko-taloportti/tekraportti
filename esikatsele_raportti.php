@@ -1689,7 +1689,6 @@ foreach ($tocEntries as $entry) {
     $numberText = pdfText((string) ($entry['number'] ?? ''));
     $title = (string) $entry['title'];
     $pageNumber = (string) $entry['page'];
-    $titleText = pdfText($title);
     $pageNumberText = pdfText($pageNumber);
     $contentWidth = $pdf->GetPageWidth() - 40;
     $indent = ((int) $entry['indent']) * 8;
@@ -1698,7 +1697,13 @@ foreach ($tocEntries as $entry) {
     $pageNumberGap = 3;
     $numberGap = 2;
     $titleMaxWidth = $contentWidth - $indent - $numberWidth - $numberGap - $pageNumberWidth - $pageNumberGap - 2;
-    $titleLines = pdfTextChunksByWords($pdf, $titleText, $titleMaxWidth);
+    // Pilko otsikko UTF-8-muodossa. Muunnos PDF:n Windows-1252-merkistöön
+    // tehdään vasta pilkkomisen jälkeen, jotta esimerkiksi ä ja ö eivät
+    // riko UTF-8-regexiä ja hävitä koko otsikkoa.
+    $titleLines = array_map(
+        static fn(string $line): string => pdfText($line),
+        pdfTextChunksByWords($pdf, $title, $titleMaxWidth)
+    );
     foreach (array_slice($titleLines, 0, -1) as $titleLine) {
         $pdf->SetX(20 + $indent + $numberWidth + $numberGap);
         $pdf->Cell($titleMaxWidth, 7, $titleLine, 0, 1, 'L');
