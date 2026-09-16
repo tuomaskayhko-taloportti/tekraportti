@@ -981,6 +981,31 @@ openLayoutShell('Muokkaa raporttia – TEKRAPORTTI');
     grid-row: 1 / span 2;
     min-width: 0;
 }
+.report-table-form > .small.fw-semibold.mt-3,
+.report-table-form > .border.rounded.p-2.mt-2,
+.report-table-form > .d-flex.flex-wrap.gap-2.align-items-center {
+    grid-column: 1;
+}
+.report-column-background-colors {
+    display: flex;
+    flex-basis: 100%;
+    width: 100%;
+    flex-wrap: wrap;
+    gap: .35rem .65rem;
+    align-items: center;
+    margin-top: .65rem;
+    padding-top: .65rem;
+    border-top: 1px solid #000;
+}
+.report-column-background-colors > span {
+    flex-basis: 100%;
+}
+.report-column-background-colors label {
+    display: inline-flex;
+    align-items: center;
+    gap: .25rem;
+    margin: 0;
+}
 @media (max-width: 900px) {
     .report-table-form {
         display: block;
@@ -1130,6 +1155,25 @@ openLayoutShell('Muokkaa raporttia – TEKRAPORTTI');
 </dialog>
 
 <script>
+document.querySelectorAll('.report-table-form').forEach(function (form) {
+    const settingsRow = form.querySelector('.row.g-2.mb-2:not(.align-items-end)');
+    const table = form.querySelector('table');
+    if (!settingsRow || !table) return;
+
+    const labels = Array.from(table.querySelectorAll('th label')).filter(function (label) {
+        return label.querySelector('input[name^="sarake_taustavari["]');
+    });
+    if (!labels.length) return;
+
+    const backgroundSettings = document.createElement('div');
+    backgroundSettings.className = 'report-column-background-colors';
+    backgroundSettings.innerHTML = '<span class="small text-muted">Sarakkeiden taustavärit:</span>';
+    labels.forEach(function (label) {
+        backgroundSettings.appendChild(label);
+    });
+    settingsRow.appendChild(backgroundSettings);
+});
+
 document.querySelectorAll('form[action^="muokkaa_raportti.php"]').forEach(function (form) {
     form.addEventListener('submit', function () {
         if (form.querySelector('input[name="return_anchor"]')) return;
