@@ -950,36 +950,47 @@ openLayoutShell('Muokkaa raporttia – TEKRAPORTTI');
     border-color: #aebdcb !important;
 }
 .report-table-form {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
-    gap: 1rem;
-    align-items: start;
+    position: relative;
+    display: block;
+    padding-right: 340px;
 }
 .report-table-form > .report-table-settings-row,
 .report-table-form > .row.g-2.mb-2.align-items-end,
 .report-table-form > .row.g-2.mb-2 {
-    grid-column: 2;
+    position: absolute;
+    right: 0;
+    width: 320px;
     margin: 0;
     padding: .75rem;
     background: #f8fafc;
     border: 1px solid #c5d1de;
     border-radius: .5rem;
 }
-.report-table-form > .table-responsive,
-.report-table-form > .report-table-summary,
-.report-table-form > .report-table-actions,
-.report-table-form > .report-table-add-summary {
-    grid-column: 1 / -1;
+.report-table-form > .row.g-2.mb-2.align-items-end {
+    top: 0;
 }
-.report-table-form > .table-responsive {
-    grid-column: 1;
-    grid-row: 1 / span 2;
+.report-table-form > .row.g-2.mb-2:not(.align-items-end) {
+    top: 116px;
+}
+.report-table-form > .row.g-2.mb-2.align-items-end > [class*="col-"],
+.report-table-form > .row.g-2.mb-2:not(.align-items-end) > [class*="col-"] {
+    width: 100%;
+    margin-bottom: .55rem;
+}
+.report-table-form > .row.g-2.mb-2.align-items-end > [class*="col-"]:last-child,
+.report-table-form > .row.g-2.mb-2:not(.align-items-end) > [class*="col-"]:last-child {
+    margin-bottom: 0;
 }
 @media (max-width: 900px) {
     .report-table-form {
+        padding-right: 0;
         display: block;
     }
-    .report-table-form > .report-table-settings-row {
+    .report-table-form > .report-table-settings-row,
+    .report-table-form > .row.g-2.mb-2.align-items-end,
+    .report-table-form > .row.g-2.mb-2 {
+        position: static;
+        width: auto;
         margin-bottom: .75rem;
     }
 }
