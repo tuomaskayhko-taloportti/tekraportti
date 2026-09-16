@@ -949,6 +949,40 @@ openLayoutShell('Muokkaa raporttia – TEKRAPORTTI');
 .report-section > .card-body .border-bottom {
     border-color: #aebdcb !important;
 }
+.report-table-form {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
+    gap: 1rem;
+    align-items: start;
+}
+.report-table-form > .report-table-settings-row,
+.report-table-form > .row.g-2.mb-2.align-items-end,
+.report-table-form > .row.g-2.mb-2 {
+    grid-column: 2;
+    margin: 0;
+    padding: .75rem;
+    background: #f8fafc;
+    border: 1px solid #c5d1de;
+    border-radius: .5rem;
+}
+.report-table-form > .table-responsive,
+.report-table-form > .report-table-summary,
+.report-table-form > .report-table-actions,
+.report-table-form > .report-table-add-summary {
+    grid-column: 1 / -1;
+}
+.report-table-form > .table-responsive {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+}
+@media (max-width: 900px) {
+    .report-table-form {
+        display: block;
+    }
+    .report-table-form > .report-table-settings-row {
+        margin-bottom: .75rem;
+    }
+}
 .report-section > .card-body > .report-section-header {
     display: none !important;
 }
@@ -1032,7 +1066,7 @@ openLayoutShell('Muokkaa raporttia – TEKRAPORTTI');
                 <div class="d-flex justify-content-between align-items-center mb-2"><strong>Taulukko</strong>
                     <form method="post" action="muokkaa_raportti.php?id=<?= $raporttiId ?>" onsubmit="return confirm('Poistetaanko taulukko ja kaikki sen tiedot?');"><input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="delete-table"><input type="hidden" name="taulukko_id" value="<?= (int) $table['id'] ?>"><button class="btn btn-outline-danger btn-sm">Poista taulukko</button></form>
                 </div>
-                <form method="post" action="muokkaa_raportti.php?id=<?= $raporttiId ?>">
+                <form class="report-table-form" method="post" action="muokkaa_raportti.php?id=<?= $raporttiId ?>">
                     <input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="taulukko_id" value="<?= (int) $table['id'] ?>">
                     <div class="row g-2 mb-2 align-items-end"><div class="col-md-5"><label class="form-label mb-1" for="taulukko-otsikko-<?= (int) $table['id'] ?>">Taulukon nimi</label><input class="form-control form-control-sm" id="taulukko-otsikko-<?= (int) $table['id'] ?>" name="taulukko_otsikko" value="<?= editValue($table['otsikko'] ?? '') ?>" maxlength="255"></div><div class="col-md-3"><label class="form-label mb-1" for="taulukko-leveys-<?= (int) $table['id'] ?>">Taulukon leveys</label><select class="form-select form-select-sm" id="taulukko-leveys-<?= (int) $table['id'] ?>" name="taulukko_leveys"><option value="keskitetty" <?= ($table['leveys_tila'] ?? 'keskitetty') === 'keskitetty' ? 'selected' : '' ?>>Keskitetty</option><option value="kokosivu" <?= ($table['leveys_tila'] ?? '') === 'kokosivu' ? 'selected' : '' ?>>Koko sivun levyinen</option></select></div><div class="col-md-4"><div class="form-check mb-1"><input class="form-check-input" type="checkbox" id="taulukko-reunat-<?= (int) $table['id'] ?>" name="taulukko_reunat" <?= (int) ($table['reunat'] ?? 1) === 1 ? 'checked' : '' ?>><label class="form-check-label" for="taulukko-reunat-<?= (int) $table['id'] ?>">Reunukset</label></div></div></div>
                     <div class="row g-2 mb-2"><div class="col-md-3"><label class="form-label mb-1" for="taulukko-tasaus-pysty-<?= (int) $table['id'] ?>">Pystysuuntainen tasaus</label><select class="form-select form-select-sm" id="taulukko-tasaus-pysty-<?= (int) $table['id'] ?>" name="taulukko_tasaus_pysty"><option value="ylos" <?= ($table['tasaus_pysty'] ?? 'alas') === 'ylos' ? 'selected' : '' ?>>Ylös</option><option value="keskelle" <?= ($table['tasaus_pysty'] ?? '') === 'keskelle' ? 'selected' : '' ?>>Keskelle</option><option value="alas" <?= ($table['tasaus_pysty'] ?? 'alas') === 'alas' ? 'selected' : '' ?>>Alas</option></select></div><div class="col-md-3"><label class="form-label mb-1" for="taulukko-tasaus-vaaka-<?= (int) $table['id'] ?>">Vaakasuuntainen tasaus</label><select class="form-select form-select-sm" id="taulukko-tasaus-vaaka-<?= (int) $table['id'] ?>" name="taulukko_tasaus_vaaka"><option value="vasen" <?= ($table['tasaus_vaaka'] ?? 'vasen') === 'vasen' ? 'selected' : '' ?>>Vasen</option><option value="keski" <?= ($table['tasaus_vaaka'] ?? '') === 'keski' ? 'selected' : '' ?>>Keskitä</option><option value="oikea" <?= ($table['tasaus_vaaka'] ?? '') === 'oikea' ? 'selected' : '' ?>>Oikea</option></select></div><div class="col-md-6"><span class="small text-muted">Sarakkeiden fonttivärit:</span><?php foreach ($table['sarakkeet'] as $column): ?><label class="small text-muted ms-3"><?= editValue($column['nimi']) ?> <input type="color" name="sarake_fonttivari[<?= (int) $table['id'] ?>][<?= (int) $column['id'] ?>]" value="<?= editValue(preg_match('/^#[0-9a-fA-F]{6}$/', (string) ($column['fonttivari'] ?? '')) ? $column['fonttivari'] : '#232d3c') ?>"></label><?php endforeach; ?></div></div>
