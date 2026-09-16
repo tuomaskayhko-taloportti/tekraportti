@@ -947,7 +947,27 @@ openLayoutShell('Muokkaa raporttia – TEKRAPORTTI');
 }
 .report-section > .card-body .border-top,
 .report-section > .card-body .border-bottom {
-    border-color: #aebdcb !important;
+    border-color: #6f7e8d !important;
+}
+.report-section > .card-body {
+    border-color: #7b8997;
+}
+.report-section > .card-body .form-control,
+.report-section > .card-body .form-select {
+    border-color: #8291a0;
+}
+.report-section > .card-body .file-drop-zone {
+    border-color: #748493;
+}
+.report-section > .card-body .table {
+    --bs-table-border-color: #7b8997;
+}
+.report-table-form .table > :not(caption) > * > * {
+    border-color: #7b8997 !important;
+}
+.report-table-form .table tbody > tr > td:last-child {
+    border: 1px solid #7b8997 !important;
+    background-color: #fff;
 }
 .report-table-form {
     display: grid;
