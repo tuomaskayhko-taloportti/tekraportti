@@ -12,6 +12,7 @@ if (!isset($_SESSION['laatijat_id'])) {
 $laatijatId = (int) $_SESSION['laatijat_id'];
 $customerId = max(0, (int) ($_GET['asiakas_id'] ?? 0));
 $projectId = max(0, (int) ($_GET['projekti_id'] ?? 0));
+$showSourceReports = (string) ($_GET['lahderaportit'] ?? '0') === '1';
 $search = trim((string) ($_GET['haku'] ?? ''));
 $showAll = (isset($_GET['kaikki']) && $_GET['kaikki'] === '1') || $search !== '';
 $searchTerms = $search === '' ? [] : (preg_split('/\s+/', $search) ?: []);
@@ -95,6 +96,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string) ($_POST['action'] ?? '') =
             if ($showAll) {
                 $redirect .= '?kaikki=1&sivu=' . $currentPage;
             }
+            if ($showSourceReports) {
+                $redirect .= (str_contains($redirect, '?') ? '&' : '?') . 'lahderaportit=1';
+            }
             header('Location: ' . $redirect);
             exit;
         }
@@ -129,6 +133,11 @@ try {
     ) OR EXISTS (
         SELECT 1 FROM projektijaot pj WHERE pj.projekti_id = r.projekti_id AND pj.laatijat_id = ?
     ))';
+    if (!$showSourceReports) {
+        $reportWhere .= ' AND NOT EXISTS (
+            SELECT 1 FROM raporttimallit m WHERE m.lahde_raportti_id = r.id
+        )';
+    }
     if ($projectId > 0) {
         $reportWhere .= ' AND r.projekti_id = ?';
     }
@@ -250,11 +259,12 @@ function formatReportDate(string $date): string
 
 function reportPageUrl(int $page): string
 {
-    global $customerId, $projectId, $search;
+    global $customerId, $projectId, $search, $showSourceReports;
     $params = ['kaikki' => 1, 'sivu' => max(1, $page)];
     if ($customerId > 0) { $params['asiakas_id'] = $customerId; }
     if ($projectId > 0) { $params['projekti_id'] = $projectId; }
     if ($search !== '') { $params['haku'] = $search; }
+    if ($showSourceReports) { $params['lahderaportit'] = 1; }
     return 'raportit.php?' . http_build_query($params);
 }
 
@@ -322,7 +332,7 @@ openLayoutShell('Raportit – TEKRAPORTTI');
     <div class="d-flex flex-wrap gap-2">
         <a class="btn btn-primary" href="luo_raportti.php">Luo uusi raportti</a>
         <?php if (!$showAll): ?>
-            <a class="btn btn-outline-primary" href="raportit.php?kaikki=1">Hae kaikki raportit</a>
+            <a class="btn btn-outline-primary" href="raportit.php?kaikki=1<?= $showSourceReports ? '&lahderaportit=1' : '' ?>">Hae kaikki raportit</a>
         <?php endif; ?>
     </div>
 </div>
@@ -331,6 +341,7 @@ openLayoutShell('Raportit – TEKRAPORTTI');
     <div class="row g-2 align-items-end">
         <div class="col-md-6"><label class="form-label mb-1" for="asiakas_id">Suodata asiakkaan mukaan</label><select class="form-select" id="asiakas_id" name="asiakas_id"><option value="0">Kaikki asiakkaat</option><?php foreach ($customers as $customer): ?><option value="<?= (int) $customer['id'] ?>" <?= $customerId === (int) $customer['id'] ? 'selected' : '' ?>><?= htmlspecialchars((string) $customer['nimi'], ENT_QUOTES, 'UTF-8') ?><?= !empty($customer['yritys']) ? ' – ' . htmlspecialchars((string) $customer['yritys'], ENT_QUOTES, 'UTF-8') : '' ?></option><?php endforeach; ?></select></div>
         <div class="col-md-6"><label class="form-label mb-1" for="projekti_id">Suodata projektin mukaan</label><select class="form-select" id="projekti_id" name="projekti_id"><option value="0">Kaikki projektit</option><?php foreach ($projects as $project): ?><option value="<?= (int) $project['id'] ?>" <?= $projectId === (int) $project['id'] ? 'selected' : '' ?>><?= htmlspecialchars($project['nimi'], ENT_QUOTES, 'UTF-8') ?></option><?php endforeach; ?></select></div>
+        <div class="col-md-6"><label class="form-label mb-1" for="lahderaportit">Lähderaportit</label><select class="form-select" id="lahderaportit" name="lahderaportit"><option value="0" <?= !$showSourceReports ? 'selected' : '' ?>>Piilota lähderaportit</option><option value="1" <?= $showSourceReports ? 'selected' : '' ?>>Näytä lähderaportit</option></select></div>
         <?php if ($search !== ''): ?><input type="hidden" name="haku" value="<?= htmlspecialchars($search, ENT_QUOTES, 'UTF-8') ?>"><?php endif; ?>
         <?php if ($showAll): ?><input type="hidden" name="kaikki" value="1"><?php endif; ?>
         <div class="col-md-auto"><button class="btn btn-outline-primary">Suodata</button></div>

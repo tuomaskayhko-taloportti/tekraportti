@@ -383,14 +383,12 @@ function pdfMarkdownRuns(string $text): array
  * ympyrän, o-merkillä merkityt rivit avoimen ympyrän ja numeroidut rivit
  * säilyttävät alkuperäisen numeronsa.
  */
-function pdfTextWithLists(FPDF $pdf, string $text, int $sectionNumber): void
+function pdfTextWithLists(FPDF $pdf, string $text, int $sectionNumber, array &$headingCounters): void
 {
     $listIndent = 7;
     $listStart = 20 + $listIndent;
     $contentStart = $listStart + $listIndent;
     $lines = preg_split('/\r\n|\r|\n/', $text) ?: [''];
-    $headingCounters = [];
-
     foreach ($lines as $line) {
         if (preg_match('/^\s*(#{2,})\s+(.+)$/u', $line, $heading)) {
             $headingLevel = strlen($heading[1]) - 1;
@@ -404,8 +402,10 @@ function pdfTextWithLists(FPDF $pdf, string $text, int $sectionNumber): void
             for ($counterLevel = 1; $counterLevel <= $headingLevel; $counterLevel++) {
                 $headingPath[] = (string) ($headingCounters[$counterLevel] ?? 0);
             }
-            $headingIndent = min(3, $headingLevel) * 4;
-            $pdf->SetX(20 + $headingIndent);
+            // Raporttiosion alaotsikot alkavat samasta reunasta kuin muu sisältö.
+            // Sisällysluettelon hierarkkinen sisennys rakennetaan erikseen alla.
+            $headingIndent = 0;
+            $pdf->SetX(20);
             $pdf->SetFont('Helvetica', 'B', max(11, 15 - min(4, $headingLevel)));
             $pdf->MultiCell($pdf->GetPageWidth() - 40 - $headingIndent, 7, pdfText($sectionNumber . '.' . implode('.', $headingPath) . ' ' . $heading[2]), 0, 'L');
             $pdf->Ln(1);
@@ -1776,9 +1776,10 @@ foreach ($rows as $index => $row) {
     }
     $pdf->Ln(5);
     $pdf->SetFont('Helvetica', '', 11);
+    $headingCounters = [];
     $content = trim((string) $row['sisalto']);
     if ($content !== '') {
-        pdfTextWithLists($pdf, $content, $index + 1);
+        pdfTextWithLists($pdf, $content, $index + 1, $headingCounters);
     }
 
     // Osioon liitetyt tekstilohkot ja taulukot niiden yhteisessä järjestyksessä.
@@ -1788,7 +1789,7 @@ foreach ($rows as $index => $row) {
             if ($textContent !== '') {
                 $pdf->Ln(5);
                 $pdf->SetFont('Helvetica', '', 11);
-                pdfTextWithLists($pdf, $textContent, $index + 1);
+                pdfTextWithLists($pdf, $textContent, $index + 1, $headingCounters);
             }
             continue;
         }
