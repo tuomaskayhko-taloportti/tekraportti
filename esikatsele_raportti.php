@@ -1266,14 +1266,14 @@ function orientPdfImageAnnotations(array $annotations, int $orientation): array
     return $annotations;
 }
 
-function drawPdfImageAnnotations($image, array $annotations, int $sourceWidth, int $sourceHeight, int $cropX, int $cropY, int $cropWidth, int $cropHeight, int $outputWidth, int $outputHeight): void
+function drawPdfImageAnnotations($image, array $annotations, int $sourceWidth, int $sourceHeight, int $cropX, int $cropY, int $cropWidth, int $cropHeight, int $outputX, int $outputY, int $outputWidth, int $outputHeight): void
 {
     $toOutput = static function (float $x, float $y) use ($sourceWidth, $sourceHeight, $cropX, $cropY, $cropWidth, $cropHeight, $outputWidth, $outputHeight): array {
         $sourceX = max(0, min(1, $x)) * $sourceWidth;
         $sourceY = max(0, min(1, $y)) * $sourceHeight;
         return [
-            (int) round(($sourceX - $cropX) * $outputWidth / $cropWidth),
-            (int) round(($sourceY - $cropY) * $outputHeight / $cropHeight),
+            $outputX + (int) round(($sourceX - $cropX) * $outputWidth / $cropWidth),
+            $outputY + (int) round(($sourceY - $cropY) * $outputHeight / $cropHeight),
         ];
     };
     imagesetthickness($image, 5);
@@ -1356,18 +1356,6 @@ function cropPdfImage(string $path, float $targetAspect, array &$temporaryImages
         $cropWidth = max(1, (int) round(max(0.01, min(1, $x2 - $x1)) * $sourceWidth));
         $cropHeight = max(1, (int) round(max(0.01, min(1, $y2 - $y1)) * $sourceHeight));
         $cropWidth = min($cropWidth, $sourceWidth - $cropX); $cropHeight = min($cropHeight, $sourceHeight - $cropY);
-        // Säilytä tulosteen vakiomuoto: rajaus laajennetaan tarvittaessa
-        // valinnan keskeltä, jotta kuva ei veny PDF:ssä.
-        $selectedAspect = $cropWidth / $cropHeight;
-        if ($selectedAspect > $targetAspect) {
-            $newHeight = min($sourceHeight - $cropY, (int) round($cropWidth / $targetAspect));
-            $cropY = max(0, min($sourceHeight - $newHeight, (int) round($cropY + ($cropHeight - $newHeight) / 2)));
-            $cropHeight = $newHeight;
-        } elseif ($selectedAspect < $targetAspect) {
-            $newWidth = min($sourceWidth - $cropX, (int) round($cropHeight * $targetAspect));
-            $cropX = max(0, min($sourceWidth - $newWidth, (int) round($cropX + ($cropWidth - $newWidth) / 2)));
-            $cropWidth = $newWidth;
-        }
     } elseif ($sourceAspect > $targetAspect) {
         $cropHeight = $sourceHeight;
         $cropWidth = (int) floor($sourceHeight * $targetAspect);
@@ -1385,8 +1373,20 @@ function cropPdfImage(string $path, float $targetAspect, array &$temporaryImages
     $output = imagecreatetruecolor($outputWidth, $outputHeight);
     $white = imagecolorallocate($output, 255, 255, 255);
     imagefill($output, 0, 0, $white);
-    imagecopyresampled($output, $source, 0, 0, $cropX, $cropY, $outputWidth, $outputHeight, $cropWidth, $cropHeight);
-    drawPdfImageAnnotations($output, array_values(array_filter($annotations, static fn (array $annotation): bool => ($annotation['type'] ?? '') !== 'crop')), $sourceWidth, $sourceHeight, $cropX, $cropY, $cropWidth, $cropHeight, $outputWidth, $outputHeight);
+    $cropAspect = $cropWidth / $cropHeight;
+    if ($cropAspect > $targetAspect) {
+        $renderWidth = $outputWidth;
+        $renderHeight = max(1, (int) round($outputWidth / $cropAspect));
+        $renderX = 0;
+        $renderY = (int) floor(($outputHeight - $renderHeight) / 2);
+    } else {
+        $renderHeight = $outputHeight;
+        $renderWidth = max(1, (int) round($outputHeight * $cropAspect));
+        $renderX = (int) floor(($outputWidth - $renderWidth) / 2);
+        $renderY = 0;
+    }
+    imagecopyresampled($output, $source, $renderX, $renderY, $cropX, $cropY, $renderWidth, $renderHeight, $cropWidth, $cropHeight);
+    drawPdfImageAnnotations($output, array_values(array_filter($annotations, static fn (array $annotation): bool => ($annotation['type'] ?? '') !== 'crop')), $sourceWidth, $sourceHeight, $cropX, $cropY, $cropWidth, $cropHeight, $renderX, $renderY, $renderWidth, $renderHeight);
 
     $temporaryPath = tempnam(sys_get_temp_dir(), 'tekraportti-image-');
     $jpegPath = $temporaryPath !== false ? $temporaryPath . '.jpg' : false;
