@@ -1225,6 +1225,47 @@ function pdfAnnotationColor($image, string $value)
     );
 }
 
+/** Muuntaa merkintöjen koordinaatit samaan suuntaan kuin GD:n EXIF-käännös. */
+function orientPdfImageAnnotations(array $annotations, int $orientation): array
+{
+    if ($orientation < 2 || $orientation > 8) {
+        return $annotations;
+    }
+
+    $transform = static function (float $x, float $y) use ($orientation): array {
+        return match ($orientation) {
+            2 => [1 - $x, $y],
+            3 => [1 - $x, 1 - $y],
+            4 => [$x, 1 - $y],
+            5 => [1 - $y, 1 - $x],
+            6 => [1 - $y, $x],
+            7 => [$y, $x],
+            8 => [$y, 1 - $x],
+            default => [$x, $y],
+        };
+    };
+
+    foreach ($annotations as &$annotation) {
+        foreach ([['x1', 'y1'], ['x2', 'y2']] as [$xKey, $yKey]) {
+            [$annotation[$xKey], $annotation[$yKey]] = $transform(
+                (float) ($annotation[$xKey] ?? 0),
+                (float) ($annotation[$yKey] ?? 0)
+            );
+        }
+        if (($annotation['type'] ?? '') === 'freehand') {
+            foreach ($annotation['points'] ?? [] as &$point) {
+                if (is_array($point) && count($point) >= 2) {
+                    [$point[0], $point[1]] = $transform((float) $point[0], (float) $point[1]);
+                }
+            }
+            unset($point);
+        }
+    }
+    unset($annotation);
+
+    return $annotations;
+}
+
 function drawPdfImageAnnotations($image, array $annotations, int $sourceWidth, int $sourceHeight, int $cropX, int $cropY, int $cropWidth, int $cropHeight, int $outputWidth, int $outputHeight): void
 {
     $toOutput = static function (float $x, float $y) use ($sourceWidth, $sourceHeight, $cropX, $cropY, $cropWidth, $cropHeight, $outputWidth, $outputHeight): array {
@@ -1300,6 +1341,7 @@ function cropPdfImage(string $path, float $targetAspect, array &$temporaryImages
         $angle = match ($orientation) { 3 => 180, 6 => -90, 8 => 90, default => 0 };
         if ($angle !== 0) { $source = imagerotate($source, $angle, 0); }
         if (in_array($orientation, [2, 4, 5, 7], true) && function_exists('imageflip')) { imageflip($source, IMG_FLIP_HORIZONTAL); }
+        $annotations = orientPdfImageAnnotations($annotations, $orientation);
     }
     $sourceWidth = imagesx($source);
     $sourceHeight = imagesy($source);
