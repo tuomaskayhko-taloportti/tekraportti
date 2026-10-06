@@ -1373,20 +1373,10 @@ function cropPdfImage(string $path, float $targetAspect, array &$temporaryImages
     $output = imagecreatetruecolor($outputWidth, $outputHeight);
     $white = imagecolorallocate($output, 255, 255, 255);
     imagefill($output, 0, 0, $white);
-    $cropAspect = $cropWidth / $cropHeight;
-    if ($cropAspect > $targetAspect) {
-        $renderWidth = $outputWidth;
-        $renderHeight = max(1, (int) round($outputWidth / $cropAspect));
-        $renderX = 0;
-        $renderY = (int) floor(($outputHeight - $renderHeight) / 2);
-    } else {
-        $renderHeight = $outputHeight;
-        $renderWidth = max(1, (int) round($outputHeight * $cropAspect));
-        $renderX = (int) floor(($outputWidth - $renderWidth) / 2);
-        $renderY = 0;
-    }
-    imagecopyresampled($output, $source, $renderX, $renderY, $cropX, $cropY, $renderWidth, $renderHeight, $cropWidth, $cropHeight);
-    drawPdfImageAnnotations($output, array_values(array_filter($annotations, static fn (array $annotation): bool => ($annotation['type'] ?? '') !== 'crop')), $sourceWidth, $sourceHeight, $cropX, $cropY, $cropWidth, $cropHeight, $renderX, $renderY, $renderWidth, $renderHeight);
+    // PDF:n kuvaruudut ovat mallissa kiinteät. Skaalataan käyttäjän valitsema
+    // alue samaan ruutuun, jotta kuva ei saa sivupalkkeja eikä näytä zoomatulta.
+    imagecopyresampled($output, $source, 0, 0, $cropX, $cropY, $outputWidth, $outputHeight, $cropWidth, $cropHeight);
+    drawPdfImageAnnotations($output, array_values(array_filter($annotations, static fn (array $annotation): bool => ($annotation['type'] ?? '') !== 'crop')), $sourceWidth, $sourceHeight, $cropX, $cropY, $cropWidth, $cropHeight, 0, 0, $outputWidth, $outputHeight);
 
     $temporaryPath = tempnam(sys_get_temp_dir(), 'tekraportti-image-');
     $jpegPath = $temporaryPath !== false ? $temporaryPath . '.jpg' : false;
