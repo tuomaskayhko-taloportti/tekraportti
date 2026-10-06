@@ -1315,12 +1315,19 @@ function cropPdfImage(string $path, float $targetAspect, array &$temporaryImages
         $cropHeight = max(1, (int) round(max(0.01, min(1, $y2 - $y1)) * $sourceHeight));
         $cropWidth = min($cropWidth, $sourceWidth - $cropX); $cropHeight = min($cropHeight, $sourceHeight - $cropY);
     } else {
-        // Ilman käyttäjän tekemää rajausta käytetään koko kuvaa, jotta myös
-        // kuvan reunoille sijoitetut merkinnät säilyvät PDF:ssä.
-        $cropX = 0;
-        $cropY = 0;
-        $cropWidth = $sourceWidth;
-        $cropHeight = $sourceHeight;
+        // Ilman käyttäjän tekemää rajausta käytetään raportin vakiomuotoista
+        // keskeltä tehtävää rajausta.
+        if ($sourceAspect > $targetAspect) {
+            $cropHeight = $sourceHeight;
+            $cropWidth = (int) floor($sourceHeight * $targetAspect);
+            $cropX = (int) floor(($sourceWidth - $cropWidth) / 2);
+            $cropY = 0;
+        } else {
+            $cropWidth = $sourceWidth;
+            $cropHeight = (int) floor($sourceWidth / $targetAspect);
+            $cropX = 0;
+            $cropY = (int) floor(($sourceHeight - $cropHeight) / 2);
+        }
     }
 
     $outputWidth = 1200;
@@ -1328,22 +1335,10 @@ function cropPdfImage(string $path, float $targetAspect, array &$temporaryImages
     $output = imagecreatetruecolor($outputWidth, $outputHeight);
     $white = imagecolorallocate($output, 255, 255, 255);
     imagefill($output, 0, 0, $white);
-    if ($cropAnnotation) {
-        $renderX = 0;
-        $renderY = 0;
-        $renderWidth = $outputWidth;
-        $renderHeight = $outputHeight;
-    } elseif ($sourceAspect > $targetAspect) {
-        $renderWidth = $outputWidth;
-        $renderHeight = max(1, (int) round($outputWidth / $sourceAspect));
-        $renderX = 0;
-        $renderY = (int) floor(($outputHeight - $renderHeight) / 2);
-    } else {
-        $renderHeight = $outputHeight;
-        $renderWidth = max(1, (int) round($outputHeight * $sourceAspect));
-        $renderX = (int) floor(($outputWidth - $renderWidth) / 2);
-        $renderY = 0;
-    }
+    $renderX = 0;
+    $renderY = 0;
+    $renderWidth = $outputWidth;
+    $renderHeight = $outputHeight;
     imagecopyresampled($output, $source, $renderX, $renderY, $cropX, $cropY, $renderWidth, $renderHeight, $cropWidth, $cropHeight);
     drawPdfImageAnnotations($output, array_values(array_filter($annotations, static fn (array $annotation): bool => ($annotation['type'] ?? '') !== 'crop')), $sourceWidth, $sourceHeight, $cropX, $cropY, $cropWidth, $cropHeight, $renderX, $renderY, $renderWidth, $renderHeight);
 
