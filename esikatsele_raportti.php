@@ -1225,6 +1225,19 @@ function pdfAnnotationColor($image, string $value)
     );
 }
 
+/** Piirtää kuvan tekstimerkinnän siten, että Y-koordinaatti on tekstin perusviiva kuten Canvasissa. */
+function drawPdfAnnotationText($image, int $size, int $x, int $baselineY, string $text, int $color): void
+{
+    $font = chartFontPath();
+    if ($font !== null && function_exists('imagettftext')) {
+        imagettftext($image, $size, 0, $x, $baselineY, $color, $font, $text);
+        return;
+    }
+
+    $fontId = 5;
+    imagestring($image, $fontId, $x, max(0, $baselineY - imagefontheight($fontId)), pdfText($text), $color);
+}
+
 function drawPdfImageAnnotations($image, array $annotations, int $sourceWidth, int $sourceHeight, int $cropX, int $cropY, int $cropWidth, int $cropHeight, int $outputX, int $outputY, int $outputWidth, int $outputHeight): void
 {
     $toOutput = static function (float $x, float $y) use ($sourceWidth, $sourceHeight, $cropX, $cropY, $cropWidth, $cropHeight, $outputWidth, $outputHeight): array {
@@ -1265,7 +1278,7 @@ function drawPdfImageAnnotations($image, array $annotations, int $sourceWidth, i
             }
         } elseif ($type === 'text') {
             $fontSize = max(8, min(240, (int) round((float) ($annotation['fontSize'] ?? 0.025) * $outputWidth)));
-            chartText($image, $fontSize, $start[0], $start[1], (string) ($annotation['text'] ?? ''), $color);
+            drawPdfAnnotationText($image, $fontSize, $start[0], $start[1], (string) ($annotation['text'] ?? ''), $color);
         }
     }
     imagesetthickness($image, 1);
