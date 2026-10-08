@@ -1754,7 +1754,7 @@ document.querySelectorAll('[data-file-drop]').forEach(function (dropZone) {
         const wrapper = document.createElement('div');
         wrapper.className = 'col-md-2';
         wrapper.innerHTML = '<label class="visually-hidden">Summarivin nimittäjä</label><input class="form-control form-control-sm" name="yhteenveto_nimittaja" value="Yhteensä" maxlength="255" placeholder="Yhteensä">';
-        select.parentElement.insertBefore(wrapper, select);
+        select.parentElement.parentElement.insertBefore(wrapper, select.parentElement);
     });
 }());
 </script>
