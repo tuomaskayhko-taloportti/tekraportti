@@ -468,6 +468,34 @@ function reportSubheadings(string $text): array
     return $headings;
 }
 
+/** Laskee tilan, joka osion alusta tarvitaan otsikolle ja tekstin alulle. */
+function pdfSectionStartHeight(FPDF $pdf, int $sectionNumber, string $sectionTitle, string $content): float
+{
+    $contentWidth = $pdf->GetPageWidth() - 40;
+    $pdf->SetFont('Helvetica', 'B', 17);
+    $titleLines = pdfTextChunksByWords($pdf, $sectionNumber . '. ' . $sectionTitle, $contentWidth);
+    $height = count($titleLines) * 10 + 5;
+
+    foreach (preg_split('/\r\n|\r|\n/', $content) ?: [] as $line) {
+        if (!preg_match('/^\s*(#{2,})\s+(.+)$/u', $line, $heading)) {
+            continue;
+        }
+        $headingLevel = strlen($heading[1]) - 1;
+        $headingNumber = $sectionNumber . '.' . implode('.', array_fill(0, $headingLevel - 1, '0'));
+        if ($headingLevel > 1) {
+            $headingNumber .= '.';
+        }
+        $headingNumber .= '1 ';
+        $pdf->SetFont('Helvetica', 'B', max(11, 15 - min(4, $headingLevel)));
+        $headingLines = pdfTextChunksByWords($pdf, $headingNumber . $heading[2], $contentWidth);
+        return $height + count($headingLines) * 7 + 1 + 6;
+    }
+
+    // Jos alaotsikkoa ei ole, pidä osion otsikon yhteydessä vähintään yksi
+    // tekstirivi tai vastaava määrä tilaa seuraavalle sisältöelementille.
+    return $height + 6;
+}
+
 function pdfDate(string $value): string
 {
     $date = DateTime::createFromFormat('Y-m-d', $value);
@@ -1459,6 +1487,23 @@ function youtubeThumbnailPath(string $url, array &$temporaryImages): ?string
 
 class TekraPdf extends \setasign\Fpdi\Fpdi
 {
+    public function writePageNumber(int $pdfPage, float $x, float $y, float $width, string $text, bool $bold): void
+    {
+        if (!isset($this->pages[$pdfPage])) {
+            return;
+        }
+        $currentPage = $this->page;
+        $currentX = $this->x;
+        $currentY = $this->y;
+        $this->page = $pdfPage;
+        $this->SetXY($x, $y);
+        $this->SetFont('Helvetica', $bold ? 'B' : '', $bold ? 12 : 11);
+        $this->SetTextColor(0, 0, 0);
+        $this->Cell($width, 8, pdfText($text), 0, 0, 'R');
+        $this->page = $currentPage;
+        $this->SetXY($currentX, $currentY);
+    }
+
     public function drawClosedListMarker(): void
     {
         $centerX = $this->GetX() + 2.5;
@@ -1676,7 +1721,7 @@ foreach ($rows as $index => $row) {
     $tocEntries[] = [
         'number' => $sectionNumber . '.',
         'title' => $row['otsikko'],
-        'page' => (string) ($index + 2),
+        'section_index' => $index,
         'indent' => false,
     ];
     $sectionTextParts = [(string) $row['sisalto']];
@@ -1689,20 +1734,19 @@ foreach ($rows as $index => $row) {
         $tocEntries[] = [
             'number' => $sectionNumber . '.' . $heading['number'],
             'title' => $heading['title'],
-            'page' => (string) ($index + 2),
+            'section_index' => $index,
             'indent' => (int) $heading['level'],
         ];
     }
 }
+$tocPageNumberPositions = [];
 foreach ($tocEntries as $entry) {
     $pdf->SetFont('Helvetica', $entry['indent'] ? '' : 'B', $entry['indent'] ? 11 : 12);
     $numberText = pdfText((string) ($entry['number'] ?? ''));
     $title = (string) $entry['title'];
-    $pageNumber = (string) $entry['page'];
-    $pageNumberText = pdfText($pageNumber);
     $contentWidth = $pdf->GetPageWidth() - 40;
     $indent = ((int) $entry['indent']) * 8;
-    $pageNumberWidth = $pdf->GetStringWidth($pageNumberText);
+    $pageNumberWidth = $pdf->GetStringWidth('000');
     $numberWidth = $pdf->GetStringWidth($numberText);
     $pageNumberGap = 3;
     $numberGap = 2;
@@ -1729,15 +1773,41 @@ foreach ($tocEntries as $entry) {
     $pdf->Cell($titleWidth + $spaceWidth, 7, $lastTitleLine . ' ', 0, 0, 'L');
     $pdf->Cell($dotsWidth, 8, $dots, 0, 0, 'L');
     $pdf->Cell($pageNumberGap, 8, '', 0, 0, 'L');
-    $pdf->Cell($pageNumberWidth, 8, $pageNumberText, 0, 1, 'R');
+    $tocPageNumberPositions[] = [
+        'pdf_page' => $pdf->PageNo(),
+        'x' => $pdf->GetX(),
+        'y' => $pdf->GetY(),
+        'width' => $pageNumberWidth,
+        'section_index' => (int) $entry['section_index'],
+        'bold' => !$entry['indent'],
+    ];
+    $pdf->Cell($pageNumberWidth, 8, '', 0, 1, 'R');
 }
 if (!$tocEntries) {
     $pdf->Cell(0, 8, pdfText('Ei vielä lisättyjä osioita.'), 0, 1);
 }
 
 // Raporttiosiot.
+$sectionPages = [];
 foreach ($rows as $index => $row) {
-    $pdf->AddPage();
+    if ($index === 0) {
+        $pdf->AddPage();
+    } else {
+        $sectionContent = trim((string) $row['sisalto']);
+        if ($sectionContent === '') {
+            foreach ($contentBlocksByRow[(int) $row['id']] ?? [] as $contentBlock) {
+                if (($contentBlock['type'] ?? '') === 'text') {
+                    $sectionContent = trim((string) ($contentBlock['data']['sisalto'] ?? ''));
+                    if ($sectionContent !== '') {
+                        break;
+                    }
+                }
+            }
+        }
+        $pdf->Ln(8);
+        $pdf->ensureSpace(pdfSectionStartHeight($pdf, $index + 1, (string) $row['otsikko'], $sectionContent));
+    }
+    $sectionPages[$index] = max(1, $pdf->PageNo() - 1);
     $pdf->SetFont('Helvetica', 'B', 17);
     $pdf->MultiCell(0, 10, pdfText(($index + 1) . '. ' . $row['otsikko']), 0, 'L');
     if (!empty($row['sisaltaa_asiakastiedot'])) {
@@ -2094,6 +2164,18 @@ foreach ($attachments as $attachment) {
     } catch (Throwable $error) {
         error_log('PDF-liitteen lisääminen epäonnistui: ' . $error->getMessage());
     }
+}
+
+foreach ($tocPageNumberPositions as $position) {
+    $sectionPage = $sectionPages[(int) $position['section_index']] ?? 1;
+    $pdf->writePageNumber(
+        (int) $position['pdf_page'],
+        (float) $position['x'],
+        (float) $position['y'],
+        (float) $position['width'],
+        (string) $sectionPage,
+        (bool) $position['bold']
+    );
 }
 
 $pdfContent = compressPdfIfNeeded($pdf->Output('S'));
