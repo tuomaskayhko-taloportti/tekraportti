@@ -1589,7 +1589,7 @@ class TekraPdf extends \setasign\Fpdi\Fpdi
         $this->Line($this->lMargin, $this->GetY() + 1, $this->GetPageWidth() - $this->rMargin, $this->GetY() + 1);
         $this->SetY($this->GetY() + 3);
         $this->SetFont('Helvetica', '', 7.5);
-        $this->Cell(0, 5, pdfText(pdfFooterContact($GLOBALS['report'])), 0, 0, 'L');
+        $this->Cell(0, 5, pdfText(pdfFooterContact($GLOBALS['report'])), 0, 0, 'C');
     }
 
     protected function _putpage($pageNumber): void
