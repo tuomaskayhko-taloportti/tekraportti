@@ -1844,10 +1844,14 @@ foreach ($rows as $index => $row) {
             $numericColumns[] = pdfTableColumnIsNumeric($table, $displayRows, (int) $column['id']);
         }
         $headerHeight = $headerLines * 5 + 2;
-        $estimatedHeight = $headerHeight + 4;
+        // Pidä sarakeotsikot ja taulukon ensimmäinen tietorivi yhdessä. Koko
+        // taulukon korkeutta ei varata etukäteen, jotta pitkä taulukko voi alkaa
+        // osion otsikon ja tekstin jälkeen jo samalla sivulla.
+        $tableStartHeight = $headerHeight + 2;
         if ($tableTitle !== '') {
-            $estimatedHeight += 4;
+            $tableStartHeight += 10;
         }
+        $firstRowHeight = null;
         $summaryRowHeights = [];
         foreach ($displayRows as $displayRow) {
             $tableRow = $displayRow['row'];
@@ -1860,9 +1864,9 @@ foreach ($rows as $index => $row) {
             if ($displayRow['summary']) { $rowHeight = (int) ceil($rowHeight * 1.3); }
             if (!empty($displayRow['calculation'])) { $rowHeight = $summaryRowHeights[(int) $displayRow['row']['calculation']['yhteenvetorivi_id']] ?? $rowHeight; }
             if ($displayRow['summary']) { $summaryRowHeights[(int) $tableRow['summary']['id']] = $rowHeight; }
-            $estimatedHeight += $rowHeight;
+            if ($firstRowHeight === null) { $firstRowHeight = $rowHeight; }
         }
-        $pdf->ensureSpace($estimatedHeight);
+        $pdf->ensureSpace($tableStartHeight + ($firstRowHeight ?? 0));
         if ($tableTitle !== '') {
             $pdf->Ln(4);
             $pdf->SetFont('Helvetica', 'B', 10);
