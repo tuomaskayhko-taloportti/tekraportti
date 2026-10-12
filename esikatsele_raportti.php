@@ -1592,6 +1592,7 @@ $temporaryImages = [];
 $chartSelections = is_array($_GET['kaavio'] ?? null) ? $_GET['kaavio'] : [];
 $chartColumnSelections = is_array($_GET['kaavio_sarakkeet'] ?? null) ? $_GET['kaavio_sarakkeet'] : [];
 $hideTableSelections = is_array($_GET['piilota_taulukko'] ?? null) ? $_GET['piilota_taulukko'] : [];
+$showSignature = (string) ($_GET['allekirjoitus'] ?? '1') !== '0';
 $customerInfoColorOverride = strtolower(trim((string) ($_GET['asiakastiedot_taustavari'] ?? '')));
 if (!preg_match('/^#[0-9a-f]{6}$/', $customerInfoColorOverride)) {
     $customerInfoColorOverride = '';
@@ -2036,33 +2037,35 @@ foreach ($rows as $index => $row) {
     }
 }
 
-// Laatimispaikka ja laatijan tiedot viimeisenä tekstiryhmänä.
-$place = trim((string) ($report['laatimispaikka'] ?? ''));
-$date = (string) $GLOBALS['printDate'];
-$placeAndDate = $place !== '' ? $place . ', ' . $date : $date;
-$title = trim((string) ($report['laatija_titteli'] ?? ''));
+// Laatimispaikka ja laatijan tiedot viimeisenä tekstiryhmänä, jos allekirjoitus on valittu.
+if ($showSignature) {
+    $place = trim((string) ($report['laatimispaikka'] ?? ''));
+    $date = (string) $GLOBALS['printDate'];
+    $placeAndDate = $place !== '' ? $place . ', ' . $date : $date;
+    $title = trim((string) ($report['laatija_titteli'] ?? ''));
 
-$closingTextHeight = 8 + 3 + 7 + ($title !== '' ? 7 : 0);
-$closingLineGap = 14;
-$closingFooterGap = 14;
-$closingPageBreakY = $pdf->GetPageHeight() - 26;
-$closingTargetY = $closingPageBreakY - $closingFooterGap - $closingTextHeight;
-if ($pdf->GetY() + $closingLineGap > $closingTargetY) {
-    $pdf->AddPage();
-    $pdf->Ln($closingLineGap);
-} else {
-    $pdf->SetY($closingTargetY);
-}
-$pdf->SetFont('Helvetica', '', 13);
-$pdf->Cell(0, 8, pdfText($placeAndDate), 0, 1, 'L');
-$pdf->Ln(3);
-$pdf->SetFont('Helvetica', '', 11);
-$pdf->Cell(0, 7, pdfText((string) $report['laatija_nimi']), 0, 1, 'L');
-if ($title !== '') {
-    $pdf->Cell(0, 7, pdfText($title), 0, 1, 'L');
+    $closingTextHeight = 8 + 3 + 7 + ($title !== '' ? 7 : 0);
+    $closingLineGap = 14;
+    $closingFooterGap = 14;
+    $closingPageBreakY = $pdf->GetPageHeight() - 26;
+    $closingTargetY = $closingPageBreakY - $closingFooterGap - $closingTextHeight;
+    if ($pdf->GetY() + $closingLineGap > $closingTargetY) {
+        $pdf->AddPage();
+        $pdf->Ln($closingLineGap);
+    } else {
+        $pdf->SetY($closingTargetY);
+    }
+    $pdf->SetFont('Helvetica', '', 13);
+    $pdf->Cell(0, 8, pdfText($placeAndDate), 0, 1, 'L');
+    $pdf->Ln(3);
+    $pdf->SetFont('Helvetica', '', 11);
+    $pdf->Cell(0, 7, pdfText((string) $report['laatija_nimi']), 0, 1, 'L');
+    if ($title !== '') {
+        $pdf->Cell(0, 7, pdfText($title), 0, 1, 'L');
+    }
 }
 
-// Liitteet lisätään alkuperäisinä PDF-sivuina raportin allekirjoituksen jälkeen.
+// Liitteet lisätään alkuperäisinä PDF-sivuina raportin sisällön ja mahdollisen allekirjoituksen jälkeen.
 foreach ($attachments as $attachment) {
     $attachmentPath = localImagePath((string) $attachment['tiedosto']);
     if (!$attachmentPath || !is_file($attachmentPath)) { continue; }
