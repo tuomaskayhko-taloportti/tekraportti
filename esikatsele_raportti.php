@@ -1641,12 +1641,14 @@ function appendPdfAttachments(TekraPdf $pdf, array $attachments): bool
                 $landscape = $size['width'] > $size['height'];
                 $pdf->AddPage($landscape ? 'L' : 'P', 'A4');
 
-                // Sovita liite raportin normaalien marginaalien sekä ylä- ja
-                // alatunnisteen väliin. Säilytä mittasuhteet, kohdista ylös ja
-                // keskitä vaakasuunnassa.
-                $contentX = 20.0;
+                // Sovita liite sivumarginaalien sekä ylä- ja alatunnisteen
+                // väliin. Säilytä mittasuhteet, kohdista ylös ja keskitä
+                // vaakasuunnassa.
+                // Palauta puolet aiemmasta vaakasuuntaisesta pienennyksestä:
+                // liitteelle jää 10 mm marginaali kummallekin sivulle.
+                $contentX = 10.0;
                 $contentY = 22.0;
-                $contentWidth = $pdf->GetPageWidth() - 40.0;
+                $contentWidth = $pdf->GetPageWidth() - 20.0;
                 $contentHeight = $pdf->GetPageHeight() - $contentY - 26.0;
                 $scale = min($contentWidth / $size['width'], $contentHeight / $size['height']);
                 $renderWidth = $size['width'] * $scale;
