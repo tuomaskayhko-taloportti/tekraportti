@@ -435,6 +435,162 @@ function deleteStoredFile(string $url): void
     }
 }
 
+/**
+ * Poimii PDF-aineiston otsikot ja niiden lähdesivut Popplerin pdftotextillä.
+ * Fonttikokoon perustuva tunnistus täydentää numeroitujen otsikoiden tunnistusta.
+ */
+function extractPdfHeadings(string $pdfPath): array
+{
+    if (!is_file($pdfPath)) {
+        throw new RuntimeException('PDF-aineistoa ei löytynyt otsikoiden tunnistusta varten.');
+    }
+
+    $xmlPath = tempnam(sys_get_temp_dir(), 'tekraportti-pdftotext-');
+    if ($xmlPath === false) {
+        throw new RuntimeException('PDF-aineiston käsittelyä ei voitu aloittaa.');
+    }
+
+    $output = [];
+    $exitCode = 1;
+    $command = 'pdftotext -bbox-layout -enc UTF-8 '
+        . escapeshellarg($pdfPath) . ' ' . escapeshellarg($xmlPath) . ' 2>&1';
+    exec($command, $output, $exitCode);
+    if ($exitCode !== 0 || !is_file($xmlPath) || filesize($xmlPath) === 0) {
+        @unlink($xmlPath);
+        throw new RuntimeException('PDF:n tekstin lukeminen epäonnistui. Varmista, että PDF ei ole suojattu ja Popplerin pdftotext on käytettävissä.');
+    }
+
+    $xml = file_get_contents($xmlPath);
+    @unlink($xmlPath);
+    if (!is_string($xml) || $xml === '') {
+        throw new RuntimeException('PDF:stä ei saatu luettua tekstiä.');
+    }
+
+    $document = new DOMDocument();
+    $previousUseErrors = libxml_use_internal_errors(true);
+    $loaded = $document->loadXML($xml, LIBXML_NONET | LIBXML_NOWARNING | LIBXML_NOERROR);
+    libxml_clear_errors();
+    libxml_use_internal_errors($previousUseErrors);
+    if (!$loaded) {
+        throw new RuntimeException('PDF:n tekstirakennetta ei voitu tulkita.');
+    }
+
+    $xpath = new DOMXPath($document);
+    $pages = $xpath->query('//*[local-name()="page"]');
+    $lines = [];
+    $textOccurrences = [];
+    foreach ($pages ?: [] as $pageIndex => $page) {
+        $pageHeight = (float) ($page->attributes?->getNamedItem('height')?->nodeValue ?? 0);
+        foreach ($xpath->query('.//*[local-name()="line"]', $page) ?: [] as $line) {
+            $words = [];
+            $heights = [];
+            foreach ($xpath->query('.//*[local-name()="word"]', $line) ?: [] as $word) {
+                $wordText = trim(html_entity_decode((string) $word->textContent, ENT_QUOTES | ENT_XML1, 'UTF-8'));
+                if ($wordText !== '') {
+                    $words[] = $wordText;
+                }
+                $yMin = (float) ($word->attributes?->getNamedItem('yMin')?->nodeValue ?? 0);
+                $yMax = (float) ($word->attributes?->getNamedItem('yMax')?->nodeValue ?? 0);
+                if ($yMax > $yMin) {
+                    $heights[] = $yMax - $yMin;
+                }
+            }
+            $text = preg_replace('/\s+/u', ' ', trim(implode(' ', $words))) ?? '';
+            if ($text === '' || !$heights) {
+                continue;
+            }
+            sort($heights, SORT_NUMERIC);
+            $height = $heights[(int) floor((count($heights) - 1) / 2)];
+            $yMin = (float) ($line->attributes?->getNamedItem('yMin')?->nodeValue ?? 0);
+            $lines[] = [
+                'page' => $pageIndex + 1,
+                'text' => $text,
+                'height' => $height,
+                'near_edge' => $yMin < 35 || ($pageHeight > 0 && $yMin > $pageHeight - 45),
+            ];
+            $key = mb_strtolower($text, 'UTF-8');
+            $textOccurrences[$key] = ($textOccurrences[$key] ?? 0) + 1;
+        }
+    }
+    if (!$lines) {
+        return [];
+    }
+
+    $allHeights = array_column($lines, 'height');
+    sort($allHeights, SORT_NUMERIC);
+    $bodyHeight = (float) $allHeights[(int) floor((count($allHeights) - 1) / 2)];
+    $candidates = [];
+    foreach ($lines as $line) {
+        $text = (string) $line['text'];
+        $length = mb_strlen($text, 'UTF-8');
+        if ($length < 2 || $length > 180 || preg_match('/\.{3,}\s*\d+\s*$/u', $text)) {
+            continue;
+        }
+        $key = mb_strtolower($text, 'UTF-8');
+        if ($line['near_edge'] && ($textOccurrences[$key] ?? 0) >= 3) {
+            continue;
+        }
+
+        $number = '';
+        $title = $text;
+        $explicitLevel = null;
+        if (preg_match('/^((?:\d+\.)*\d+)\.?\s+(.+)$/u', $text, $matches)) {
+            $number = $matches[1];
+            $title = trim($matches[2]);
+            $explicitLevel = max(0, substr_count($number, '.'));
+        }
+        $letters = preg_replace('/[^\p{L}]+/u', '', $title) ?? '';
+        $isUppercase = $letters !== '' && mb_strtoupper($letters, 'UTF-8') === $letters;
+        $isLarge = $bodyHeight > 0 && (float) $line['height'] >= $bodyHeight * 1.18;
+        if ($explicitLevel === null && !$isLarge && !($isUppercase && $length <= 80 && (float) $line['height'] >= $bodyHeight)) {
+            continue;
+        }
+        if (preg_match('/[.!?;:]$/u', $title) && $explicitLevel === null) {
+            continue;
+        }
+        $candidates[] = $line + [
+            'title' => $title,
+            'number' => $number,
+            'explicit_level' => $explicitLevel,
+        ];
+    }
+
+    $largeHeights = [];
+    foreach ($candidates as $candidate) {
+        if ($candidate['explicit_level'] === null) {
+            $largeHeights[] = round((float) $candidate['height'] * 2) / 2;
+        }
+    }
+    $largeHeights = array_values(array_unique($largeHeights));
+    rsort($largeHeights, SORT_NUMERIC);
+
+    $headings = [];
+    $seen = [];
+    foreach ($candidates as $candidate) {
+        $dedupeKey = $candidate['page'] . '|' . mb_strtolower((string) $candidate['title'], 'UTF-8');
+        if (isset($seen[$dedupeKey])) {
+            continue;
+        }
+        $seen[$dedupeKey] = true;
+        $level = $candidate['explicit_level'];
+        if ($level === null) {
+            $heightKey = round((float) $candidate['height'] * 2) / 2;
+            $rank = array_search($heightKey, $largeHeights, true);
+            $level = min(2, $rank === false ? 1 : (int) $rank);
+        }
+        $headings[] = [
+            'title' => (string) $candidate['title'],
+            'number' => (string) $candidate['number'],
+            'level' => (int) $level,
+            'page' => (int) $candidate['page'],
+        ];
+        if (count($headings) >= 200) {
+            break;
+        }
+    }
+    return $headings;
+}
+
 /** Tarkistaa ja normalisoi kuvan merkintäobjektit ennen tietokantaan tallentamista. */
 function normalizeImageAnnotations(string $json): string
 {

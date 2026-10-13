@@ -12,6 +12,7 @@ if (!isset($_SESSION['laatijat_id'])) {
 
 $laatijatId = (int) $_SESSION['laatijat_id'];
 $attachments = [];
+$sourceMaterial = null;
 $currentLaatijaId = $laatijatId;
 $raporttiId = (int) ($_GET['id'] ?? 0);
 
@@ -45,6 +46,19 @@ try {
         throw new RuntimeException('Raporttia ei löytynyt.');
     }
     $laatijatId = (int) $report['laatijat_id'];
+    try {
+        $query = $db->prepare('SELECT tiedosto, alkuperainen_nimi, otsikot_json FROM raporttiaineistot WHERE raportti_id = ? AND laatijat_id = ? LIMIT 1');
+        $query->bind_param('ii', $raporttiId, $laatijatId); $query->execute();
+        $sourceMaterial = $query->get_result()->fetch_assoc() ?: null; $query->close();
+    } catch (mysqli_sql_exception $sourceTableError) {
+        if ($sourceTableError->getCode() !== 1146) {
+            throw $sourceTableError;
+        }
+    }
+    if ($sourceMaterial) {
+        $decodedHeadings = json_decode((string) $sourceMaterial['otsikot_json'], true);
+        $sourceMaterial['otsikot'] = is_array($decodedHeadings) ? $decodedHeadings : [];
+    }
     $query = $db->prepare('SELECT id, tiedosto, alkuperainen_nimi FROM raporttiliitteet WHERE raportti_id = ? AND laatijat_id = ? ORDER BY jarjestys, id');
     $query->bind_param('ii', $raporttiId, $laatijatId); $query->execute();
     $attachments = $query->get_result()->fetch_all(MYSQLI_ASSOC); $query->close();
@@ -1671,6 +1685,39 @@ function appendPdfAttachments(TekraPdf $pdf, array $attachments, array $attachme
     return $attachmentPages;
 }
 
+/** Lisää valmiin raporttiaineiston sivut ilman erillistä otsikkoa. */
+function appendPdfSourceMaterial(TekraPdf $pdf, ?array $sourceMaterial): array
+{
+    if (!$sourceMaterial) {
+        return [];
+    }
+    $sourcePath = localImagePath((string) ($sourceMaterial['tiedosto'] ?? ''));
+    if (!$sourcePath || !is_file($sourcePath)) {
+        return [];
+    }
+
+    $pageMap = [];
+    try {
+        $pageCount = $pdf->setSourceFile($sourcePath);
+        for ($sourcePage = 1; $sourcePage <= $pageCount; $sourcePage++) {
+            $template = $pdf->importPage($sourcePage);
+            $size = $pdf->getTemplateSize($template);
+            $landscape = $size['width'] > $size['height'];
+            $pdf->AddPage($landscape ? 'L' : 'P', 'A4');
+            $contentX = 20.0;
+            $contentY = 22.0;
+            $contentWidth = $pdf->GetPageWidth() - $contentX - 7.5;
+            $contentHeight = $pdf->GetPageHeight() - $contentY - 26.0;
+            $scale = min($contentWidth / $size['width'], $contentHeight / $size['height']);
+            $pdf->useTemplate($template, $contentX, $contentY, $size['width'] * $scale, $size['height'] * $scale);
+            $pageMap[$sourcePage] = max(1, $pdf->PageNo() - 1);
+        }
+    } catch (Throwable $error) {
+        error_log('Valmiin PDF-aineiston lisääminen epäonnistui: ' . $error->getMessage());
+    }
+    return $pageMap;
+}
+
 $pdf = new TekraPdf();
 $GLOBALS['printDate'] = date('d.m.Y');
 $pdf->AliasNbPages();
@@ -1784,6 +1831,20 @@ foreach (array_keys($rows) as $sectionIndex) {
     }
 }
 $tocEntries = [];
+$sourceHeadings = is_array($sourceMaterial['otsikot'] ?? null) ? $sourceMaterial['otsikot'] : [];
+foreach ($sourceHeadings as $heading) {
+    $title = trim((string) ($heading['title'] ?? ''));
+    $sourcePage = max(1, (int) ($heading['page'] ?? 1));
+    if ($title === '') {
+        continue;
+    }
+    $tocEntries[] = [
+        'number' => trim((string) ($heading['number'] ?? '')),
+        'title' => $title,
+        'material_page' => $sourcePage,
+        'indent' => max(0, min(3, (int) ($heading['level'] ?? 0))),
+    ];
+}
 $attachmentTocEntriesAdded = false;
 foreach ($rows as $index => $row) {
     if ($index === $deferredSignatureSectionIndex) {
@@ -1872,6 +1933,7 @@ foreach ($tocEntries as $entry) {
         'width' => $pageNumberWidth,
         'section_index' => isset($entry['section_index']) ? (int) $entry['section_index'] : null,
         'attachment_index' => isset($entry['attachment_index']) ? (int) $entry['attachment_index'] : null,
+        'material_page' => isset($entry['material_page']) ? (int) $entry['material_page'] : null,
         'bold' => !$entry['indent'],
     ];
     $pdf->Cell($pageNumberWidth, 8, '', 0, 1, 'R');
@@ -1881,6 +1943,8 @@ if (!$tocEntries) {
 }
 
 // Raporttiosiot.
+$sourceMaterialPages = appendPdfSourceMaterial($pdf, $sourceMaterial);
+$hasSourceMaterialPages = $sourceMaterialPages !== [];
 $sectionPages = [];
 $hasAttachmentPages = false;
 $attachmentPages = [];
@@ -2235,12 +2299,13 @@ if ($showSignature) {
     $closingTextHeight = 8 + 3 + 7 + ($title !== '' ? 7 : 0);
     $closingLineGap = 14;
     $closingFooterGap = 14;
-    if ($hasAttachmentPages) {
+    $signatureNeedsOwnPage = $hasAttachmentPages || ($hasSourceMaterialPages && !$rows && !$attachments);
+    if ($signatureNeedsOwnPage) {
         $pdf->AddPage('P', 'A4');
     }
     $closingPageBreakY = $pdf->GetPageHeight() - 26;
     $closingTargetY = $closingPageBreakY - $closingFooterGap - $closingTextHeight;
-    if ($hasAttachmentPages) {
+    if ($signatureNeedsOwnPage) {
         $pdf->SetY($closingTargetY);
     } elseif ($pdf->GetY() + $closingLineGap > $closingTargetY) {
         $pdf->AddPage();
@@ -2259,9 +2324,13 @@ if ($showSignature) {
 }
 
 foreach ($tocPageNumberPositions as $position) {
-    $targetPage = $position['attachment_index'] !== null
-        ? ($attachmentPages[(int) $position['attachment_index']] ?? '')
-        : ($sectionPages[(int) $position['section_index']] ?? 1);
+    if ($position['material_page'] !== null) {
+        $targetPage = $sourceMaterialPages[(int) $position['material_page']] ?? '';
+    } elseif ($position['attachment_index'] !== null) {
+        $targetPage = $attachmentPages[(int) $position['attachment_index']] ?? '';
+    } else {
+        $targetPage = $sectionPages[(int) $position['section_index']] ?? 1;
+    }
     if ($targetPage === '') {
         continue;
     }

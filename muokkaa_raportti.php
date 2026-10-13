@@ -29,6 +29,7 @@ $sharedEmails = [];
 $rows = [];
 $media = [];
 $attachments = [];
+$sourceMaterial = null;
 $tables = [];
 $texts = [];
 $summaryRows = [];
@@ -56,6 +57,17 @@ try {
     $query->close();
     if ($report) {
         $laatijatId = (int) $report['laatijat_id'];
+        try {
+            $sourceQuery = $db->prepare('SELECT id, tiedosto, alkuperainen_nimi, tiedostokoko, otsikot_json FROM raporttiaineistot WHERE raportti_id = ? AND laatijat_id = ? LIMIT 1');
+            $sourceQuery->bind_param('ii', $raporttiId, $laatijatId);
+            $sourceQuery->execute();
+            $sourceMaterial = $sourceQuery->get_result()->fetch_assoc() ?: null;
+            $sourceQuery->close();
+        } catch (mysqli_sql_exception $sourceTableError) {
+            if ($sourceTableError->getCode() !== 1146) {
+                throw $sourceTableError;
+            }
+        }
         $shareQuery = $db->prepare(
             'SELECT l.sahkoposti FROM raporttijaot j
              INNER JOIN laatijat l ON l.id = j.laatijat_id
@@ -759,6 +771,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $query->close();
                 $message = 'Kuvan merkinnät tallennettiin.';
                 $messageType = 'success';
+            } elseif ($action === 'replace-source-material') {
+                if (!isset($_FILES['aineisto_pdf']) || ($_FILES['aineisto_pdf']['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
+                    throw new RuntimeException('Valitse valmis PDF-aineisto.');
+                }
+                $newSourceFile = null;
+                try {
+                    $newSourceFile = storeUploadedFile($_FILES['aineisto_pdf'], 'aineistot', ['application/pdf' => 'pdf']);
+                    $headings = extractPdfHeadings(__DIR__ . '/' . $newSourceFile);
+                    $headingsJson = json_encode($headings, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+                    $sourceName = mb_substr(basename((string) ($_FILES['aineisto_pdf']['name'] ?? 'aineisto.pdf')), 0, 255);
+                    $sourceSize = (int) ($_FILES['aineisto_pdf']['size'] ?? 0);
+                    $oldSourceFile = (string) ($sourceMaterial['tiedosto'] ?? '');
+                    $query = $db->prepare(
+                        'INSERT INTO raporttiaineistot
+                         (laatijat_id, raportti_id, tiedosto, alkuperainen_nimi, tiedostokoko, otsikot_json)
+                         VALUES (?, ?, ?, ?, ?, ?)
+                         ON DUPLICATE KEY UPDATE tiedosto = VALUES(tiedosto), alkuperainen_nimi = VALUES(alkuperainen_nimi),
+                         tiedostokoko = VALUES(tiedostokoko), otsikot_json = VALUES(otsikot_json)'
+                    );
+                    $query->bind_param('iissis', $laatijatId, $raporttiId, $newSourceFile, $sourceName, $sourceSize, $headingsJson);
+                    $query->execute();
+                    $query->close();
+                    if ($oldSourceFile !== '' && $oldSourceFile !== $newSourceFile) {
+                        deleteStoredFile($oldSourceFile);
+                    }
+                } catch (Throwable $sourceError) {
+                    if ($newSourceFile !== null) {
+                        deleteStoredFile($newSourceFile);
+                    }
+                    throw $sourceError;
+                }
+                $message = 'Valmis PDF-aineisto tallennettiin ja otsikot tunnistettiin.';
+                $messageType = 'success';
+            } elseif ($action === 'delete-source-material') {
+                $oldSourceFile = (string) ($sourceMaterial['tiedosto'] ?? '');
+                $query = $db->prepare('DELETE FROM raporttiaineistot WHERE raportti_id = ? AND laatijat_id = ?');
+                $query->bind_param('ii', $raporttiId, $laatijatId);
+                $query->execute();
+                $query->close();
+                deleteStoredFile($oldSourceFile);
+                $message = 'Valmis PDF-aineisto poistettiin.';
+                $messageType = 'success';
             } elseif ($action === 'add-attachment') {
                 if (!isset($_FILES['liite_tiedosto']['name']) || !is_array($_FILES['liite_tiedosto']['name'])) {
                     throw new RuntimeException('Valitse PDF-liite.');
@@ -811,6 +865,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $messageType === 'success') {
             'update-row', 'delete-row', 'add-media', 'add-table', 'add-text', 'update-text', 'delete-text', 'update-media-annotations' => 'osio-' . (int) ($_POST['rivi_id'] ?? 0),
             'update-table', 'add-table-column', 'add-table-row',
             'delete-table-column', 'delete-table-row', 'add-table-summary', 'delete-table-summary', 'delete-table' => 'taulukko-' . (int) ($_POST['taulukko_id'] ?? 0),
+            'replace-source-material', 'delete-source-material' => 'valmis-aineisto',
             'add-attachment', 'update-attachment-name', 'delete-attachment' => 'liitteet',
             default => '',
         };
@@ -1297,6 +1352,23 @@ openLayoutShell('Muokkaa raporttia – TEKRAPORTTI');
     </div></div><div class="card-footer bg-white border-0 px-4 pb-4"><button class="btn btn-primary">Tallenna perustiedot</button></div>
 </form>
 </details>
+
+<section class="card border-0 shadow-sm mb-4" id="valmis-aineisto">
+    <div class="card-header bg-white"><h2 class="h5 mb-0">Valmis raporttiaineisto</h2></div>
+    <div class="card-body p-4">
+        <?php if ($sourceMaterial): ?>
+            <?php $recognizedHeadings = json_decode((string) $sourceMaterial['otsikot_json'], true); ?>
+            <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+                <strong><?= editValue($sourceMaterial['alkuperainen_nimi']) ?></strong>
+                <small class="text-muted"><?= number_format((int) $sourceMaterial['tiedostokoko'] / 1024, 0, ',', ' ') ?> kt · <?= is_array($recognizedHeadings) ? count($recognizedHeadings) : 0 ?> tunnistettua otsikkoa</small>
+                <form method="post" action="muokkaa_raportti.php?id=<?= $raporttiId ?>" class="ms-auto" onsubmit="return confirm('Poistetaanko valmis PDF-aineisto raportilta?');"><input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="delete-source-material"><input type="hidden" name="return_anchor" value="valmis-aineisto"><button class="btn btn-link btn-sm text-danger">Poista</button></form>
+            </div>
+        <?php else: ?>
+            <p class="text-muted mb-3">Valmista PDF-aineistoa ei ole lisätty.</p>
+        <?php endif; ?>
+        <form method="post" enctype="multipart/form-data" action="muokkaa_raportti.php?id=<?= $raporttiId ?>" class="row g-2"><input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="replace-source-material"><input type="hidden" name="return_anchor" value="valmis-aineisto"><div class="col-md-10"><div class="file-drop-zone" data-file-drop><input type="file" class="form-control" name="aineisto_pdf" accept="application/pdf,.pdf" required><div class="file-drop-zone-hint">Raahaa PDF-tiedosto tähän tai valitse tiedosto.</div></div><div class="form-text">PDF, enintään 10 MB. Uusi tiedosto korvaa nykyisen. Otsikot tunnistetaan sisällysluetteloon, ja aineiston sivuille lisätään vain ylä- ja alatunnisteet.</div></div><div class="col-md-2"><button class="btn btn-outline-primary w-100"><?= $sourceMaterial ? 'Korvaa aineisto' : '+ Lisää aineisto' ?></button></div></form>
+    </div>
+</section>
 
 <div class="card border-0 shadow-sm mb-4"><div class="card-header bg-white"><h2 class="h5 mb-0">Tiivistelmä</h2></div><div class="card-body"><?= $report['tiivistelma'] ? markdownToHtml((string) $report['tiivistelma']) : '<p class="mb-0">Tiivistelmää ei ole vielä lisätty.</p>' ?></div></div>
 

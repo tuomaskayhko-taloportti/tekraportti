@@ -78,6 +78,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         || mb_strlen($form['kansikuva']) > 512) {
         $message = 'Yksi tekstikentistä ylittää sallitun pituuden.';
     } else {
+        $coverValue = null;
+        $sourceMaterialValue = null;
+        $reportSaved = false;
         try {
             $db = getDatabaseConnection();
             $projectId = $form['projekti_id'] > 0 ? $form['projekti_id'] : null;
@@ -129,9 +132,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $locationValue = $form['laatimispaikka'] !== '' ? $form['laatimispaikka'] : null;
             $summaryValue = $form['tiivistelma'] !== '' ? $form['tiivistelma'] : null;
-            $coverValue = null;
             if (isset($_FILES['kansikuva']) && ($_FILES['kansikuva']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
                 $coverValue = storeUploadedFile($_FILES['kansikuva'], 'kansikuvat');
+            }
+            $sourceMaterialHeadings = [];
+            $sourceMaterialName = '';
+            $sourceMaterialSize = 0;
+            if (isset($_FILES['aineisto_pdf']) && ($_FILES['aineisto_pdf']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
+                $sourceMaterialValue = storeUploadedFile($_FILES['aineisto_pdf'], 'aineistot', ['application/pdf' => 'pdf']);
+                $sourceMaterialHeadings = extractPdfHeadings(__DIR__ . '/' . $sourceMaterialValue);
+                $sourceMaterialName = mb_substr(basename((string) ($_FILES['aineisto_pdf']['name'] ?? 'aineisto.pdf')), 0, 255);
+                $sourceMaterialSize = (int) ($_FILES['aineisto_pdf']['size'] ?? 0);
             }
             $db->begin_transaction();
             if ($projectId === null) {
@@ -161,6 +172,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $query->execute();
             $query->close();
             $reportId = (int) $db->insert_id;
+            if ($sourceMaterialValue !== null) {
+                $headingsJson = json_encode($sourceMaterialHeadings, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+                $query = $db->prepare(
+                    'INSERT INTO raporttiaineistot
+                     (laatijat_id, raportti_id, tiedosto, alkuperainen_nimi, tiedostokoko, otsikot_json)
+                     VALUES (?, ?, ?, ?, ?, ?)'
+                );
+                $query->bind_param(
+                    'iissis', $laatijatId, $reportId, $sourceMaterialValue,
+                    $sourceMaterialName, $sourceMaterialSize, $headingsJson
+                );
+                $query->execute();
+                $query->close();
+            }
             foreach ($sharedLaatijat as $sharedLaatija) {
                 $query = $db->prepare('INSERT INTO raporttijaot (raportti_id, laatijat_id) VALUES (?, ?)');
                 $sharedLaatijaId = $sharedLaatija['id'];
@@ -169,6 +194,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $query->close();
             }
             $db->commit();
+            $reportSaved = true;
             if ($sharedLaatijat) {
                 $sharer = getCurrentLaatija() ?: [];
                 foreach ($sharedLaatijat as $sharedLaatija) {
@@ -183,6 +209,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             header('Location: muokkaa_raportti.php?id=' . $reportId);
             exit;
         } catch (Throwable $error) {
+            if (!$reportSaved && isset($db) && $db instanceof mysqli) {
+                try { $db->rollback(); } catch (Throwable $_rollbackError) {}
+            }
+            if (!$reportSaved && $coverValue !== null) {
+                deleteStoredFile($coverValue);
+            }
+            if (!$reportSaved && $sourceMaterialValue !== null) {
+                deleteStoredFile($sourceMaterialValue);
+            }
             $message = 'Raportin tallennus epäonnistui.';
             error_log('Raportin tallennus epäonnistui: ' . $error->getMessage());
         }
@@ -288,6 +323,14 @@ openLayoutShell('Luo raportti – TEKRAPORTTI');
                         <div class="file-drop-zone-hint">Voit myös raahata kuvan tähän.</div>
                     </div>
                     <div class="form-text">Valinnainen JPG-, PNG- tai WebP-kuva, enintään 10 MB.</div>
+                </div>
+                <div class="col-12">
+                    <label for="aineisto_pdf" class="form-label">Valmis raporttiaineisto PDF-muodossa</label>
+                    <div class="file-drop-zone" data-file-drop>
+                        <input type="file" class="form-control" id="aineisto_pdf" name="aineisto_pdf" accept="application/pdf,.pdf">
+                        <div class="file-drop-zone-hint">Voit myös raahata PDF-tiedoston tähän.</div>
+                    </div>
+                    <div class="form-text">Valinnainen PDF, enintään 10 MB. Otsikot ja alaotsikot tunnistetaan sisällysluetteloon. Aineiston sivuille lisätään vain raportin ylä- ja alatunnisteet.</div>
                 </div>
             </div>
         </div>
