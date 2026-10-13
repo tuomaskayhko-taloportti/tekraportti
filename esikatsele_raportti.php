@@ -45,7 +45,7 @@ try {
         throw new RuntimeException('Raporttia ei löytynyt.');
     }
     $laatijatId = (int) $report['laatijat_id'];
-    $query = $db->prepare('SELECT tiedosto FROM raporttiliitteet WHERE raportti_id = ? AND laatijat_id = ? ORDER BY jarjestys, id');
+    $query = $db->prepare('SELECT id, tiedosto, alkuperainen_nimi FROM raporttiliitteet WHERE raportti_id = ? AND laatijat_id = ? ORDER BY jarjestys, id');
     $query->bind_param('ii', $raporttiId, $laatijatId); $query->execute();
     $attachments = $query->get_result()->fetch_all(MYSQLI_ASSOC); $query->close();
 
@@ -1625,10 +1625,10 @@ class TekraPdf extends \setasign\Fpdi\Fpdi
     }
 }
 
-function appendPdfAttachments(TekraPdf $pdf, array $attachments): bool
+function appendPdfAttachments(TekraPdf $pdf, array $attachments): array
 {
-    $hasAttachmentPages = false;
-    foreach ($attachments as $attachment) {
+    $attachmentPages = [];
+    foreach ($attachments as $attachmentIndex => $attachment) {
         $attachmentPath = localImagePath((string) $attachment['tiedosto']);
         if (!$attachmentPath || !is_file($attachmentPath)) {
             continue;
@@ -1644,24 +1644,24 @@ function appendPdfAttachments(TekraPdf $pdf, array $attachments): bool
                 // Sovita liite sivumarginaalien sekä ylä- ja alatunnisteen
                 // väliin. Säilytä mittasuhteet, kohdista ylös ja keskitä
                 // vaakasuunnassa.
-                // Palauta puolet aiemmasta vaakasuuntaisesta pienennyksestä:
-                // liitteelle jää 10 mm marginaali kummallekin sivulle.
-                $contentX = 10.0;
+                $contentX = 7.5;
                 $contentY = 22.0;
-                $contentWidth = $pdf->GetPageWidth() - 20.0;
+                $contentWidth = $pdf->GetPageWidth() - 15.0;
                 $contentHeight = $pdf->GetPageHeight() - $contentY - 26.0;
                 $scale = min($contentWidth / $size['width'], $contentHeight / $size['height']);
                 $renderWidth = $size['width'] * $scale;
                 $renderHeight = $size['height'] * $scale;
                 $renderX = $contentX + ($contentWidth - $renderWidth) / 2;
                 $pdf->useTemplate($template, $renderX, $contentY, $renderWidth, $renderHeight);
-                $hasAttachmentPages = true;
+                if (!isset($attachmentPages[$attachmentIndex])) {
+                    $attachmentPages[$attachmentIndex] = max(1, $pdf->PageNo() - 1);
+                }
             }
         } catch (Throwable $error) {
             error_log('PDF-liitteen lisääminen epäonnistui: ' . $error->getMessage());
         }
     }
-    return $hasAttachmentPages;
+    return $attachmentPages;
 }
 
 $pdf = new TekraPdf();
@@ -1754,8 +1754,28 @@ $pdf->AddPage();
 $pdf->SetFont('Helvetica', 'B', 18);
 $pdf->Cell(0, 12, pdfText('Sisällysluettelo'), 0, 1);
 $pdf->Ln(8);
+$lastSectionIndex = array_key_last($rows);
+$deferredSignatureSectionIndex = null;
+if ($lastSectionIndex !== null) {
+    $lastSectionTitle = mb_strtolower(trim((string) $rows[$lastSectionIndex]['otsikko']), 'UTF-8');
+    if (in_array($lastSectionTitle, ['allekirjoitus', 'allekirjoitukset'], true)) {
+        $deferredSignatureSectionIndex = $lastSectionIndex;
+    }
+}
 $tocEntries = [];
+$attachmentTocEntriesAdded = false;
 foreach ($rows as $index => $row) {
+    if ($index === $deferredSignatureSectionIndex) {
+        foreach ($attachments as $attachmentIndex => $attachment) {
+            $tocEntries[] = [
+                'number' => 'Liite ' . ($attachmentIndex + 1) . '.',
+                'title' => (string) $attachment['alkuperainen_nimi'],
+                'attachment_index' => $attachmentIndex,
+                'indent' => false,
+            ];
+        }
+        $attachmentTocEntriesAdded = true;
+    }
     $sectionNumber = $index + 1;
     $tocEntries[] = [
         'number' => $sectionNumber . '.',
@@ -1775,6 +1795,16 @@ foreach ($rows as $index => $row) {
             'title' => $heading['title'],
             'section_index' => $index,
             'indent' => (int) $heading['level'],
+        ];
+    }
+}
+if (!$attachmentTocEntriesAdded) {
+    foreach ($attachments as $attachmentIndex => $attachment) {
+        $tocEntries[] = [
+            'number' => 'Liite ' . ($attachmentIndex + 1) . '.',
+            'title' => (string) $attachment['alkuperainen_nimi'],
+            'attachment_index' => $attachmentIndex,
+            'indent' => false,
         ];
     }
 }
@@ -1817,7 +1847,8 @@ foreach ($tocEntries as $entry) {
         'x' => $pdf->GetX(),
         'y' => $pdf->GetY(),
         'width' => $pageNumberWidth,
-        'section_index' => (int) $entry['section_index'],
+        'section_index' => isset($entry['section_index']) ? (int) $entry['section_index'] : null,
+        'attachment_index' => isset($entry['attachment_index']) ? (int) $entry['attachment_index'] : null,
         'bold' => !$entry['indent'],
     ];
     $pdf->Cell($pageNumberWidth, 8, '', 0, 1, 'R');
@@ -1829,19 +1860,13 @@ if (!$tocEntries) {
 // Raporttiosiot.
 $sectionPages = [];
 $hasAttachmentPages = false;
+$attachmentPages = [];
 $attachmentsInserted = false;
-$lastSectionIndex = array_key_last($rows);
-$deferredSignatureSectionIndex = null;
-if ($lastSectionIndex !== null) {
-    $lastSectionTitle = mb_strtolower(trim((string) $rows[$lastSectionIndex]['otsikko']), 'UTF-8');
-    if (in_array($lastSectionTitle, ['allekirjoitus', 'allekirjoitukset'], true)) {
-        $deferredSignatureSectionIndex = $lastSectionIndex;
-    }
-}
 foreach ($rows as $index => $row) {
     $sectionStartsAfterAttachments = false;
     if ($index === $deferredSignatureSectionIndex) {
-        $hasAttachmentPages = appendPdfAttachments($pdf, $attachments);
+        $attachmentPages = appendPdfAttachments($pdf, $attachments);
+        $hasAttachmentPages = $attachmentPages !== [];
         $attachmentsInserted = true;
         if ($hasAttachmentPages) {
             $pdf->AddPage('P', 'A4');
@@ -2171,7 +2196,8 @@ foreach ($rows as $index => $row) {
 
 if (!$attachmentsInserted) {
     // Tavallisesti liitteet tulevat kaikkien sisältöosioiden jälkeen.
-    $hasAttachmentPages = appendPdfAttachments($pdf, $attachments);
+    $attachmentPages = appendPdfAttachments($pdf, $attachments);
+    $hasAttachmentPages = $attachmentPages !== [];
 }
 
 // Allekirjoitus on raportin viimeisenä liitteiden jälkeen. Jos raportissa on
@@ -2209,13 +2235,18 @@ if ($showSignature) {
 }
 
 foreach ($tocPageNumberPositions as $position) {
-    $sectionPage = $sectionPages[(int) $position['section_index']] ?? 1;
+    $targetPage = $position['attachment_index'] !== null
+        ? ($attachmentPages[(int) $position['attachment_index']] ?? '')
+        : ($sectionPages[(int) $position['section_index']] ?? 1);
+    if ($targetPage === '') {
+        continue;
+    }
     $pdf->writePageNumber(
         (int) $position['pdf_page'],
         (float) $position['x'],
         (float) $position['y'],
         (float) $position['width'],
-        (string) $sectionPage,
+        (string) $targetPage,
         (bool) $position['bold']
     );
 }

@@ -378,7 +378,7 @@ PDF sisältää:
 4. raportin osiot
 5. kuvat
 6. videolinkit
-7. PDF-liitteet sivunumeroituina
+7. nimetyt PDF-liitteet sivunumeroituina ja sisällysluetteloon merkittyinä
 8. allekirjoitussivu viimeisenä
 
 PDF:n sivuille voidaan kansilehteä lukuun ottamatta lisätä:

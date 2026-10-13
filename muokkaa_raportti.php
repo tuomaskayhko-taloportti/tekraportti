@@ -774,6 +774,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $query->bind_param('iissii', $laatijatId, $raporttiId, $stored, $name, $size, $order); $query->execute(); $query->close(); $order++;
                 }
                 $message = 'Liite lisättiin.'; $messageType = 'success';
+            } elseif ($action === 'update-attachment-name') {
+                $attachmentId = (int) ($_POST['liite_id'] ?? 0);
+                $attachmentName = preg_replace('/\s+/u', ' ', trim((string) ($_POST['liite_nimi'] ?? ''))) ?? '';
+                if ($attachmentId < 1 || $attachmentName === '' || mb_strlen($attachmentName) > 255) {
+                    throw new RuntimeException('Anna liitteelle enintään 255 merkkiä pitkä nimi.');
+                }
+                $query = $db->prepare('UPDATE raporttiliitteet SET alkuperainen_nimi = ? WHERE id = ? AND raportti_id = ? AND laatijat_id = ?');
+                $query->bind_param('siii', $attachmentName, $attachmentId, $raporttiId, $laatijatId);
+                $query->execute();
+                $query->close();
+                $message = 'Liitteen nimi tallennettiin.'; $messageType = 'success';
             } elseif ($action === 'delete-attachment') {
                 $attachmentId = (int) ($_POST['liite_id'] ?? 0);
                 $query = $db->prepare('SELECT tiedosto FROM raporttiliitteet WHERE id = ? AND raportti_id = ? AND laatijat_id = ? LIMIT 1');
@@ -800,7 +811,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $messageType === 'success') {
             'update-row', 'delete-row', 'add-media', 'add-table', 'add-text', 'update-text', 'delete-text', 'update-media-annotations' => 'osio-' . (int) ($_POST['rivi_id'] ?? 0),
             'update-table', 'add-table-column', 'add-table-row',
             'delete-table-column', 'delete-table-row', 'add-table-summary', 'delete-table-summary', 'delete-table' => 'taulukko-' . (int) ($_POST['taulukko_id'] ?? 0),
-            'add-attachment', 'delete-attachment' => 'liitteet',
+            'add-attachment', 'update-attachment-name', 'delete-attachment' => 'liitteet',
             default => '',
         };
     }
@@ -1348,7 +1359,7 @@ openLayoutShell('Muokkaa raporttia – TEKRAPORTTI');
     <div class="card-header bg-white"><h2 class="h5 mb-0">Raportin PDF-liitteet</h2></div>
     <div class="card-body p-4">
         <?php if (!$attachments): ?><p class="text-muted mb-3">Ei liitteitä.</p><?php endif; ?>
-        <?php foreach ($attachments as $attachment): ?><div class="d-flex align-items-center gap-2 border-bottom py-2"><span class="flex-grow-1"><?= editValue($attachment['alkuperainen_nimi']) ?></span><small class="text-muted"><?= number_format((int) $attachment['tiedostokoko'] / 1024, 0, ',', ' ') ?> kt</small><form method="post" action="muokkaa_raportti.php?id=<?= $raporttiId ?>" onsubmit="return confirm('Poistetaanko liite?');"><input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="delete-attachment"><input type="hidden" name="liite_id" value="<?= (int) $attachment['id'] ?>"><input type="hidden" name="return_anchor" value="liitteet"><button class="btn btn-link btn-sm text-danger">Poista</button></form></div><?php endforeach; ?>
+        <?php foreach ($attachments as $attachment): ?><div class="d-flex flex-wrap align-items-center gap-2 border-bottom py-2"><form method="post" action="muokkaa_raportti.php?id=<?= $raporttiId ?>" class="d-flex flex-grow-1 align-items-center gap-2"><input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="update-attachment-name"><input type="hidden" name="liite_id" value="<?= (int) $attachment['id'] ?>"><input type="hidden" name="return_anchor" value="liitteet"><label class="visually-hidden" for="liite-nimi-<?= (int) $attachment['id'] ?>">Liitteen nimi</label><input class="form-control form-control-sm" id="liite-nimi-<?= (int) $attachment['id'] ?>" name="liite_nimi" value="<?= editValue($attachment['alkuperainen_nimi']) ?>" maxlength="255" required><small class="text-muted text-nowrap"><?= number_format((int) $attachment['tiedostokoko'] / 1024, 0, ',', ' ') ?> kt</small><button class="btn btn-outline-primary btn-sm text-nowrap">Tallenna nimi</button></form><form method="post" action="muokkaa_raportti.php?id=<?= $raporttiId ?>" onsubmit="return confirm('Poistetaanko liite?');"><input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="delete-attachment"><input type="hidden" name="liite_id" value="<?= (int) $attachment['id'] ?>"><input type="hidden" name="return_anchor" value="liitteet"><button class="btn btn-link btn-sm text-danger">Poista</button></form></div><?php endforeach; ?>
         <form method="post" enctype="multipart/form-data" action="muokkaa_raportti.php?id=<?= $raporttiId ?>" class="row g-2 mt-3"><input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="add-attachment"><input type="hidden" name="return_anchor" value="liitteet"><div class="col-md-10"><div class="file-drop-zone" data-file-drop><input type="file" class="form-control" name="liite_tiedosto[]" accept="application/pdf,.pdf" multiple required><div class="file-drop-zone-hint">Raahaa PDF-tiedostot tähän tai valitse tiedostot.</div></div><div class="form-text">PDF-tiedostoja, enintään 10 MB/tiedosto. Liitteet tulevat raportin sisällön jälkeen ennen viimeistä allekirjoitussivua valitussa järjestyksessä.</div></div><div class="col-md-2"><button class="btn btn-outline-primary w-100">+ Lisää liitteet</button></div></form>
     </div>
 </section>
