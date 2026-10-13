@@ -1487,6 +1487,13 @@ function youtubeThumbnailPath(string $url, array &$temporaryImages): ?string
 
 class TekraPdf extends \setasign\Fpdi\Fpdi
 {
+    private array $attachmentPages = [];
+
+    public function markCurrentPageAsAttachment(): void
+    {
+        $this->attachmentPages[$this->PageNo()] = true;
+    }
+
     public function writePageNumber(int $pdfPage, float $x, float $y, float $width, string $text, bool $bold): void
     {
         if (!isset($this->pages[$pdfPage])) {
@@ -1577,6 +1584,18 @@ class TekraPdf extends \setasign\Fpdi\Fpdi
     {
         // Kansisivu ei kuulu raportin sivunumerointiin.
         if ($this->PageNo() === 1) {
+            return;
+        }
+
+        // Liitesivun oma sisältö voi ulottua aivan sivun reunaan. Piirretään
+        // sivunumero valkoiselle pohjalle, jotta se erottuu aina liitteestä.
+        if (isset($this->attachmentPages[$this->PageNo()])) {
+            $this->SetY(-12);
+            $this->SetX($this->GetPageWidth() - $this->rMargin - 32);
+            $this->SetFont('Helvetica', '', 8);
+            $this->SetTextColor(0, 0, 0);
+            $this->SetFillColor(255, 255, 255);
+            $this->Cell(32, 5, ($this->PageNo() - 1) . ' / ' . '{nb}', 0, 0, 'R', true);
             return;
         }
 
@@ -2111,35 +2130,8 @@ foreach ($rows as $index => $row) {
     }
 }
 
-// Laatimispaikka ja laatijan tiedot viimeisenä tekstiryhmänä, jos allekirjoitus on valittu.
-if ($showSignature) {
-    $place = trim((string) ($report['laatimispaikka'] ?? ''));
-    $date = (string) $GLOBALS['printDate'];
-    $placeAndDate = $place !== '' ? $place . ', ' . $date : $date;
-    $title = trim((string) ($report['laatija_titteli'] ?? ''));
-
-    $closingTextHeight = 8 + 3 + 7 + ($title !== '' ? 7 : 0);
-    $closingLineGap = 14;
-    $closingFooterGap = 14;
-    $closingPageBreakY = $pdf->GetPageHeight() - 26;
-    $closingTargetY = $closingPageBreakY - $closingFooterGap - $closingTextHeight;
-    if ($pdf->GetY() + $closingLineGap > $closingTargetY) {
-        $pdf->AddPage();
-        $pdf->Ln($closingLineGap);
-    } else {
-        $pdf->SetY($closingTargetY);
-    }
-    $pdf->SetFont('Helvetica', '', 13);
-    $pdf->Cell(0, 8, pdfText($placeAndDate), 0, 1, 'L');
-    $pdf->Ln(3);
-    $pdf->SetFont('Helvetica', '', 11);
-    $pdf->Cell(0, 7, pdfText((string) $report['laatija_nimi']), 0, 1, 'L');
-    if ($title !== '') {
-        $pdf->Cell(0, 7, pdfText($title), 0, 1, 'L');
-    }
-}
-
-// Liitteet lisätään alkuperäisinä PDF-sivuina raportin sisällön ja mahdollisen allekirjoituksen jälkeen.
+$hasAttachmentPages = false;
+// Liitteet lisätään alkuperäisinä PDF-sivuina raportin sisällön jälkeen.
 foreach ($attachments as $attachment) {
     $attachmentPath = localImagePath((string) $attachment['tiedosto']);
     if (!$attachmentPath || !is_file($attachmentPath)) { continue; }
@@ -2160,9 +2152,45 @@ foreach ($attachments as $attachment) {
             $renderY = ($pageHeight - $renderHeight) / 2;
             $pdf->AddPage($landscape ? 'L' : 'P', 'A4');
             $pdf->useTemplate($template, $renderX, $renderY, $renderWidth, $renderHeight);
+            $pdf->markCurrentPageAsAttachment();
+            $hasAttachmentPages = true;
         }
     } catch (Throwable $error) {
         error_log('PDF-liitteen lisääminen epäonnistui: ' . $error->getMessage());
+    }
+}
+
+// Allekirjoitus on raportin viimeisenä liitteiden jälkeen. Jos raportissa on
+// liitteitä, allekirjoitus aloitetaan aina omalta sivultaan.
+if ($showSignature) {
+    $place = trim((string) ($report['laatimispaikka'] ?? ''));
+    $date = (string) $GLOBALS['printDate'];
+    $placeAndDate = $place !== '' ? $place . ', ' . $date : $date;
+    $title = trim((string) ($report['laatija_titteli'] ?? ''));
+
+    $closingTextHeight = 8 + 3 + 7 + ($title !== '' ? 7 : 0);
+    $closingLineGap = 14;
+    $closingFooterGap = 14;
+    if ($hasAttachmentPages) {
+        $pdf->AddPage('P', 'A4');
+    }
+    $closingPageBreakY = $pdf->GetPageHeight() - 26;
+    $closingTargetY = $closingPageBreakY - $closingFooterGap - $closingTextHeight;
+    if ($hasAttachmentPages) {
+        $pdf->SetY($closingTargetY);
+    } elseif ($pdf->GetY() + $closingLineGap > $closingTargetY) {
+        $pdf->AddPage();
+        $pdf->Ln($closingLineGap);
+    } else {
+        $pdf->SetY($closingTargetY);
+    }
+    $pdf->SetFont('Helvetica', '', 13);
+    $pdf->Cell(0, 8, pdfText($placeAndDate), 0, 1, 'L');
+    $pdf->Ln(3);
+    $pdf->SetFont('Helvetica', '', 11);
+    $pdf->Cell(0, 7, pdfText((string) $report['laatija_nimi']), 0, 1, 'L');
+    if ($title !== '') {
+        $pdf->Cell(0, 7, pdfText($title), 0, 1, 'L');
     }
 }
 

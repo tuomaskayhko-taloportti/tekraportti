@@ -202,7 +202,7 @@ $safeCsrfToken = htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8');
         <article class="feature"><div class="feature-icon">▥</div><h3>Joustava rakenne</h3><p>Rakenna raportti vapaasti osioista. Lisää tekstiä, kuvia, taulukoita ja videoita.</p></article>
         <article class="feature"><div class="feature-icon">▣</div><h3>Kuvat ja merkinnät</h3><p>Lisää kuvia, tee merkintöjä ja rajaa kuvia. Kuvan suunta korjataan automaattisesti.</p></article>
         <article class="feature"><div class="feature-icon">▥</div><h3>Taulukot ja diagrammit</h3><p>Luo taulukoita ja muunna ne selkeiksi kaavioiksi: piirakka-, pylväs- ja viivadiagrammit.</p></article>
-        <article class="feature"><div class="feature-icon">⌕</div><h3>PDF-liitteet</h3><p>Liitä useita PDF-tiedostoja. Liitteet sisältyvät raportin loppuun allekirjoituksen jälkeen.</p></article>
+        <article class="feature"><div class="feature-icon">⌕</div><h3>PDF-liitteet</h3><p>Liitä useita PDF-tiedostoja. Liitteet sivunumeroidaan ja sijoitetaan ennen viimeistä allekirjoitussivua.</p></article>
         <article class="feature"><div class="feature-icon">↓</div><h3>PDF-tuloste</h3><p>Yhdellä klikkauksella ammattimainen PDF, jossa kansilehti, sisällysluettelo, kuvat, taulukot ja liitteet.</p></article>
     </div></section>
     <section class="audience process-section" id="toimintatapa"><div class="process-intro"><h2>Näin se toimii</h2><p>Selkeä prosessi käyttöönotosta valmiiseen, ammattimaiseen PDF-raporttiin.</p></div><div class="process-grid">
