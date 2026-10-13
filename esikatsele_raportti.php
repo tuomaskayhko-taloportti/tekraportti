@@ -1625,7 +1625,7 @@ class TekraPdf extends \setasign\Fpdi\Fpdi
     }
 }
 
-function appendPdfAttachments(TekraPdf $pdf, array $attachments): array
+function appendPdfAttachments(TekraPdf $pdf, array $attachments, array $attachmentSectionNumbers): array
 {
     $attachmentPages = [];
     foreach ($attachments as $attachmentIndex => $attachment) {
@@ -1642,17 +1642,24 @@ function appendPdfAttachments(TekraPdf $pdf, array $attachments): array
                 $pdf->AddPage($landscape ? 'L' : 'P', 'A4');
 
                 // Sovita liite sivumarginaalien sekä ylä- ja alatunnisteen
-                // väliin. Säilytä mittasuhteet, kohdista ylös ja keskitä
-                // vaakasuunnassa.
+                // väliin. Säilytä mittasuhteet ja kohdista vasemmalle sekä ylös.
                 $contentX = 7.5;
                 $contentY = 22.0;
+                if ($pageNumber === 1) {
+                    $attachmentName = trim((string) ($attachment['alkuperainen_nimi'] ?? ''));
+                    $attachmentNumber = (int) ($attachmentSectionNumbers[$attachmentIndex] ?? 0);
+                    $attachmentTitle = ($attachmentNumber > 0 ? $attachmentNumber . '. ' : '') . $attachmentName;
+                    $pdf->SetXY(20, $contentY);
+                    $pdf->SetFont('Helvetica', 'B', 17);
+                    $pdf->MultiCell($pdf->GetPageWidth() - 40, 10, pdfText($attachmentTitle), 0, 'L');
+                    $contentY = $pdf->GetY() + 5;
+                }
                 $contentWidth = $pdf->GetPageWidth() - 15.0;
                 $contentHeight = $pdf->GetPageHeight() - $contentY - 26.0;
                 $scale = min($contentWidth / $size['width'], $contentHeight / $size['height']);
                 $renderWidth = $size['width'] * $scale;
                 $renderHeight = $size['height'] * $scale;
-                $renderX = $contentX + ($contentWidth - $renderWidth) / 2;
-                $pdf->useTemplate($template, $renderX, $contentY, $renderWidth, $renderHeight);
+                $pdf->useTemplate($template, $contentX, $contentY, $renderWidth, $renderHeight);
                 if (!isset($attachmentPages[$attachmentIndex])) {
                     $attachmentPages[$attachmentIndex] = max(1, $pdf->PageNo() - 1);
                 }
@@ -1882,7 +1889,7 @@ foreach ($rows as $index => $row) {
     $sectionNumber = $sectionNumbers[$index];
     $sectionStartsAfterAttachments = false;
     if ($index === $deferredSignatureSectionIndex) {
-        $attachmentPages = appendPdfAttachments($pdf, $attachments);
+        $attachmentPages = appendPdfAttachments($pdf, $attachments, $attachmentSectionNumbers);
         $hasAttachmentPages = $attachmentPages !== [];
         $attachmentsInserted = true;
         if ($hasAttachmentPages) {
@@ -2213,7 +2220,7 @@ foreach ($rows as $index => $row) {
 
 if (!$attachmentsInserted) {
     // Tavallisesti liitteet tulevat kaikkien sisältöosioiden jälkeen.
-    $attachmentPages = appendPdfAttachments($pdf, $attachments);
+    $attachmentPages = appendPdfAttachments($pdf, $attachments, $attachmentSectionNumbers);
     $hasAttachmentPages = $attachmentPages !== [];
 }
 
