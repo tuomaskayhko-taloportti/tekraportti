@@ -30,13 +30,21 @@ try {
             if ($sourceReportId < 1 || $templateName === '' || mb_strlen($templateName) > 255) {
                 throw new RuntimeException('Anna mallille nimi ja valitse raportti.');
             }
-            $query = $db->prepare('SELECT id, asiakas_id FROM raportit WHERE id = ? AND laatijat_id = ? LIMIT 1');
-            $query->bind_param('ii', $sourceReportId, $laatijatId);
+            $query = $db->prepare(
+                'SELECT r.id, r.asiakas_id
+                 FROM raportit r
+                 WHERE r.id = ? AND (r.laatijat_id = ? OR EXISTS (
+                     SELECT 1 FROM raporttijaot rj WHERE rj.raportti_id = r.id AND rj.laatijat_id = ?
+                 ) OR EXISTS (
+                     SELECT 1 FROM projektijaot pj WHERE pj.projekti_id = r.projekti_id AND pj.laatijat_id = ?
+                 )) LIMIT 1'
+            );
+            $query->bind_param('iiii', $sourceReportId, $laatijatId, $laatijatId, $laatijatId);
             $query->execute();
             $source = $query->get_result()->fetch_assoc();
             $query->close();
             if (!$source) {
-                throw new RuntimeException('Raporttia ei löytynyt tai se ei ole sinun raporttisi.');
+                throw new RuntimeException('Raporttia ei löytynyt tai sinulla ei ole siihen käyttöoikeutta.');
             }
             $query = $db->prepare('INSERT INTO raporttimallit (laatijat_id, asiakas_id, lahde_raportti_id, nimi) VALUES (?, ?, ?, ?)');
             $customerId = (int) $source['asiakas_id'];
@@ -154,8 +162,20 @@ try {
     $templates = $query->get_result()->fetch_all(MYSQLI_ASSOC);
     $query->close();
 
-    $query = $db->prepare('SELECT r.id, r.otsikko, a.nimi AS asiakas_nimi, a.yritys AS asiakas_yritys FROM raportit r INNER JOIN asiakkaat a ON a.id = r.asiakas_id WHERE r.laatijat_id = ? ORDER BY r.updated_at DESC, r.id DESC');
-    $query->bind_param('i', $laatijatId);
+    $query = $db->prepare(
+        'SELECT r.id, r.otsikko, r.laatijat_id, a.nimi AS asiakas_nimi, a.yritys AS asiakas_yritys,
+                l.nimi AS omistaja_nimi
+         FROM raportit r
+         INNER JOIN asiakkaat a ON a.id = r.asiakas_id
+         INNER JOIN laatijat l ON l.id = r.laatijat_id
+         WHERE r.laatijat_id = ? OR EXISTS (
+             SELECT 1 FROM raporttijaot rj WHERE rj.raportti_id = r.id AND rj.laatijat_id = ?
+         ) OR EXISTS (
+             SELECT 1 FROM projektijaot pj WHERE pj.projekti_id = r.projekti_id AND pj.laatijat_id = ?
+         )
+         ORDER BY r.updated_at DESC, r.id DESC'
+    );
+    $query->bind_param('iii', $laatijatId, $laatijatId, $laatijatId);
     $query->execute();
     $sourceReports = $query->get_result()->fetch_all(MYSQLI_ASSOC);
     $query->close();
@@ -183,8 +203,8 @@ openLayoutShell('Raporttimallit – TEKRAPORTTI');
     <div class="card-header bg-white"><h2 class="h5 mb-0">Tallenna raportti malliksi</h2></div>
     <form method="post" class="card-body p-4">
         <input type="hidden" name="csrf_token" value="<?= templateValue($csrfToken) ?>"><input type="hidden" name="action" value="save-template">
-        <div class="row g-3 align-items-end"><div class="col-md-5"><label class="form-label" for="mallin_nimi">Mallin nimi</label><input class="form-control" id="mallin_nimi" name="mallin_nimi" maxlength="255" required></div><div class="col-md-5"><label class="form-label" for="raportti_id">Lähderaportti</label><select class="form-select" id="raportti_id" name="raportti_id" required><option value="">Valitse raportti</option><?php foreach ($sourceReports as $report): ?><option value="<?= (int) $report['id'] ?>"><?= templateValue($report['otsikko'] . ' – ' . ($report['asiakas_yritys'] ?: $report['asiakas_nimi'])) ?></option><?php endforeach; ?></select></div><div class="col-md-2"><button class="btn btn-primary w-100">Tallenna malliksi</button></div></div>
-        <div class="form-text mt-3">Malli tallentaa raportin osiot ja tekstisisällöt. Malli näkyy tämän raportin asiakkaan jakamille käyttäjille.</div>
+        <div class="row g-3 align-items-end"><div class="col-md-5"><label class="form-label" for="mallin_nimi">Mallin nimi</label><input class="form-control" id="mallin_nimi" name="mallin_nimi" maxlength="255" required></div><div class="col-md-5"><label class="form-label" for="raportti_id">Lähderaportti</label><select class="form-select" id="raportti_id" name="raportti_id" required><option value="">Valitse raportti</option><?php foreach ($sourceReports as $report): ?><option value="<?= (int) $report['id'] ?>"><?= templateValue($report['otsikko'] . ' – ' . ($report['asiakas_yritys'] ?: $report['asiakas_nimi']) . ((int) $report['laatijat_id'] === $laatijatId ? '' : ' – Jaettu: ' . $report['omistaja_nimi'])) ?></option><?php endforeach; ?></select></div><div class="col-md-2"><button class="btn btn-primary w-100">Tallenna malliksi</button></div></div>
+        <div class="form-text mt-3">Mallin voi tehdä omasta tai sinulle jaetusta raportista. Malli tallentaa raportin osiot ja tekstisisällöt ja näkyy tämän raportin asiakkaan jakamille käyttäjille.</div>
     </form>
 </div>
 <div class="card border-0 shadow-sm"><div class="table-responsive"><table class="table table-hover align-middle mb-0"><thead class="table-light"><tr><th>Malli</th><th>Asiakas</th><th>Omistaja</th><th class="text-end">Toiminnot</th></tr></thead><tbody>
