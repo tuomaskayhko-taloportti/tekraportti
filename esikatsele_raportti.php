@@ -1643,7 +1643,7 @@ function appendPdfAttachments(TekraPdf $pdf, array $attachments, array $attachme
 
                 // Sovita liite sivumarginaalien sekä ylä- ja alatunnisteen
                 // väliin. Säilytä mittasuhteet ja kohdista vasemmalle sekä ylös.
-                $contentX = 7.5;
+                $contentX = 20.0;
                 $contentY = 22.0;
                 if ($pageNumber === 1) {
                     $attachmentName = trim((string) ($attachment['alkuperainen_nimi'] ?? ''));
@@ -1654,7 +1654,7 @@ function appendPdfAttachments(TekraPdf $pdf, array $attachments, array $attachme
                     $pdf->MultiCell($pdf->GetPageWidth() - 40, 10, pdfText($attachmentTitle), 0, 'L');
                     $contentY = $pdf->GetY() + 5;
                 }
-                $contentWidth = $pdf->GetPageWidth() - 15.0;
+                $contentWidth = $pdf->GetPageWidth() - $contentX - 7.5;
                 $contentHeight = $pdf->GetPageHeight() - $contentY - 26.0;
                 $scale = min($contentWidth / $size['width'], $contentHeight / $size['height']);
                 $renderWidth = $size['width'] * $scale;
