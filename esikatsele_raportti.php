@@ -1762,13 +1762,27 @@ if ($lastSectionIndex !== null) {
         $deferredSignatureSectionIndex = $lastSectionIndex;
     }
 }
+$attachmentStartNumber = $deferredSignatureSectionIndex !== null
+    ? $deferredSignatureSectionIndex + 1
+    : count($rows) + 1;
+$attachmentSectionNumbers = [];
+foreach (array_keys($attachments) as $attachmentOrdinal => $attachmentIndex) {
+    $attachmentSectionNumbers[$attachmentIndex] = $attachmentStartNumber + $attachmentOrdinal;
+}
+$sectionNumbers = [];
+foreach (array_keys($rows) as $sectionIndex) {
+    $sectionNumbers[$sectionIndex] = $sectionIndex + 1;
+    if ($deferredSignatureSectionIndex !== null && $sectionIndex >= $deferredSignatureSectionIndex) {
+        $sectionNumbers[$sectionIndex] += count($attachments);
+    }
+}
 $tocEntries = [];
 $attachmentTocEntriesAdded = false;
 foreach ($rows as $index => $row) {
     if ($index === $deferredSignatureSectionIndex) {
         foreach ($attachments as $attachmentIndex => $attachment) {
             $tocEntries[] = [
-                'number' => '',
+                'number' => $attachmentSectionNumbers[$attachmentIndex] . '.',
                 'title' => (string) $attachment['alkuperainen_nimi'],
                 'attachment_index' => $attachmentIndex,
                 'indent' => false,
@@ -1776,7 +1790,7 @@ foreach ($rows as $index => $row) {
         }
         $attachmentTocEntriesAdded = true;
     }
-    $sectionNumber = $index + 1;
+    $sectionNumber = $sectionNumbers[$index];
     $tocEntries[] = [
         'number' => $sectionNumber . '.',
         'title' => $row['otsikko'],
@@ -1801,7 +1815,7 @@ foreach ($rows as $index => $row) {
 if (!$attachmentTocEntriesAdded) {
     foreach ($attachments as $attachmentIndex => $attachment) {
         $tocEntries[] = [
-            'number' => '',
+            'number' => $attachmentSectionNumbers[$attachmentIndex] . '.',
             'title' => (string) $attachment['alkuperainen_nimi'],
             'attachment_index' => $attachmentIndex,
             'indent' => false,
@@ -1865,6 +1879,7 @@ $hasAttachmentPages = false;
 $attachmentPages = [];
 $attachmentsInserted = false;
 foreach ($rows as $index => $row) {
+    $sectionNumber = $sectionNumbers[$index];
     $sectionStartsAfterAttachments = false;
     if ($index === $deferredSignatureSectionIndex) {
         $attachmentPages = appendPdfAttachments($pdf, $attachments);
@@ -1890,11 +1905,11 @@ foreach ($rows as $index => $row) {
             }
         }
         $pdf->Ln(8);
-        $pdf->ensureSpace(pdfSectionStartHeight($pdf, $index + 1, (string) $row['otsikko'], $sectionContent));
+        $pdf->ensureSpace(pdfSectionStartHeight($pdf, $sectionNumber, (string) $row['otsikko'], $sectionContent));
     }
     $sectionPages[$index] = max(1, $pdf->PageNo() - 1);
     $pdf->SetFont('Helvetica', 'B', 17);
-    $pdf->MultiCell(0, 10, pdfText(($index + 1) . '. ' . $row['otsikko']), 0, 'L');
+    $pdf->MultiCell(0, 10, pdfText($sectionNumber . '. ' . $row['otsikko']), 0, 'L');
     if (!empty($row['sisaltaa_asiakastiedot'])) {
         $customerInfoRows = pdfCustomerInfoRows($report, $customerDetails);
         if ($customerInfoRows) {
@@ -1944,7 +1959,7 @@ foreach ($rows as $index => $row) {
     $headingCounters = [];
     $content = trim((string) $row['sisalto']);
     if ($content !== '') {
-        pdfTextWithLists($pdf, $content, $index + 1, $headingCounters);
+        pdfTextWithLists($pdf, $content, $sectionNumber, $headingCounters);
     }
 
     // Osioon liitetyt tekstilohkot ja taulukot niiden yhteisessä järjestyksessä.
@@ -1954,7 +1969,7 @@ foreach ($rows as $index => $row) {
             if ($textContent !== '') {
                 $pdf->Ln(5);
                 $pdf->SetFont('Helvetica', '', 11);
-                pdfTextWithLists($pdf, $textContent, $index + 1, $headingCounters);
+                pdfTextWithLists($pdf, $textContent, $sectionNumber, $headingCounters);
             }
             continue;
         }
