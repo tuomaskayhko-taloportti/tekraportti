@@ -1768,7 +1768,7 @@ foreach ($rows as $index => $row) {
     if ($index === $deferredSignatureSectionIndex) {
         foreach ($attachments as $attachmentIndex => $attachment) {
             $tocEntries[] = [
-                'number' => 'Liite ' . ($attachmentIndex + 1) . '.',
+                'number' => '',
                 'title' => (string) $attachment['alkuperainen_nimi'],
                 'attachment_index' => $attachmentIndex,
                 'indent' => false,
@@ -1801,7 +1801,7 @@ foreach ($rows as $index => $row) {
 if (!$attachmentTocEntriesAdded) {
     foreach ($attachments as $attachmentIndex => $attachment) {
         $tocEntries[] = [
-            'number' => 'Liite ' . ($attachmentIndex + 1) . '.',
+            'number' => '',
             'title' => (string) $attachment['alkuperainen_nimi'],
             'attachment_index' => $attachmentIndex,
             'indent' => false,
@@ -1818,7 +1818,7 @@ foreach ($tocEntries as $entry) {
     $pageNumberWidth = $pdf->GetStringWidth('000');
     $numberWidth = $pdf->GetStringWidth($numberText);
     $pageNumberGap = 3;
-    $numberGap = 2;
+    $numberGap = $numberText === '' ? 0 : 2;
     $titleMaxWidth = $contentWidth - $indent - $numberWidth - $numberGap - $pageNumberWidth - $pageNumberGap - 2;
     // Pilko otsikko UTF-8-muodossa. Muunnos PDF:n Windows-1252-merkistöön
     // tehdään vasta pilkkomisen jälkeen, jotta esimerkiksi ä ja ö eivät
@@ -1833,7 +1833,9 @@ foreach ($tocEntries as $entry) {
     }
     $lastTitleLine = end($titleLines) ?: '';
     $pdf->SetX(20 + $indent);
-    $pdf->Cell($numberWidth + $numberGap, 7, $numberText . ' ', 0, 0, 'L');
+    if ($numberWidth + $numberGap > 0) {
+        $pdf->Cell($numberWidth + $numberGap, 7, $numberText . ' ', 0, 0, 'L');
+    }
     $titleWidth = $pdf->GetStringWidth($lastTitleLine);
     $spaceWidth = $pdf->GetStringWidth(' ');
     $dotsWidth = max(0, $contentWidth - $indent - $numberWidth - $numberGap - $titleWidth - $pageNumberWidth - $spaceWidth - $pageNumberGap);
