@@ -1487,13 +1487,6 @@ function youtubeThumbnailPath(string $url, array &$temporaryImages): ?string
 
 class TekraPdf extends \setasign\Fpdi\Fpdi
 {
-    private array $attachmentPages = [];
-
-    public function markCurrentPageAsAttachment(): void
-    {
-        $this->attachmentPages[$this->PageNo()] = true;
-    }
-
     public function writePageNumber(int $pdfPage, float $x, float $y, float $width, string $text, bool $bold): void
     {
         if (!isset($this->pages[$pdfPage])) {
@@ -1584,18 +1577,6 @@ class TekraPdf extends \setasign\Fpdi\Fpdi
     {
         // Kansisivu ei kuulu raportin sivunumerointiin.
         if ($this->PageNo() === 1) {
-            return;
-        }
-
-        // Liitesivun oma sisältö voi ulottua aivan sivun reunaan. Piirretään
-        // sivunumero valkoiselle pohjalle, jotta se erottuu aina liitteestä.
-        if (isset($this->attachmentPages[$this->PageNo()])) {
-            $this->SetY(-12);
-            $this->SetX($this->GetPageWidth() - $this->rMargin - 32);
-            $this->SetFont('Helvetica', '', 8);
-            $this->SetTextColor(0, 0, 0);
-            $this->SetFillColor(255, 255, 255);
-            $this->Cell(32, 5, ($this->PageNo() - 1) . ' / ' . '{nb}', 0, 0, 'R', true);
             return;
         }
 
@@ -2140,19 +2121,21 @@ foreach ($attachments as $attachment) {
         for ($pageNumber = 1; $pageNumber <= $pageCount; $pageNumber++) {
             $template = $pdf->importPage($pageNumber);
             $size = $pdf->getTemplateSize($template);
-            // Skannereiden PDF-sivut voivat sisältää kaksinkertaiset mitat.
-            // Sovita jokainen sivu A4:lle mittasuhteet säilyttäen.
             $landscape = $size['width'] > $size['height'];
-            $pageWidth = $landscape ? 297.0 : 210.0;
-            $pageHeight = $landscape ? 210.0 : 297.0;
-            $scale = min($pageWidth / $size['width'], $pageHeight / $size['height']);
+            $pdf->AddPage($landscape ? 'L' : 'P', 'A4');
+
+            // Sovita liite raportin normaalien marginaalien sekä ylä- ja
+            // alatunnisteen väliin. Säilytä mittasuhteet, kohdista ylös ja
+            // keskitä vaakasuunnassa.
+            $contentX = 20.0;
+            $contentY = 22.0;
+            $contentWidth = $pdf->GetPageWidth() - 40.0;
+            $contentHeight = $pdf->GetPageHeight() - $contentY - 26.0;
+            $scale = min($contentWidth / $size['width'], $contentHeight / $size['height']);
             $renderWidth = $size['width'] * $scale;
             $renderHeight = $size['height'] * $scale;
-            $renderX = ($pageWidth - $renderWidth) / 2;
-            $renderY = ($pageHeight - $renderHeight) / 2;
-            $pdf->AddPage($landscape ? 'L' : 'P', 'A4');
-            $pdf->useTemplate($template, $renderX, $renderY, $renderWidth, $renderHeight);
-            $pdf->markCurrentPageAsAttachment();
+            $renderX = $contentX + ($contentWidth - $renderWidth) / 2;
+            $pdf->useTemplate($template, $renderX, $contentY, $renderWidth, $renderHeight);
             $hasAttachmentPages = true;
         }
     } catch (Throwable $error) {
