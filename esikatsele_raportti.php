@@ -1625,6 +1625,43 @@ class TekraPdf extends \setasign\Fpdi\Fpdi
     }
 }
 
+function appendPdfAttachments(TekraPdf $pdf, array $attachments): bool
+{
+    $hasAttachmentPages = false;
+    foreach ($attachments as $attachment) {
+        $attachmentPath = localImagePath((string) $attachment['tiedosto']);
+        if (!$attachmentPath || !is_file($attachmentPath)) {
+            continue;
+        }
+        try {
+            $pageCount = $pdf->setSourceFile($attachmentPath);
+            for ($pageNumber = 1; $pageNumber <= $pageCount; $pageNumber++) {
+                $template = $pdf->importPage($pageNumber);
+                $size = $pdf->getTemplateSize($template);
+                $landscape = $size['width'] > $size['height'];
+                $pdf->AddPage($landscape ? 'L' : 'P', 'A4');
+
+                // Sovita liite raportin normaalien marginaalien sekä ylä- ja
+                // alatunnisteen väliin. Säilytä mittasuhteet, kohdista ylös ja
+                // keskitä vaakasuunnassa.
+                $contentX = 20.0;
+                $contentY = 22.0;
+                $contentWidth = $pdf->GetPageWidth() - 40.0;
+                $contentHeight = $pdf->GetPageHeight() - $contentY - 26.0;
+                $scale = min($contentWidth / $size['width'], $contentHeight / $size['height']);
+                $renderWidth = $size['width'] * $scale;
+                $renderHeight = $size['height'] * $scale;
+                $renderX = $contentX + ($contentWidth - $renderWidth) / 2;
+                $pdf->useTemplate($template, $renderX, $contentY, $renderWidth, $renderHeight);
+                $hasAttachmentPages = true;
+            }
+        } catch (Throwable $error) {
+            error_log('PDF-liitteen lisääminen epäonnistui: ' . $error->getMessage());
+        }
+    }
+    return $hasAttachmentPages;
+}
+
 $pdf = new TekraPdf();
 $GLOBALS['printDate'] = date('d.m.Y');
 $pdf->AliasNbPages();
@@ -1789,10 +1826,29 @@ if (!$tocEntries) {
 
 // Raporttiosiot.
 $sectionPages = [];
+$hasAttachmentPages = false;
+$attachmentsInserted = false;
+$lastSectionIndex = array_key_last($rows);
+$deferredSignatureSectionIndex = null;
+if ($lastSectionIndex !== null) {
+    $lastSectionTitle = mb_strtolower(trim((string) $rows[$lastSectionIndex]['otsikko']), 'UTF-8');
+    if (in_array($lastSectionTitle, ['allekirjoitus', 'allekirjoitukset'], true)) {
+        $deferredSignatureSectionIndex = $lastSectionIndex;
+    }
+}
 foreach ($rows as $index => $row) {
-    if ($index === 0) {
+    $sectionStartsAfterAttachments = false;
+    if ($index === $deferredSignatureSectionIndex) {
+        $hasAttachmentPages = appendPdfAttachments($pdf, $attachments);
+        $attachmentsInserted = true;
+        if ($hasAttachmentPages) {
+            $pdf->AddPage('P', 'A4');
+            $sectionStartsAfterAttachments = true;
+        }
+    }
+    if (!$sectionStartsAfterAttachments && $index === 0) {
         $pdf->AddPage();
-    } else {
+    } elseif (!$sectionStartsAfterAttachments) {
         $sectionContent = trim((string) $row['sisalto']);
         if ($sectionContent === '') {
             foreach ($contentBlocksByRow[(int) $row['id']] ?? [] as $contentBlock) {
@@ -2111,36 +2167,9 @@ foreach ($rows as $index => $row) {
     }
 }
 
-$hasAttachmentPages = false;
-// Liitteet lisätään alkuperäisinä PDF-sivuina raportin sisällön jälkeen.
-foreach ($attachments as $attachment) {
-    $attachmentPath = localImagePath((string) $attachment['tiedosto']);
-    if (!$attachmentPath || !is_file($attachmentPath)) { continue; }
-    try {
-        $pageCount = $pdf->setSourceFile($attachmentPath);
-        for ($pageNumber = 1; $pageNumber <= $pageCount; $pageNumber++) {
-            $template = $pdf->importPage($pageNumber);
-            $size = $pdf->getTemplateSize($template);
-            $landscape = $size['width'] > $size['height'];
-            $pdf->AddPage($landscape ? 'L' : 'P', 'A4');
-
-            // Sovita liite raportin normaalien marginaalien sekä ylä- ja
-            // alatunnisteen väliin. Säilytä mittasuhteet, kohdista ylös ja
-            // keskitä vaakasuunnassa.
-            $contentX = 20.0;
-            $contentY = 22.0;
-            $contentWidth = $pdf->GetPageWidth() - 40.0;
-            $contentHeight = $pdf->GetPageHeight() - $contentY - 26.0;
-            $scale = min($contentWidth / $size['width'], $contentHeight / $size['height']);
-            $renderWidth = $size['width'] * $scale;
-            $renderHeight = $size['height'] * $scale;
-            $renderX = $contentX + ($contentWidth - $renderWidth) / 2;
-            $pdf->useTemplate($template, $renderX, $contentY, $renderWidth, $renderHeight);
-            $hasAttachmentPages = true;
-        }
-    } catch (Throwable $error) {
-        error_log('PDF-liitteen lisääminen epäonnistui: ' . $error->getMessage());
-    }
+if (!$attachmentsInserted) {
+    // Tavallisesti liitteet tulevat kaikkien sisältöosioiden jälkeen.
+    $hasAttachmentPages = appendPdfAttachments($pdf, $attachments);
 }
 
 // Allekirjoitus on raportin viimeisenä liitteiden jälkeen. Jos raportissa on
