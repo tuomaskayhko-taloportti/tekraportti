@@ -1341,6 +1341,9 @@ openLayoutShell('Muokkaa raporttia – TEKRAPORTTI');
     </div></details>
 <?php endforeach; ?>
 
+<span id="uusi-osio"></span>
+<div class="card border-0 shadow-sm mb-4"><div class="card-header bg-white"><h2 class="h5 mb-0">Lisää uusi osio</h2></div><form method="post" action="muokkaa_raportti.php?id=<?= $raporttiId ?>"><input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="add-row"><div class="card-body p-4"><input class="form-control mb-3" name="rivi_otsikko" placeholder="Osion otsikko" maxlength="255" required><textarea class="form-control mb-3" name="rivi_sisalto" rows="6" placeholder="Tekstisisältö" data-markdown-editor></textarea><div class="form-check"><input class="form-check-input" type="checkbox" id="uusi-asiakastiedot" name="sisaltaa_asiakastiedot"><label class="form-check-label" for="uusi-asiakastiedot">Tulosta asiakkaan tiedot tämän osion alussa</label></div></div><div class="card-footer bg-white border-0 px-4 pb-4"><button class="btn btn-primary">+ Lisää osio</button></div></form></div>
+
 <section class="card border-0 shadow-sm mb-4" id="liitteet">
     <div class="card-header bg-white"><h2 class="h5 mb-0">Raportin PDF-liitteet</h2></div>
     <div class="card-body p-4">
@@ -1349,9 +1352,6 @@ openLayoutShell('Muokkaa raporttia – TEKRAPORTTI');
         <form method="post" enctype="multipart/form-data" action="muokkaa_raportti.php?id=<?= $raporttiId ?>" class="row g-2 mt-3"><input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="add-attachment"><input type="hidden" name="return_anchor" value="liitteet"><div class="col-md-10"><div class="file-drop-zone" data-file-drop><input type="file" class="form-control" name="liite_tiedosto[]" accept="application/pdf,.pdf" multiple required><div class="file-drop-zone-hint">Raahaa PDF-tiedostot tähän tai valitse tiedostot.</div></div><div class="form-text">PDF-tiedostoja, enintään 10 MB/tiedosto. Liitteet tulevat raportin sisällön jälkeen ennen viimeistä allekirjoitussivua valitussa järjestyksessä.</div></div><div class="col-md-2"><button class="btn btn-outline-primary w-100">+ Lisää liitteet</button></div></form>
     </div>
 </section>
-
-<span id="uusi-osio"></span>
-<div class="card border-0 shadow-sm"><div class="card-header bg-white"><h2 class="h5 mb-0">Lisää uusi osio</h2></div><form method="post" action="muokkaa_raportti.php?id=<?= $raporttiId ?>"><input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="add-row"><div class="card-body p-4"><input class="form-control mb-3" name="rivi_otsikko" placeholder="Osion otsikko" maxlength="255" required><textarea class="form-control mb-3" name="rivi_sisalto" rows="6" placeholder="Tekstisisältö" data-markdown-editor></textarea><div class="form-check"><input class="form-check-input" type="checkbox" id="uusi-asiakastiedot" name="sisaltaa_asiakastiedot"><label class="form-check-label" for="uusi-asiakastiedot">Tulosta asiakkaan tiedot tämän osion alussa</label></div></div><div class="card-footer bg-white border-0 px-4 pb-4"><button class="btn btn-primary">+ Lisää osio</button></div></form></div>
 
 <dialog class="image-annotation-dialog" id="image-annotation-dialog" aria-labelledby="image-annotation-title">
     <form method="post" action="muokkaa_raportti.php?id=<?= $raporttiId ?>" id="image-annotation-form">
