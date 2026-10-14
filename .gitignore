@@ -1,0 +1,40 @@
+# Paikalliset kehitys- ja agenttiohjeet
+agents.md
+AGENTS.md
+.agents/
+.codex/
+*.code-workspace
+.idea/
+.vscode/
+
+# Salaisuudet ja ympäristökohtaiset asetukset
+secret.php
+.env
+.env.*
+!.env.example
+auth.json
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Käyttäjien lataamat tiedostot
+Tiedostot/
+
+# Lokit, välimuistit ja väliaikaistiedostot
+*.log
+*.tmp
+*.temp
+*.cache
+cache/
+tmp/
+
+# Käyttöjärjestelmän metatiedostot
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Testi- ja analyysityökalujen tuotokset
+.phpunit.result.cache
+coverage/
+.php-cs-fixer.cache
