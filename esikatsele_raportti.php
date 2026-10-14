@@ -1714,8 +1714,7 @@ function appendPdfSourceMaterial(TekraPdf $pdf, ?array $sourceMaterial): array
             $scale = min($contentWidth / $size['width'], $contentHeight / $size['height']);
             $renderWidth = $size['width'] * $scale;
             $renderHeight = $size['height'] * $scale;
-            $renderX = $contentX + ($contentWidth - $renderWidth) / 2;
-            $pdf->useTemplate($template, $renderX, $contentY, $renderWidth, $renderHeight);
+            $pdf->useTemplate($template, $contentX, $contentY, $renderWidth, $renderHeight);
             $pageMap[$sourcePage] = max(1, $pdf->PageNo() - 1);
         }
     } catch (Throwable $error) {
