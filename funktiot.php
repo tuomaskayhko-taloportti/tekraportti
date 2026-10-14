@@ -225,9 +225,30 @@ function closeLayoutShell(): void
     global $layoutHasSidebar;
 
     echo $layoutHasSidebar ? "</main>\n</div>\n</div>\n" : "</main>\n";
-    echo '<footer class="container-fluid text-end pb-3 text-muted small">© 2026 Koodiportti Ohjelmistot y:3203383-5 · TEKRAPORTTI v'
-        . htmlspecialchars(APP_VERSION, ENT_QUOTES, 'UTF-8')
-        . "</footer>\n";
+    $safeVersion = htmlspecialchars(APP_VERSION, ENT_QUOTES, 'UTF-8');
+    echo <<<HTML
+<footer class="text-center py-3 small text-muted">
+    <div>
+        &copy; 2026 Koodiportti |
+        Y-tunnus 3203383-5 |
+        TEKRAPORTTI v{$safeVersion}
+    </div>
+    <div class="mt-1">
+        Tekraportti on avoimen lähdekoodin ohjelmisto
+        (GNU AGPL v3).
+    </div>
+    <div class="mt-1">
+        <a href="https://www.gnu.org/licenses/agpl-3.0.html"
+           target="_blank" rel="noopener noreferrer">Lisenssi</a>
+        |
+        <a href="https://github.com/tuomaskayhko-taloportti/tekraportti"
+           target="_blank" rel="noopener noreferrer">Lähdekoodi</a>
+        |
+        <a href="https://github.com/tuomaskayhko-taloportti/tekraportti/blob/main/COPYRIGHT.md"
+           target="_blank" rel="noopener noreferrer">Kolmansien osapuolten lisenssit</a>
+    </div>
+</footer>
+HTML;
     echo '<script src="https://code.jquery.com/jquery-4.0.0.min.js" '
         . 'integrity="sha384-fgGyf7Mo7DURSOMnOy7ed+dkq5Job205Gnzu6QIg0BOHKaqt4D76Dt8VlDCzcMHV" '
         . "crossorigin=\"anonymous\"></script>\n";
