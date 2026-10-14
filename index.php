@@ -212,7 +212,22 @@ $safeCsrfToken = htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8');
     <section class="info-section" id="ukk"><h2>Usein kysytyt kysymykset</h2><div class="info-grid"><div class="info-card"><h3>Millä laitteilla palvelu toimii?</h3><p>Palvelu toimii nykyaikaisella selaimella tietokoneella, tabletilla ja puhelimella.</p></div><div class="info-card"><h3>Voiko raporttiin lisätä kuvia ja PDF-liitteitä?</h3><p>Kyllä. Kuvia ja PDF-liitteitä voi lisätä myös drag and drop -toiminnolla.</p></div><div class="info-card"><h3>Voiko raportin tulostaa PDF:nä?</h3><p>Kyllä. Raportti sisältää kansilehden, sisällysluettelon, sisällön, kuvat, taulukot ja liitteet.</p></div></div></section>
     <section class="info-section contact-section" id="yhteystiedot"><h2>Ota yhteyttä</h2><p>Kysy käyttöönotosta tai palvelusta: <a href="mailto:asiakaspalvelu@taloportti.fi">asiakaspalvelu@taloportti.fi</a></p></section>
 </main>
-<footer class="landing-footer"><img class="footer-logo" src="Logo.png" alt="TEKRAPORTTI"><div class="footer-links"><a href="#ominaisuudet">Ominaisuudet</a><a href="tietosuoja.php" target="_blank" rel="noopener">Tietosuojaseloste</a><a href="kayttoehdot.php" target="_blank" rel="noopener">Käyttöehdot</a><a href="yhteydenotto.php" target="_blank" rel="noopener">Ota yhteyttä</a></div><span>Tarkempia raportteja. Parempia päätöksiä.</span></footer>
+<footer class="landing-footer">
+    <img class="footer-logo" src="Logo.png" alt="TEKRAPORTTI">
+    <div class="text-center small">
+        <div>&copy; 2026 Koodiportti | Y-tunnus 3203383-5 | TEKRAPORTTI v<?= htmlspecialchars(APP_VERSION, ENT_QUOTES, 'UTF-8') ?></div>
+        <div class="mt-1">Tekraportti on avoimen lähdekoodin ohjelmisto (GNU AGPL v3).</div>
+        <div class="footer-links mt-1">
+            <a href="https://www.gnu.org/licenses/agpl-3.0.html" target="_blank" rel="noopener noreferrer">Lisenssi</a>
+            <a href="https://github.com/tuomaskayhko-taloportti/tekraportti" target="_blank" rel="noopener noreferrer">Lähdekoodi</a>
+            <a href="https://github.com/tuomaskayhko-taloportti/tekraportti/blob/main/COPYRIGHT.md" target="_blank" rel="noopener noreferrer">Kolmansien osapuolten lisenssit</a>
+            <a href="tietosuoja.php" target="_blank" rel="noopener noreferrer">Tietosuojaseloste</a>
+            <a href="kayttoehdot.php" target="_blank" rel="noopener noreferrer">Käyttöehdot</a>
+            <a href="yhteydenotto.php" target="_blank" rel="noopener noreferrer">Ota yhteyttä</a>
+        </div>
+    </div>
+    <span>Tarkempia raportteja. Parempia päätöksiä.</span>
+</footer>
 <aside class="cookie-banner" id="cookie-banner" role="dialog" aria-label="Evästeasetukset" <?= $cookieConsent === 'accepted' ? 'hidden' : '' ?>><p>TEKRAPORTTI käyttää kirjautumiseen välttämätöntä evästettä. Lue lisää <a href="tietosuoja.php" target="_blank" rel="noopener">tietosuojaselosteesta</a>. Kirjautuminen edellyttää evästeiden hyväksymistä.</p><div class="cookie-actions"><button type="button" class="cookie-reject" data-cookie-choice="rejected">En hyväksy</button><button type="button" class="cookie-accept" data-cookie-choice="accepted">Hyväksyn</button></div></aside>
 <script>
 (() => {
