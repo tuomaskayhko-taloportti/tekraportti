@@ -1704,12 +1704,18 @@ function appendPdfSourceMaterial(TekraPdf $pdf, ?array $sourceMaterial): array
             $size = $pdf->getTemplateSize($template);
             $landscape = $size['width'] > $size['height'];
             $pdf->AddPage($landscape ? 'L' : 'P', 'A4');
-            $contentX = 20.0;
-            $contentY = 22.0;
-            $contentWidth = $pdf->GetPageWidth() - $contentX - 7.5;
+            // Käytä tuodulle aineistolle tekstisisältöä leveämpää aluetta.
+            // Ylä- ja alatunnisteille jää oma tila, ja alkuperäinen kuvasuhde
+            // säilyy sekä pysty- että vaakasivuilla.
+            $contentX = 7.5;
+            $contentY = 17.5;
+            $contentWidth = $pdf->GetPageWidth() - 15.0;
             $contentHeight = $pdf->GetPageHeight() - $contentY - 26.0;
             $scale = min($contentWidth / $size['width'], $contentHeight / $size['height']);
-            $pdf->useTemplate($template, $contentX, $contentY, $size['width'] * $scale, $size['height'] * $scale);
+            $renderWidth = $size['width'] * $scale;
+            $renderHeight = $size['height'] * $scale;
+            $renderX = $contentX + ($contentWidth - $renderWidth) / 2;
+            $pdf->useTemplate($template, $renderX, $contentY, $renderWidth, $renderHeight);
             $pageMap[$sourcePage] = max(1, $pdf->PageNo() - 1);
         }
     } catch (Throwable $error) {
