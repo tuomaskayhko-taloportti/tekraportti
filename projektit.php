@@ -66,16 +66,26 @@ try {
             $message = 'Pyyntö vanheni. Lataa sivu uudelleen ja yritä uudestaan.';
         } elseif ($action === 'delete') {
             $deleteId = (int) ($_POST['id'] ?? 0);
-            $query = $db->prepare('SELECT COUNT(*) AS maara FROM raportit WHERE projekti_id = ? AND laatijat_id = ?');
-            $query->bind_param('ii', $deleteId, $laatijatId);
+            $query = $db->prepare('SELECT id FROM projektit WHERE id = ? AND laatijat_id = ? LIMIT 1');
+            $query->bind_param('ii', $deleteId, $currentLaatijaId);
             $query->execute();
-            $reportCount = (int) $query->get_result()->fetch_assoc()['maara'];
+            $isOwner = (bool) $query->get_result()->fetch_assoc();
             $query->close();
-            if ($reportCount > 0) {
-                $message = 'Projektia ei voi poistaa, koska siihen liittyy raportteja.';
+            $reportCount = 0;
+            if (!$isOwner) {
+                $message = 'Projektia ei löytynyt.';
             } else {
+                $query = $db->prepare('SELECT COUNT(*) AS maara FROM raportit WHERE projekti_id = ?');
+                $query->bind_param('i', $deleteId);
+                $query->execute();
+                $reportCount = (int) $query->get_result()->fetch_assoc()['maara'];
+                $query->close();
+            }
+            if ($isOwner && $reportCount > 0) {
+                $message = 'Projektia ei voi poistaa, koska siihen liittyy raportteja.';
+            } elseif ($isOwner) {
                 $query = $db->prepare('DELETE FROM projektit WHERE id = ? AND laatijat_id = ?');
-                $query->bind_param('ii', $deleteId, $laatijatId);
+                $query->bind_param('ii', $deleteId, $currentLaatijaId);
                 $query->execute();
                 $deleted = $query->affected_rows > 0;
                 $query->close();

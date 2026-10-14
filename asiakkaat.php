@@ -84,7 +84,9 @@ try {
                 $query = $db->prepare(
                     'DELETE FROM asiakkaat WHERE id = ? AND laatijat_id = ?'
                 );
-                $query->bind_param('ii', $deleteId, $laatijatId);
+                // Poistaminen on sallittu vain kirjautuneelle omistajalle.
+                // Jaetun asiakkaan omistajatunnusta ei saa käyttää valtuutuksena.
+                $query->bind_param('ii', $deleteId, $currentLaatijaId);
                 $query->execute();
                 $deleted = $query->affected_rows > 0;
                 $query->close();
