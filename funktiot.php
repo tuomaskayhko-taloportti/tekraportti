@@ -475,9 +475,45 @@ function deleteStoredFile(string $url): void
     }
 }
 
+/** Tunnistaa pisteeseen päättyvällä numeroinnilla alkavan PDF-otsikon. */
+function parsePdfNumberedHeading(string $text): ?array
+{
+    if (!preg_match('/^(\d+(?:\.\d+)*\.)\s+(.+)$/u', trim($text), $matches)) {
+        return null;
+    }
+
+    $title = trim($matches[2]);
+    if ($title === '' || !preg_match('/\p{L}/u', $title)) {
+        return null;
+    }
+
+    return [
+        'number' => $matches[1],
+        'title' => $title,
+        'level' => substr_count($matches[1], '.') - 1,
+    ];
+}
+
+/** Normalisoi myös ennen v1.6.5-versiota tallennetun PDF-otsikon. */
+function normalizeStoredPdfHeading(array $heading): ?array
+{
+    $number = rtrim(trim((string) ($heading['number'] ?? '')), '.');
+    $title = trim((string) ($heading['title'] ?? ''));
+    if ($number === '' || $title === '') {
+        return null;
+    }
+
+    $parsed = parsePdfNumberedHeading($number . '. ' . $title);
+    if ($parsed === null) {
+        return null;
+    }
+    $parsed['page'] = max(1, (int) ($heading['page'] ?? 1));
+    return $parsed;
+}
+
 /**
- * Poimii PDF-aineiston otsikot ja niiden lähdesivut Popplerin pdftotextillä.
- * Fonttikokoon perustuva tunnistus täydentää numeroitujen otsikoiden tunnistusta.
+ * Poimii PDF-aineiston numeroidut otsikot ja niiden lähdesivut Popplerin
+ * pdftotextillä. Hyväksytty numerointi on 1., 1.1., 1.1.1. jne.
  */
 function extractPdfHeadings(string $pdfPath): array
 {
@@ -556,9 +592,6 @@ function extractPdfHeadings(string $pdfPath): array
         return [];
     }
 
-    $allHeights = array_column($lines, 'height');
-    sort($allHeights, SORT_NUMERIC);
-    $bodyHeight = (float) $allHeights[(int) floor((count($allHeights) - 1) / 2)];
     $candidates = [];
     foreach ($lines as $line) {
         $text = (string) $line['text'];
@@ -571,38 +604,12 @@ function extractPdfHeadings(string $pdfPath): array
             continue;
         }
 
-        $number = '';
-        $title = $text;
-        $explicitLevel = null;
-        if (preg_match('/^((?:\d+\.)*\d+)\.?\s+(.+)$/u', $text, $matches)) {
-            $number = $matches[1];
-            $title = trim($matches[2]);
-            $explicitLevel = max(0, substr_count($number, '.'));
-        }
-        $letters = preg_replace('/[^\p{L}]+/u', '', $title) ?? '';
-        $isUppercase = $letters !== '' && mb_strtoupper($letters, 'UTF-8') === $letters;
-        $isLarge = $bodyHeight > 0 && (float) $line['height'] >= $bodyHeight * 1.18;
-        if ($explicitLevel === null && !$isLarge && !($isUppercase && $length <= 80 && (float) $line['height'] >= $bodyHeight)) {
+        $heading = parsePdfNumberedHeading($text);
+        if ($heading === null) {
             continue;
         }
-        if (preg_match('/[.!?;:]$/u', $title) && $explicitLevel === null) {
-            continue;
-        }
-        $candidates[] = $line + [
-            'title' => $title,
-            'number' => $number,
-            'explicit_level' => $explicitLevel,
-        ];
+        $candidates[] = $line + $heading;
     }
-
-    $largeHeights = [];
-    foreach ($candidates as $candidate) {
-        if ($candidate['explicit_level'] === null) {
-            $largeHeights[] = round((float) $candidate['height'] * 2) / 2;
-        }
-    }
-    $largeHeights = array_values(array_unique($largeHeights));
-    rsort($largeHeights, SORT_NUMERIC);
 
     $headings = [];
     $seen = [];
@@ -612,16 +619,10 @@ function extractPdfHeadings(string $pdfPath): array
             continue;
         }
         $seen[$dedupeKey] = true;
-        $level = $candidate['explicit_level'];
-        if ($level === null) {
-            $heightKey = round((float) $candidate['height'] * 2) / 2;
-            $rank = array_search($heightKey, $largeHeights, true);
-            $level = min(2, $rank === false ? 1 : (int) $rank);
-        }
         $headings[] = [
             'title' => (string) $candidate['title'],
             'number' => (string) $candidate['number'],
-            'level' => (int) $level,
+            'level' => (int) $candidate['level'],
             'page' => (int) $candidate['page'],
         ];
         if (count($headings) >= 200) {

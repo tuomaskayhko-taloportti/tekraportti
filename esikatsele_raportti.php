@@ -1833,16 +1833,18 @@ foreach (array_keys($rows) as $sectionIndex) {
 $tocEntries = [];
 $sourceHeadings = is_array($sourceMaterial['otsikot'] ?? null) ? $sourceMaterial['otsikot'] : [];
 foreach ($sourceHeadings as $heading) {
-    $title = trim((string) ($heading['title'] ?? ''));
-    $sourcePage = max(1, (int) ($heading['page'] ?? 1));
-    if ($title === '') {
+    if (!is_array($heading)) {
+        continue;
+    }
+    $heading = normalizeStoredPdfHeading($heading);
+    if ($heading === null) {
         continue;
     }
     $tocEntries[] = [
-        'number' => trim((string) ($heading['number'] ?? '')),
-        'title' => $title,
-        'material_page' => $sourcePage,
-        'indent' => max(0, min(3, (int) ($heading['level'] ?? 0))),
+        'number' => $heading['number'],
+        'title' => $heading['title'],
+        'material_page' => $heading['page'],
+        'indent' => max(0, min(3, $heading['level'])),
     ];
 }
 $attachmentTocEntriesAdded = false;

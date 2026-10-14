@@ -1357,10 +1357,18 @@ openLayoutShell('Muokkaa raporttia – TEKRAPORTTI');
     <div class="card-header bg-white"><h2 class="h5 mb-0">Valmis raporttiaineisto</h2></div>
     <div class="card-body p-4">
         <?php if ($sourceMaterial): ?>
-            <?php $recognizedHeadings = json_decode((string) $sourceMaterial['otsikot_json'], true); ?>
+            <?php
+            $recognizedHeadings = json_decode((string) $sourceMaterial['otsikot_json'], true);
+            $recognizedHeadingCount = 0;
+            foreach (is_array($recognizedHeadings) ? $recognizedHeadings : [] as $recognizedHeading) {
+                if (is_array($recognizedHeading) && normalizeStoredPdfHeading($recognizedHeading) !== null) {
+                    $recognizedHeadingCount++;
+                }
+            }
+            ?>
             <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
                 <strong><?= editValue($sourceMaterial['alkuperainen_nimi']) ?></strong>
-                <small class="text-muted"><?= number_format((int) $sourceMaterial['tiedostokoko'] / 1024, 0, ',', ' ') ?> kt · <?= is_array($recognizedHeadings) ? count($recognizedHeadings) : 0 ?> tunnistettua otsikkoa</small>
+                <small class="text-muted"><?= number_format((int) $sourceMaterial['tiedostokoko'] / 1024, 0, ',', ' ') ?> kt · <?= $recognizedHeadingCount ?> tunnistettua otsikkoa</small>
                 <form method="post" action="muokkaa_raportti.php?id=<?= $raporttiId ?>" class="ms-auto" onsubmit="return confirm('Poistetaanko valmis PDF-aineisto raportilta?');"><input type="hidden" name="csrf_token" value="<?= editValue($csrfToken) ?>"><input type="hidden" name="action" value="delete-source-material"><input type="hidden" name="return_anchor" value="valmis-aineisto"><button class="btn btn-link btn-sm text-danger">Poista</button></form>
             </div>
         <?php else: ?>
