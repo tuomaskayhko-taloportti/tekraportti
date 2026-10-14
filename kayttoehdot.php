@@ -31,7 +31,7 @@ function termsMarkdownToHtml(string $text): string
 $termsText = <<<'TEXT'
 # TEKRAPORTTI.COM – KÄYTTÖ- JA SOPIMUSEHDOT
 
-**Voimassa 5.9.2026 alkaen**
+**Voimassa 14.10.2026 alkaen**
 
 ## 1. Yleistä
 
@@ -76,17 +76,18 @@ Palveluntarjoaja pyrkii siihen, etteivät Palveluun tehtävät muutokset olennai
 
 ## 4. Palvelun käyttäminen
 
-Asiakkaalle myönnetään sopimuksen voimassaolon ajaksi rajoitettu, ei-yksinomainen ja ei-siirrettävä oikeus käyttää Palvelua sovittuun tarkoitukseen.
+Asiakkaalle myönnetään sopimuksen voimassaolon ajaksi rajoitettu, ei-yksinomainen ja ei-siirrettävä oikeus käyttää Palveluntarjoajan ylläpitämää Palvelua sovittuun tarkoitukseen. Tämä käyttöoikeus koskee pääsyä Palveluntarjoajan ylläpitämään palveluympäristöön eikä rajoita Tekraportti-ohjelmiston avoimen lähdekoodin lisenssin mukaisia oikeuksia.
 
 Asiakas saa käyttää Palvelua vain lain, näiden Ehtojen ja Palvelussa annettujen ohjeiden mukaisesti.
 
-Asiakas ei ilman Palveluntarjoajan kirjallista lupaa saa:
+Palveluntarjoajan ylläpitämää palveluympäristöä käyttäessään Asiakas ei saa:
 
-* kopioida, jälleenmyydä, vuokrata tai edelleenlisensoida Palvelua;
-* pyrkiä selvittämään Palvelun lähdekoodia tai teknistä toteutusta lain sallimaa pakottavaa poikkeusta lukuun ottamatta;
-* kiertää Palvelun teknisiä käyttörajoituksia tai tietoturvamekanismeja;
+* käyttää toisen asiakkaan käyttäjätunnuksia, aineistoa tai palveluresursseja ilman asianmukaista oikeutta;
+* kiertää palveluympäristön käyttöoikeusrajoituksia tai tietoturvamekanismeja muutoin kuin käyttäessään sovellettavan avoimen lähdekoodin lisenssin mukaisia oikeuksia omaan ohjelmistokopioonsa;
 * käyttää Palvelua lainvastaiseen tai kolmannen osapuolen oikeuksia loukkaavaan tarkoitukseen; tai
 * käyttää Palvelua tavalla, joka voi aiheuttaa vahinkoa Palvelulle, Palveluntarjoajalle, muille käyttäjille tai kolmansille osapuolille.
+
+Tekraportti-ohjelmisto on lisensoitu GNU Affero General Public License version 3.0 -lisenssillä (AGPL-3.0-only). Ohjelmiston kopioimiseen, käyttämiseen, tutkimiseen, muuttamiseen ja edelleen levittämiseen sovelletaan AGPLv3-lisenssiä. Nämä Ehdot eivät rajoita tai korvaa kyseisen lisenssin myöntämiä oikeuksia eivätkä aseta niiden käyttämiselle AGPLv3:n vastaisia lisärajoituksia. Lisenssiteksti ja lähdekoodi ovat saatavilla Palvelun alatunnisteessa olevien linkkien kautta.
 
 ## 5. Käyttäjätunnukset
 
@@ -118,11 +119,13 @@ Jos Palveluntarjoaja käsittelee Palvelun tuottamisen yhteydessä henkilötietoj
 
 Asiakas vastaa omalta osaltaan siitä, että sillä on lainmukainen peruste Palveluun toimittamiensa henkilötietojen käsittelyyn.
 
-## 8. Immateriaalioikeudet
+## 8. Immateriaalioikeudet ja avoimen lähdekoodin lisenssi
 
-Kaikki Palveluun ja sen ohjelmistoon, lähdekoodiin, käyttöliittymään, dokumentaatioon, tietokantarakenteisiin, menetelmiin, materiaaleihin ja muihin Palveluntarjoajan tuottamiin aineistoihin liittyvät immateriaalioikeudet kuuluvat Palveluntarjoajalle tai sen lisenssinantajille, ellei kirjallisesti ole toisin sovittu.
+Tekraportti-ohjelmiston tekijänoikeudet ja muut immateriaalioikeudet kuuluvat Palveluntarjoajalle, ohjelmiston muille tekijöille tai heidän lisenssinantajilleen. Ohjelmiston omistusoikeus ei siirry Asiakkaalle, mutta ohjelmisto on saatavilla ja käytettävissä AGPL-3.0-only-lisenssin ehtojen mukaisesti.
 
-Sopimus ei siirrä Asiakkaalle Palvelun omistusoikeutta tai muita immateriaalioikeuksia.
+AGPLv3 antaa lisenssin ehtoja noudattavalle vastaanottajalle oikeuden muun muassa käyttää, kopioida, tutkia, muuttaa ja levittää ohjelmistoa. Jos muutettua versiota käytetään verkkopalveluna, sen kanssa verkon välityksellä vuorovaikutuksessa oleville käyttäjille on tarjottava mahdollisuus saada kyseisen version vastaava lähdekoodi AGPLv3:n 13 kohdan mukaisesti. Tarkat ja ensisijaiset ohjelmistolisenssin ehdot ovat ohjelmiston mukana toimitettavassa LICENSE.md-tiedostossa.
+
+Palveluntarjoajan tavaramerkit, liikesalaisuudet, asiakastiedot, henkilötiedot ja sellaiset aineistot, joita ei ole julkaistu AGPLv3-lisenssillä, eivät muutu avoimiksi pelkästään siksi, että Tekraportti-ohjelmisto on avoimen lähdekoodin ohjelmisto.
 
 Asiakkaalle kuuluu Asiakkaan Palveluun toimittama aineisto ja siihen liittyvät oikeudet.
 
@@ -219,7 +222,7 @@ Osapuolella on oikeus purkaa sopimus päättymään välittömästi, jos toinen 
 
 ## 16. Sopimuksen päättymisen vaikutukset
 
-Sopimuksen päättyessä Asiakkaan oikeus käyttää Palvelua päättyy, ellei toisin ole sovittu.
+Sopimuksen päättyessä Asiakkaan oikeus käyttää Palveluntarjoajan ylläpitämää palveluympäristöä päättyy, ellei toisin ole sovittu. Sopimuksen päättyminen ei päätä tai rajoita Asiakkaan AGPLv3-lisenssin mukaisesti saaman ohjelmistokopion lisenssioikeuksia.
 
 Palveluntarjoajalla on oikeus poistaa Palveluun tallennetut Asiakkaan tiedot kohtuullisen ajan kuluttua sopimuksen päättymisestä, ellei niiden säilyttäminen ole tarpeen lain, sopimuksen tai oikeudellisen vaatimuksen vuoksi.
 
@@ -266,6 +269,8 @@ Jos erimielisyyttä ei saada ratkaistua neuvotteluin, asia ratkaistaan toimivalt
 Jos näiden Ehtojen ja Asiakkaan kanssa erikseen kirjallisesti sovittujen sopimusehtojen välillä on ristiriita, erikseen kirjallisesti sovitut ehdot ovat ensisijaisia.
 
 Palvelun tilauksen yhteydessä ilmoitetut palvelukohtaiset ehdot, palvelukuvaus ja hinnat täydentävät näitä Ehtoja.
+
+Edellä mainittu ensisijaisuus koskee Palveluntarjoajan ylläpitämän palvelun toimittamista. Tekraportti-ohjelmiston kopioimiseen, muuttamiseen ja levittämiseen sovelletaan aina AGPLv3-lisenssiä, eikä sopimusehdoilla aseteta lisenssin myöntämille oikeuksille AGPLv3:n vastaisia lisärajoituksia.
 
 ## 23. Yhteystiedot
 

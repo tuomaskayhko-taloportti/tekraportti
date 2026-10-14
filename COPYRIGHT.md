@@ -26,7 +26,7 @@ Tek-raportti is distributed in the hope that it will be useful, but WITHOUT ANY 
 
 See the GNU Affero General Public License for more details.
 
-The complete license text is provided in the `LICENSE` file included with the software.
+The complete license text is provided in the `LICENSE.md` file included with the software.
 
 Official license:
 
@@ -269,7 +269,7 @@ Nothing in this notice excludes liability that cannot lawfully be excluded.
 
 The following files form part of the project's licensing documentation:
 
-- `LICENSE` – Complete GNU Affero General Public License v3.0
+- `LICENSE.md` – Complete GNU Affero General Public License v3.0
 - `COPYRIGHT.md` – Copyright, ownership and licensing information
 - `THIRD_PARTY_NOTICES.md` – Third-party components and their licensing information
 
