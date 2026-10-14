@@ -228,7 +228,9 @@ function closeLayoutShell(): void
     echo '<footer class="container-fluid text-end pb-3 text-muted small">© 2026 Koodiportti Ohjelmistot y:3203383-5 · TEKRAPORTTI v'
         . htmlspecialchars(APP_VERSION, ENT_QUOTES, 'UTF-8')
         . "</footer>\n";
-    echo "<script src=\"https://code.jquery.com/jquery-4.0.0.min.js\"></script>\n";
+    echo '<script src="https://code.jquery.com/jquery-4.0.0.min.js" '
+        . 'integrity="sha384-fgGyf7Mo7DURSOMnOy7ed+dkq5Job205Gnzu6QIg0BOHKaqt4D76Dt8VlDCzcMHV" '
+        . "crossorigin=\"anonymous\"></script>\n";
     echo '<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" '
         . 'integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI" '
         . "crossorigin=\"anonymous\"></script>\n";
@@ -291,11 +293,28 @@ function getDatabaseConnection(): mysqli
     return $connection;
 }
 
+/** Lähettää sovelluksen yhteiset selainturvallisuusotsikot. */
+function sendApplicationSecurityHeaders(): void
+{
+    if (headers_sent()) {
+        return;
+    }
+
+    header('Strict-Transport-Security: max-age=31536000');
+    header('X-Content-Type-Options: nosniff');
+    header('X-Frame-Options: DENY');
+    header('Referrer-Policy: strict-origin-when-cross-origin');
+    header('Permissions-Policy: camera=(), microphone=(), geolocation=()');
+    header("Content-Security-Policy: default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'; script-src 'self' 'unsafe-inline' https://code.jquery.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data: blob: https://img.youtube.com; font-src 'self' data:; connect-src 'self'; media-src 'self' https:; frame-src https://www.youtube.com https://www.youtube-nocookie.com; upgrade-insecure-requests");
+}
+
 /**
  * Käynnistää turvallisen PHP-session tarvittaessa.
  */
 function startApplicationSession(): void
 {
+    sendApplicationSecurityHeaders();
+
     if (session_status() === PHP_SESSION_NONE) {
         ini_set('session.use_strict_mode', '1');
         ini_set('session.use_only_cookies', '1');
@@ -775,28 +794,6 @@ function parseReportShareEmails(string $value): array
         }
     }
     return $emails;
-}
-
-function isLaatijaLoginBlocked(string $email): bool
-{
-    $email = strtolower(trim($email));
-
-    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        return false;
-    }
-
-    try {
-        $query = getDatabaseConnection()->prepare(
-            'SELECT id FROM laatijat WHERE sahkoposti = ? AND aktiivinen = 0 LIMIT 1'
-        );
-        $query->bind_param('s', $email);
-        $query->execute();
-
-        return (bool) $query->get_result()->fetch_assoc();
-    } catch (Throwable $error) {
-        error_log('Estetyn käyttäjän tarkistus epäonnistui: ' . $error->getMessage());
-        return false;
-    }
 }
 
 /**

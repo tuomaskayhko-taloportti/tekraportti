@@ -1,6 +1,7 @@
 <?php
 
 require_once __DIR__ . '/funktiot.php';
+sendApplicationSecurityHeaders();
 
 function termsMarkdownToHtml(string $text): string
 {

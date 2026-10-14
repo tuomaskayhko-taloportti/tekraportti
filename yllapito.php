@@ -3,6 +3,11 @@
 require_once __DIR__ . '/funktiot.php';
 
 startApplicationSession();
+if (!isset($_SESSION['laatijat_id'])) {
+    header('Location: index.php');
+    exit;
+}
+
 $currentLaatijaId = (int) ($_SESSION['laatijat_id'] ?? 0);
 $isAdmin = $currentLaatijaId === 1;
 $requestedEditId = (int) ($_GET['muokkaa'] ?? $_POST['id'] ?? 0);

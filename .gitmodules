@@ -1,0 +1,7 @@
+[submodule "vendor/fpdf"]
+	path = vendor/fpdf
+	url = https://github.com/Setasign/FPDF.git
+
+[submodule "vendor/fpdi"]
+	path = vendor/fpdi
+	url = https://github.com/Setasign/FPDI.git

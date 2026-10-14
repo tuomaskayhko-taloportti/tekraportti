@@ -37,9 +37,6 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
                 $message = 'Anna voimassa oleva sähköpostiosoite.';
                 $messageType = 'danger';
-            } elseif (isLaatijaLoginBlocked($email)) {
-                $message = 'Kirjautuminen estetty, ole yhteydessä ylläpitoon: asiakaspalvelu@taloportti.fi';
-                $messageType = 'danger';
             } elseif (requestLoginCode($email)) {
                 $_SESSION['login_email'] = $email;
                 $message = 'Jos osoite kuuluu järjestelmään, lähetimme siihen kirjautumiskoodin.';
@@ -89,7 +86,9 @@ $safeCsrfToken = htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8');
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>TEKRAPORTTI – Ammattilaisen työkalu raportteihin</title>
     <link rel="icon" type="image/png" href="Logo pyöreä.png">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet"
+          integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB"
+          crossorigin="anonymous">
     <style>
         :root { --navy:#071a3d; --blue:#1769e8; --muted:#52627a; --line:#dce6f1; }
         * { box-sizing:border-box; }
