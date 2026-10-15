@@ -12,7 +12,9 @@ if (!isset($_SESSION['laatijat_id'])) {
 $laatijatId = (int) $_SESSION['laatijat_id'];
 $currentLaatijaId = $laatijatId;
 $csrfToken = getApplicationCsrfToken();
-$editId = max(0, (int) ($_GET['muokkaa'] ?? $_POST['id'] ?? 0));
+$requestedEditId = max(0, (int) ($_GET['muokkaa'] ?? $_POST['id'] ?? 0));
+$editId = $requestedEditId;
+$editableCustomerFound = false;
 $currentPage = max(1, (int) ($_GET['sivu'] ?? 1));
 $perPage = 25;
 $asiakkaat = [];
@@ -20,6 +22,13 @@ $sharedEmails = [];
 $totalCustomers = 0;
 $message = '';
 $messageType = 'danger';
+if (($_GET['tallennettu'] ?? '') === 'muokattu') {
+    $message = 'Asiakkaan tiedot päivitettiin.';
+    $messageType = 'success';
+} elseif (($_GET['tallennettu'] ?? '') === 'lisatty') {
+    $message = 'Asiakas lisättiin.';
+    $messageType = 'success';
+}
 $form = [
     'nimi' => '',
     'yritys' => '',
@@ -48,6 +57,7 @@ try {
         $existing = $query->get_result()->fetch_assoc();
         $query->close();
         if ($existing) {
+            $editableCustomerFound = true;
             $laatijatId = (int) $existing['laatijat_id'];
             unset($existing['laatijat_id']);
             $form = array_merge($form, $existing);
@@ -93,6 +103,8 @@ try {
                 $message = $deleted ? 'Asiakas poistettiin.' : 'Asiakasta ei löytynyt.';
                 $messageType = $deleted ? 'success' : 'danger';
             }
+        } elseif ($action === 'save' && $requestedEditId > 0 && !$editableCustomerFound) {
+            $message = 'Asiakasta ei löytynyt tai sinulla ei enää ole oikeutta muokata sitä.';
         } elseif ($action === 'save') {
             $oldSharedEmails = array_map('strtolower', $sharedEmails);
             foreach (array_keys($form) as $field) {
@@ -127,11 +139,16 @@ try {
                 $message = 'Lisätiedon nimi tai arvo ylittää sallitun pituuden.';
             } else {
                 $sharedEmails = parseReportShareEmails($form['jaettava_sahkoposti']);
-                $currentLaatija = getCurrentLaatija() ?: [];
-                $currentEmail = strtolower(trim((string) ($currentLaatija['sahkoposti'] ?? '')));
+                $query = $db->prepare('SELECT sahkoposti FROM laatijat WHERE id = ? LIMIT 1');
+                $query->bind_param('i', $laatijatId);
+                $query->execute();
+                $ownerEmail = strtolower(trim((string) ($query->get_result()->fetch_assoc()['sahkoposti'] ?? '')));
+                $query->close();
                 $sharedLaatijat = [];
                 foreach ($sharedEmails as $sharedEmail) {
-                    if ($sharedEmail === $currentEmail) {
+                    // Omistajaa ei lisätä jakotauluun. Jaetun asiakkaan muokkaajan
+                    // oma osoite täytyy sen sijaan säilyttää, jotta jako ei katoa.
+                    if ($sharedEmail === $ownerEmail) {
                         continue;
                     }
                     $query = $db->prepare('SELECT id FROM laatijat WHERE sahkoposti = ? AND id <> ? LIMIT 1');
@@ -200,16 +217,14 @@ try {
                         $query->bind_param('ii', $customerId, $sharedLaatijaId); $query->execute(); $query->close();
                     }
                     $db->commit();
+                    $wasEditing = $editId > 0;
                     $newSharedEmails = array_diff($sharedEmails, $oldSharedEmails);
                     $sharer = getCurrentLaatija() ?: [];
                     foreach ($newSharedEmails as $sharedEmail) {
                         sendReportShareNotification($sharedEmail, $form['nimi'], (string) ($sharer['nimi'] ?? ''), (string) ($sharer['yritys'] ?? ''), 'Asiakas');
                     }
-                    $message = $editId > 0 ? 'Asiakkaan tiedot päivitettiin.' : 'Asiakas lisättiin.';
-                    $messageType = 'success';
-                    $editId = 0;
-                    $form = array_fill_keys(array_keys($form), '');
-                    $form['lisatiedot'] = [];
+                    header('Location: asiakkaat.php?tallennettu=' . ($wasEditing ? 'muokattu' : 'lisatty'));
+                    exit;
                 } catch (Throwable $error) {
                     $db->rollback();
                     $message = 'Asiakkaan tallennus epäonnistui. Tarkista, ettei sähköpostiosoite ole jo käytössä.';
