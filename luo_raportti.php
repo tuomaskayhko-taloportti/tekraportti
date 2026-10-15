@@ -140,7 +140,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $sourceMaterialSize = 0;
             if (isset($_FILES['aineisto_pdf']) && ($_FILES['aineisto_pdf']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
                 $sourceMaterialValue = storeUploadedFile($_FILES['aineisto_pdf'], 'aineistot', ['application/pdf' => 'pdf']);
-                $sourceMaterialHeadings = extractPdfHeadings(__DIR__ . '/' . $sourceMaterialValue);
+                $sourceMaterialHeadings = extractPdfHeadings(storedFilePath($sourceMaterialValue) ?? '');
                 $sourceMaterialName = mb_substr(basename((string) ($_FILES['aineisto_pdf']['name'] ?? 'aineisto.pdf')), 0, 255);
                 $sourceMaterialSize = (int) ($_FILES['aineisto_pdf']['size'] ?? 0);
             }

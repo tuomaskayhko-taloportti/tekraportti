@@ -16,7 +16,7 @@ function openLayoutShell(string $pageTitle = 'TEKRAPORTTI'): void
     $laatija = getCurrentLaatija();
     $csrfToken = getApplicationCsrfToken();
     $headerLogo = trim((string) ($laatija['logo_url'] ?? ''));
-    $safeHeaderLogo = htmlspecialchars($headerLogo !== '' ? $headerLogo : 'Logo.png', ENT_QUOTES, 'UTF-8');
+    $safeHeaderLogo = htmlspecialchars($headerLogo !== '' ? storedFileUrl($headerLogo) : 'Logo.png', ENT_QUOTES, 'UTF-8');
     $safeCsrfToken = htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8');
     $safeLaatijaNimi = htmlspecialchars((string) ($laatija['nimi'] ?? ''), ENT_QUOTES, 'UTF-8');
     $safeSearch = htmlspecialchars((string) ($_GET['haku'] ?? ''), ENT_QUOTES, 'UTF-8');
@@ -282,6 +282,7 @@ function getApplicationSecrets(): array
         'mysqluser' => $mysqluser,
         'database' => $database,
         'passwd' => $passwd,
+        'docpath' => $docpath ?? '',
         'mailServer' => $mailServer ?? '',
         'mailUser' => $mailUser ?? '',
         'mailPWD' => $mailPWD ?? '',
@@ -397,7 +398,65 @@ function getCurrentLaatija(): ?array
 }
 
 /**
- * Tallentaa ladatun kuvan tai videon Tiedostot-hakemistoon ja palauttaa URL-polun.
+ * Palauttaa julkisen tiedostotunnisteen fyysisen tallennushakemiston.
+ */
+function getDocumentStorageDirectory(): string
+{
+    static $directory;
+
+    if (is_string($directory)) {
+        return $directory;
+    }
+
+    $configuredPath = trim((string) (getApplicationSecrets()['docpath'] ?? ''));
+    if ($configuredPath === '') {
+        throw new RuntimeException('Tiedostohakemistoa ei ole määritetty.');
+    }
+
+    $resolvedPath = realpath($configuredPath);
+    if ($resolvedPath === false || !is_dir($resolvedPath)) {
+        throw new RuntimeException('Tiedostohakemistoa ei löytynyt.');
+    }
+
+    $directory = rtrim($resolvedPath, DIRECTORY_SEPARATOR);
+    return $directory;
+}
+
+/** Palauttaa palveluun tallennetun tiedoston polun paljastamatta tallennusjuurta. */
+function storedFilePath(string $reference): ?string
+{
+    $reference = ltrim(trim($reference), '/');
+    if (!str_starts_with($reference, 'Tiedostot/') || str_contains($reference, "\0") || str_contains($reference, '\\')) {
+        return null;
+    }
+
+    $relativePath = substr($reference, strlen('Tiedostot/'));
+    if ($relativePath === '' || preg_match('#(?:^|/)\.\.?(/|$)#', $relativePath)) {
+        return null;
+    }
+
+    $directory = getDocumentStorageDirectory();
+    $path = realpath($directory . DIRECTORY_SEPARATOR . $relativePath);
+    if ($path === false || !str_starts_with($path, $directory . DIRECTORY_SEPARATOR) || !is_file($path)) {
+        return null;
+    }
+
+    return $path;
+}
+
+/** Muuntaa sisäisen tiedostotunnisteen kirjautumisen vaativaksi selain-URL:ksi. */
+function storedFileUrl(string $reference): string
+{
+    $normalized = ltrim(trim($reference), '/');
+    if (!str_starts_with($normalized, 'Tiedostot/')) {
+        return $reference;
+    }
+
+    return 'tiedosto.php?polku=' . rawurlencode($normalized);
+}
+
+/**
+ * Tallentaa ladatun kuvan tai videon yksityiseen Tiedostot-hakemistoon ja palauttaa tiedostotunnisteen.
  */
 function storeUploadedFile(array $file, string $folder, ?array $allowedExtensions = null): string
 {
@@ -422,7 +481,7 @@ function storeUploadedFile(array $file, string $folder, ?array $allowedExtension
     }
 
     $folder = preg_replace('/[^a-z0-9_-]/i', '', $folder);
-    $directory = __DIR__ . '/Tiedostot/' . $folder;
+    $directory = getDocumentStorageDirectory() . DIRECTORY_SEPARATOR . $folder;
     if (!is_dir($directory) && !mkdir($directory, 0775, true) && !is_dir($directory)) {
         throw new RuntimeException('Tiedostokansiota ei voitu luoda.');
     }
@@ -442,16 +501,15 @@ function copyStoredFile(string $url): string
         return $url;
     }
 
-    $directory = realpath(__DIR__ . '/Tiedostot');
-    $source = realpath(__DIR__ . '/' . ltrim($url, '/'));
-    if (!$directory || !$source || !str_starts_with($source, $directory . DIRECTORY_SEPARATOR) || !is_file($source)) {
+    $source = storedFilePath($url);
+    if ($source === null) {
         throw new RuntimeException('Mediaa ei voitu kopioida.');
     }
 
-    $relativeDirectory = dirname(substr($source, strlen(__DIR__) + 1));
+    $relativeDirectory = dirname(ltrim($url, '/'));
     $extension = strtolower(pathinfo($source, PATHINFO_EXTENSION));
     $filename = bin2hex(random_bytes(16)) . ($extension !== '' ? '.' . $extension : '');
-    $destination = __DIR__ . '/' . $relativeDirectory . '/' . $filename;
+    $destination = dirname($source) . DIRECTORY_SEPARATOR . $filename;
     if (!copy($source, $destination)) {
         throw new RuntimeException('Mediaa ei voitu kopioida.');
     }
@@ -468,9 +526,8 @@ function deleteStoredFile(string $url): void
         return;
     }
 
-    $directory = realpath(__DIR__ . '/Tiedostot');
-    $path = realpath(__DIR__ . '/' . ltrim($url, '/'));
-    if ($directory && $path && str_starts_with($path, $directory . DIRECTORY_SEPARATOR) && is_file($path)) {
+    $path = storedFilePath($url);
+    if ($path !== null) {
         @unlink($path);
     }
 }

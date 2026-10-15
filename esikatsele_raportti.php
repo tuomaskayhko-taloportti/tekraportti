@@ -1213,11 +1213,7 @@ function localImagePath(string $url): ?string
     if ($url === '' || str_contains($url, '..') || preg_match('/^https?:\/\//i', $url)) {
         return null;
     }
-    $path = realpath(__DIR__ . '/' . ltrim($url, '/'));
-    if (!$path || !str_starts_with($path, realpath(__DIR__ . '/Tiedostot') . DIRECTORY_SEPARATOR)) {
-        return null;
-    }
-    return $path;
+    return storedFilePath($url);
 }
 
 function isPdfImagePath(?string $path): bool
